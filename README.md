@@ -96,6 +96,12 @@ Hardy-line transfer evaluation profile (stronger disturbances):
 ~/.local/bin/uv run add-cross-report --input-path artifacts/cross-eval-hardy-focused-vs-top.json --markdown-out artifacts/cross-eval-hardy-focused-vs-top.md --csv-out artifacts/cross-eval-hardy-focused-vs-top.csv
 ```
 
+Car-priority ranking for hardy-line selection (optional weighting):
+
+```bash
+~/.local/bin/uv run add-cross-eval --checkpoints-list "artifacts/focused-variant03-long.pt,artifacts/focused-variant03-curriculum.pt,artifacts/parallel-long/variant-03.pt" --profile pi5 --embodiments "hexapod,car,drone" --embodiment-weights "hexapod=1,car=2.5,drone=1" --scenario-profile hardy --runs-per-combo 2 --steps 110 --remap-every 12 --output artifacts/cross-eval-hardy-car-priority.json
+```
+
 Focused comparison over an explicit checkpoint list:
 
 ```bash
@@ -126,6 +132,7 @@ Focused comparison over an explicit checkpoint list:
 - `src/ai_embedded_dynamic_diversity/deploy/bench_cli.py`: inference latency benchmarking for edge validation.
 - `src/ai_embedded_dynamic_diversity/deploy/hil_cli.py`: UDP hardware-in-the-loop adapter.
 - `skills/dynamic-diversity-research/SKILL.md`: workflow for future AI agents continuing research.
+- `docs/ARTIFACTS.md`: artifact interpretation guide (goals, success criteria, expected behavior, failure patterns).
 
 ## Immediate next experiments
 

@@ -36,12 +36,16 @@
 - Added cross-embodiment transfer evaluator (`add-cross-eval`) with scenario stressors and ranking output in `artifacts/cross-eval-summary.json`.
 - Added transfer-focused tests in `tests/test_cross_eval.py` (recovery metric + rollout metric structure).
 - Added cross-eval reporting utility (`add-cross-report`) to emit ranked Markdown/CSV with per-embodiment deltas.
+- Extended `add-cross-report` to display ranking transfer score alongside unweighted transfer score and include embodiment-weight context.
 - Added explicit checkpoint-list support in `add-cross-eval` for focused A/B/C comparisons.
+- Added optional embodiment-weighted ranking in `add-cross-eval` (`--embodiment-weights`) while preserving unweighted score output for unbiased comparison.
 - Ran focused long retrain (`artifacts/focused-variant03-long.pt`) and confirmed transfer improvement vs prior top checkpoints.
 - Added hardy-line scenario profile support in cross-eval (`standard`, `hardy`, `extreme`) with stronger disturbance cases (`storm`, `blackout`, `crosswind`).
 - Ran focused curriculum retrain and hardy-line ranking (`artifacts/cross-eval-hardy-focused-vs-top.json`) to compare robustness under harsher conditions.
 - Ran additional curriculum sweep variants (`focused-curriculum-a`, `focused-curriculum-b`) and ranked them under hardy profile (`artifacts/cross-eval-hardy-curriculum-sweep.json`).
+- Ran car-priority hardy ranking with embodiment weights (`artifacts/cross-eval-hardy-car-priority.json`) and confirmed the same champion remained top-ranked.
 - Added tracking files (`TODO.md`, `IMPLEMENTED.md`) and updated backlog/docs.
+- Added artifact interpretation reference (`docs/ARTIFACTS.md`) with concrete success thresholds, behavior expectations, and evaluation playbooks.
 
 ## Lessons Learned
 
@@ -55,3 +59,5 @@
 - Top-k slot paging is a practical first step toward manifold paging, but objective-level paging still needs dedicated work.
 - Curriculum helps hard-regime robustness, but schedule parameters need tuning; in current hardy evaluation, non-curriculum focused training remained slightly better on transfer score.
 - Curriculum variant A improved recovery but still trailed the non-curriculum focused model on overall hardy transfer score.
+- Weighted ranking is useful for deployment-specific selection, but unweighted transfer should remain the primary generalization gate to avoid overfitting selection criteria to a single embodiment.
+- In the current checkpoint set, car-priority weighting changed absolute score scale but not rank order; reducing car mismatch likely requires training/objective changes, not only selection weighting.

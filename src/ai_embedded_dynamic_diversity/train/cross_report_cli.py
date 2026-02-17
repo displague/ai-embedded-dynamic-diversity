@@ -29,10 +29,12 @@ def run(
 
     rows = []
     for idx, item in enumerate(ranked, start=1):
+        transfer_unweighted = item.get("overall_transfer_score_unweighted", item["overall_transfer_score"])
         row = {
             "rank": idx,
             "checkpoint": item["checkpoint"],
             "overall_transfer_score": item["overall_transfer_score"],
+            "overall_transfer_score_unweighted": transfer_unweighted,
             "overall_mean_mismatch": item["overall_mean_mismatch"],
             "overall_mean_vitality": item["overall_mean_vitality"],
             "overall_recovery": item["overall_recovery"],
@@ -57,14 +59,18 @@ def run(
     md_lines.append("")
     md_lines.append(f"Source: `{input_path}`")
     md_lines.append("")
+    weights = payload.get("config", {}).get("embodiment_weights", {})
+    if weights:
+        md_lines.append(f"Embodiment weights: `{json.dumps(weights, sort_keys=True)}`")
+        md_lines.append("")
     md_lines.append("## Top 5")
     md_lines.append("")
-    md_lines.append("| Rank | Checkpoint | Transfer | Delta vs Best | Mismatch | Vitality | Recovery |")
-    md_lines.append("|---|---|---:|---:|---:|---:|---:|")
+    md_lines.append("| Rank | Checkpoint | Transfer (Ranking) | Transfer (Unweighted) | Delta vs Best | Mismatch | Vitality | Recovery |")
+    md_lines.append("|---|---|---:|---:|---:|---:|---:|---:|")
     for row in rows[:5]:
         md_lines.append(
             "| "
-            + f"{row['rank']} | `{row['checkpoint']}` | {_fmt(row['overall_transfer_score'])} | {_fmt(row['delta_vs_best'])} | {_fmt(row['overall_mean_mismatch'])} | {_fmt(row['overall_mean_vitality'])} | {_fmt(row['overall_recovery'])} |"
+            + f"{row['rank']} | `{row['checkpoint']}` | {_fmt(row['overall_transfer_score'])} | {_fmt(row['overall_transfer_score_unweighted'])} | {_fmt(row['delta_vs_best'])} | {_fmt(row['overall_mean_mismatch'])} | {_fmt(row['overall_mean_vitality'])} | {_fmt(row['overall_recovery'])} |"
         )
 
     md_lines.append("")

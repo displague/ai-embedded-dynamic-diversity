@@ -42,3 +42,8 @@ Use compact entries:
 - change: Trained `focused-curriculum-a` and `focused-curriculum-b` variants, then evaluated a hardy sweep in `artifacts/cross-eval-hardy-curriculum-sweep.json`; generated comparison visualization `artifacts/focused-currA-vs-focused-long-car-hardy.gif`.
 - result: Ranking stayed led by `artifacts/focused-variant03-long.pt` (~0.30826). Curriculum variants reached ~0.30619 (`focused-variant03-curriculum`), ~0.30564 (`focused-curriculum-a`), and ~0.29824 (`focused-curriculum-b`). All focused variants outperformed prior `parallel-long/variant-03` (~0.28134).
 - next action: Target car-specific robustness (crosswind/force) and consider embodiment-aware objective weighting in transfer score.
+- date: 2026-02-17
+- hypothesis: Embodiment-weighted ranking (`car` priority) may change hardy-line checkpoint selection and better reflect near-term deployment priorities.
+- change: Added `--embodiment-weights` support to `add-cross-eval`, added parser/weighting tests, ran weighted hardy evaluation in `artifacts/cross-eval-hardy-car-priority.json` with `hexapod=1,car=2.5,drone=1`, and generated report outputs (`.md`, `.csv`).
+- result: Top checkpoint did not change; `artifacts/focused-variant03-long.pt` remained #1 (`weighted ~0.29343`, `unweighted ~0.31016`). Car transfer remained the limiting factor despite weighted selection.
+- next action: Add car-focused objective weighting/sampling during training (storm/crosswind emphasis), then rerun hardy weighted+unweighted comparisons.

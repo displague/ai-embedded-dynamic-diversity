@@ -142,6 +142,48 @@ def _resolve_scenario_profile(profile: str) -> list[ScenarioSpec]:
     return _resolve_scenarios(profiles[normalized])
 
 
+def _parse_embodiment_weights(weights_csv: str, embodiments: list[str]) -> dict[str, float]:
+    weights = {emb: 1.0 for emb in embodiments}
+    normalized = weights_csv.replace(";", ",").strip()
+    if not normalized:
+        return weights
+
+    for raw in normalized.split(","):
+        token = raw.strip()
+        if not token:
+            continue
+        if "=" not in token:
+            raise ValueError(f"Invalid embodiment weight token '{token}'. Expected format '<embodiment>=<weight>'.")
+        name, value_raw = [x.strip().lower() for x in token.split("=", maxsplit=1)]
+        if name not in weights:
+            allowed = ", ".join(sorted(weights))
+            raise ValueError(f"Unknown embodiment '{name}' in embodiment weights. Allowed: {allowed}")
+        try:
+            value = float(value_raw)
+        except ValueError as exc:
+            raise ValueError(f"Invalid weight for embodiment '{name}': '{value_raw}'") from exc
+        if value <= 0.0:
+            raise ValueError(f"Weight for embodiment '{name}' must be > 0.0")
+        weights[name] = value
+    return weights
+
+
+def _weighted_transfer_score(
+    by_embodiment: dict[str, dict[str, float]],
+    embodiments: list[str],
+    embodiment_weights: dict[str, float],
+) -> float:
+    denom = sum(float(embodiment_weights.get(emb, 1.0)) for emb in embodiments)
+    if denom <= 0.0:
+        return 0.0
+    numer = 0.0
+    for emb in embodiments:
+        score = float(by_embodiment.get(emb, {}).get("transfer_score", 0.0))
+        weight = float(embodiment_weights.get(emb, 1.0))
+        numer += score * weight
+    return numer / denom
+
+
 def _load_model(weights: str, profile: str, device: torch.device) -> tuple[ModelCore, ModelConfig, dict]:
     ckpt = torch.load(weights, map_location=device)
     if "model_config" in ckpt:
@@ -297,6 +339,7 @@ def run(
     checkpoints_list: str = "",
     profile: str = "pi5",
     embodiments: str = "hexapod,car,drone",
+    embodiment_weights: str = "",
     scenarios: str = "mild,gust,force",
     scenario_profile: str = "",
     runs_per_combo: int = 2,
@@ -329,6 +372,10 @@ def run(
     embodiment_list = [x.strip().lower() for x in embodiments.split(",") if x.strip()]
     if not embodiment_list:
         raise typer.BadParameter("No embodiments were provided")
+    try:
+        embodiment_weight_map = _parse_embodiment_weights(embodiment_weights, embodiment_list)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
 
     dev = torch.device(device)
     world_dims = (world_x, world_y, world_z, resource_channels)
@@ -379,12 +426,18 @@ def run(
                 "checkpoint": ckpt_path,
                 "flags": raw_ckpt.get("run_flags", {}),
                 "overall_transfer_score": _avg("transfer_score"),
+                "overall_transfer_score_unweighted": _avg("transfer_score"),
                 "overall_mean_mismatch": _avg("mean_mismatch"),
                 "overall_mean_vitality": _avg("mean_vitality"),
                 "overall_recovery": _avg("recovery"),
                 "by_embodiment": by_embodiment,
                 "runs": run_rows,
             }
+        )
+        ranked[-1]["overall_transfer_score"] = _weighted_transfer_score(
+            by_embodiment=by_embodiment,
+            embodiments=embodiment_list,
+            embodiment_weights=embodiment_weight_map,
         )
 
     ranked.sort(key=lambda x: x["overall_transfer_score"], reverse=True)
@@ -395,6 +448,7 @@ def run(
             "checkpoints_list": checkpoints_list,
             "profile": profile,
             "embodiments": embodiment_list,
+            "embodiment_weights": embodiment_weight_map,
             "scenarios": [s.name for s in scenario_specs],
             "scenario_profile": scenario_profile,
             "runs_per_combo": runs_per_combo,

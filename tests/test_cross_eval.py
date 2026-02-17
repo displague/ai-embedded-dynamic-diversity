@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import pytest
+
 from ai_embedded_dynamic_diversity.config import ModelConfig
 from ai_embedded_dynamic_diversity.models import ModelCore
 from ai_embedded_dynamic_diversity.train.cross_eval_cli import (
     ScenarioSpec,
+    _parse_embodiment_weights,
     _resolve_scenario_profile,
+    _weighted_transfer_score,
     compute_recovery_score,
     rollout_metrics,
 )
@@ -65,3 +69,40 @@ def test_hardy_profile_resolves_multiple_scenarios() -> None:
     assert "storm" in names
     assert "blackout" in names
     assert len(names) >= 5
+
+
+def test_parse_embodiment_weights_defaults_and_overrides() -> None:
+    names = ["hexapod", "car", "drone"]
+    defaults = _parse_embodiment_weights("", names)
+    assert defaults == {"hexapod": 1.0, "car": 1.0, "drone": 1.0}
+
+    weighted = _parse_embodiment_weights("car=2.5,drone=1.2", names)
+    assert weighted["hexapod"] == 1.0
+    assert weighted["car"] == 2.5
+    assert weighted["drone"] == 1.2
+
+
+def test_parse_embodiment_weights_rejects_unknown_name() -> None:
+    with pytest.raises(ValueError):
+        _parse_embodiment_weights("crawler=2.0", ["hexapod", "car", "drone"])
+
+
+def test_weighted_transfer_score_prioritizes_target_embodiment() -> None:
+    by_embodiment = {
+        "hexapod": {"transfer_score": 0.40},
+        "car": {"transfer_score": 0.20},
+        "drone": {"transfer_score": 0.30},
+    }
+    score_equal = _weighted_transfer_score(
+        by_embodiment=by_embodiment,
+        embodiments=["hexapod", "car", "drone"],
+        embodiment_weights={"hexapod": 1.0, "car": 1.0, "drone": 1.0},
+    )
+    score_car_heavy = _weighted_transfer_score(
+        by_embodiment=by_embodiment,
+        embodiments=["hexapod", "car", "drone"],
+        embodiment_weights={"hexapod": 1.0, "car": 3.0, "drone": 1.0},
+    )
+    assert score_equal == pytest.approx(0.30)
+    assert score_car_heavy == pytest.approx((0.40 + 0.20 * 3.0 + 0.30) / 5.0)
+    assert score_car_heavy < score_equal
