@@ -42,6 +42,18 @@ python -m venv .venv
 pip install -e .
 ```
 
+CUDA wheel setup for this project venv (PowerShell):
+
+```powershell
+~/.local/bin/uv pip install --python .venv\Scripts\python.exe --index-url https://download.pytorch.org/whl/cu128 --reinstall torch==2.10.0+cu128 torchvision==0.25.0+cu128 torchaudio==2.10.0+cu128
+@'
+import torch
+print(torch.__version__, torch.cuda.is_available(), torch.version.cuda)
+'@ | .\.venv\Scripts\python -
+```
+
+If `uv run` re-syncs CPU torch from lockfile, run training/eval via `.\.venv\Scripts\python -m ...` (or `uv run --no-sync` if your environment is already correct).
+
 ## Run training
 
 ```bash
@@ -77,6 +89,8 @@ Focused warm-start fine-tune from current champion:
 ```bash
 ~/.local/bin/uv run add-train --profile pi5 --epochs 36 --batch-size 24 --unroll-steps 18 --device cuda --gating-mode symplectic --topk-gating 4 --enable-dmd-gating --enable-phase-gating --enable-curriculum --enable-genetic-memory --embodiments "hexapod,car,drone,polymorph120" --enable-embodiment-transfer-loss --transfer-loss-weight 0.45 --transfer-fitness-weight 0.12 --transfer-samples-per-step 3 --init-weights artifacts/focused-variant03-long.pt --save-path artifacts/focused-variant03-long-poly-ft.pt
 ```
+
+Latest champion checkpoint from mixed CUDA/CPU sweep: `artifacts/model-core-champion-v01.pt`.
 
 Curriculum + latent genetic memory:
 

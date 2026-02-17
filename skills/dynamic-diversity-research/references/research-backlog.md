@@ -9,3 +9,4 @@
 7. Add car-focused robustness objectives and weighting to reduce persistent high mismatch under hardy profiles.
 8. Tune transfer-fitness coupling so evolutionary selection correlates with cross-eval transfer gains (current transfer can improve while legacy fitness degrades).
 9. Add progressive embodiment curriculum (`hexapod/car/drone` -> `polymorph120`) and measure whether staged complexity reduces catastrophic remap mismatch.
+10. Standardize CUDA package sourcing for `uv` so `uv run` does not revert to CPU-only torch builds.

@@ -64,6 +64,15 @@
   - 3-emb hardy (car-priority weighted) score: `0.28209 -> 0.31125`
   - car mismatch: `1.48385 -> 1.25366`
   - generated comparison viz: `artifacts/focused-vs-polyft-car-hardy.gif`
+- Enabled CUDA training environment in `.venv` using `torch==2.10.0+cu128` and executed GPU warm-start fine-tuning (`artifacts/focused-variant03-long-poly-ft-cuda.pt`).
+- Ran mixed-device CUDA+CPU warm-start sweep (`artifacts/parallel-cuda-mixed-sweep`) and promoted a stable champion checkpoint (`artifacts/model-core-champion-v01.pt`).
+- Confirmed new champion (`variant-01`) improvement over prior CUDA fine-tune (`focused-variant03-long-poly-ft-cuda`) with `runs_per_combo=2`:
+  - standard score: `0.37217 -> 0.38302`
+  - hardy score: `0.35110 -> 0.36079`
+  - hardy car-priority score: `0.33477 -> 0.34523`
+  - hardy car mismatch: `1.04158 -> 0.95847`
+  - hardy poly4 score: `0.38086 -> 0.38828`
+  - generated comparison viz: `artifacts/polyft-cuda-vs-v01-car-hardy.gif`
 - Added tracking files (`TODO.md`, `IMPLEMENTED.md`) and updated backlog/docs.
 - Added artifact interpretation reference (`docs/ARTIFACTS.md`) with concrete success thresholds, behavior expectations, and evaluation playbooks.
 
@@ -83,3 +92,5 @@
 - In the current checkpoint set, car-priority weighting changed absolute score scale but not rank order; reducing car mismatch likely requires training/objective changes, not only selection weighting.
 - Warm-starting a strong transfer checkpoint and optimizing explicit embodiment-mismatch terms gave materially better hardy transfer than broad scratch sweeps under the same resource budget.
 - Transfer-focused loss can improve cross-embodiment metrics even when the legacy fitness scalar gets worse; selection needs transfer-centric metrics, not vitality-only proxies.
+- On this hardware/software stack, `torch.compile` failed without Triton; disabling compile preserved strong performance gains from AMP/TF32 + objective tuning.
+- `uv run` can resync to CPU-only torch from lockfile; running via `.venv\\Scripts\\python` with explicit CUDA wheels kept training on GPU.

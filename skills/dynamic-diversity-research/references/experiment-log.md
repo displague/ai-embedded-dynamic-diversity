@@ -59,3 +59,14 @@ Use compact entries:
   - car mismatch improved from `1.48385` to `1.25366`
   - 4-emb hardy score (with `polymorph120`) also improved (`0.36389` vs `0.34795`)
 - next action: Run car-priority weighted hardy eval including `polymorph120` and tune transfer-fitness weight so proxy fitness aligns better with transfer improvements.
+- date: 2026-02-17
+- hypothesis: Moving the warm-start + transfer-objective pipeline to CUDA and running a mixed device sweep should reduce mismatch further while improving hardy transfer.
+- change: Installed CUDA PyTorch (`2.10.0+cu128`) in `.venv`, trained `artifacts/focused-variant03-long-poly-ft-cuda.pt`, then ran mixed-device warm-start sweep `artifacts/parallel-cuda-mixed-sweep` and evaluated top checkpoints with `runs_per_combo=2`.
+- result: `artifacts/parallel-cuda-mixed-sweep/variant-01.pt` became new best across standard/hardy/car-priority/poly4:
+  - standard: `0.38302` (prev `0.37217`)
+  - hardy: `0.36079` (prev `0.35110`)
+  - hardy car-priority: `0.34523` (prev `0.33477`)
+  - hardy car mismatch: `0.95847` (prev `1.04158`)
+  - hardy poly4: `0.38828` (prev `0.38086`)
+  - comparison viz: `artifacts/polyft-cuda-vs-v01-car-hardy.gif`
+- next action: Lock reproducible CUDA dependency workflow for `uv`, then run a longer RTX-only sweep using `variant-01` as warm-start with stronger storm/crosswind weighting.

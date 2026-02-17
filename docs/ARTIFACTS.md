@@ -6,22 +6,22 @@ This project's goal is not just to fit a single embodiment. The goal is transfer
 
 As of `2026-02-17`, using current artifacts:
 
-- Standard profile best (`mild,gust,force`): `overall_transfer_score ~= 0.3475` (`artifacts/focused-variant03-long-poly-ft.pt`)
-- Hardy profile best (`gust,force,storm,blackout,crosswind`): `overall_transfer_score ~= 0.3290` (`artifacts/focused-variant03-long-poly-ft.pt`)
+- Standard profile best (`mild,gust,force`): `overall_transfer_score ~= 0.3830` (`artifacts/model-core-champion-v01.pt`)
+- Hardy profile best (`gust,force,storm,blackout,crosswind`): `overall_transfer_score ~= 0.3608` (`artifacts/model-core-champion-v01.pt`)
 - Persistent weakness: `car` under `storm/crosswind` scenarios
 
 Practical near-term targets:
 
-- Standard transfer score: `>= 0.348`
-- Hardy transfer score: `>= 0.330`
-- Hardy `car` transfer score: `>= 0.270`
+- Standard transfer score: `>= 0.385`
+- Hardy transfer score: `>= 0.362`
+- Hardy `car` transfer score: `>= 0.320`
 - Embodiment gap (best - worst transfer): `<= 0.090`
 
 Stretch targets:
 
-- Standard transfer score: `>= 0.340`
-- Hardy transfer score: `>= 0.320`
-- Hardy `car` transfer score: `>= 0.290`
+- Standard transfer score: `>= 0.395`
+- Hardy transfer score: `>= 0.370`
+- Hardy `car` transfer score: `>= 0.335`
 
 ## Artifact Types and How to Read Them
 
