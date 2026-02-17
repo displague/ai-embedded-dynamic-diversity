@@ -1,0 +1,41 @@
+[project]
+name = "ai-embedded-dynamic-diversity"
+version = "0.1.0"
+description = "Research scaffold for adaptive anonymous-signal model cores for embedded robotics/biologic interfaces"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "torch>=2.3",
+  "numpy>=1.26",
+  "typer>=0.12",
+  "pydantic>=2.7",
+  "rich>=13.7",
+  "matplotlib>=3.8"
+]
+
+[project.scripts]
+add-train = "ai_embedded_dynamic_diversity.train.cli:app"
+add-train-parallel = "ai_embedded_dynamic_diversity.train.parallel_cli:app"
+add-gating-bench = "ai_embedded_dynamic_diversity.train.gating_bench_cli:app"
+add-cross-eval = "ai_embedded_dynamic_diversity.train.cross_eval_cli:app"
+add-cross-report = "ai_embedded_dynamic_diversity.train.cross_report_cli:app"
+add-sim = "ai_embedded_dynamic_diversity.sim.cli:app"
+add-export = "ai_embedded_dynamic_diversity.deploy.cli:app"
+add-viz = "ai_embedded_dynamic_diversity.sim.viz_cli:app"
+add-bench = "ai_embedded_dynamic_diversity.deploy.bench_cli:app"
+add-hil = "ai_embedded_dynamic_diversity.deploy.hil_cli:app"
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.uv]
+dev-dependencies = [
+  "pytest>=8.2"
+]

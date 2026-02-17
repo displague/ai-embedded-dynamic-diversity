@@ -1,0 +1,11 @@
+[console_scripts]
+add-bench = ai_embedded_dynamic_diversity.deploy.bench_cli:app
+add-cross-eval = ai_embedded_dynamic_diversity.train.cross_eval_cli:app
+add-cross-report = ai_embedded_dynamic_diversity.train.cross_report_cli:app
+add-export = ai_embedded_dynamic_diversity.deploy.cli:app
+add-gating-bench = ai_embedded_dynamic_diversity.train.gating_bench_cli:app
+add-hil = ai_embedded_dynamic_diversity.deploy.hil_cli:app
+add-sim = ai_embedded_dynamic_diversity.sim.cli:app
+add-train = ai_embedded_dynamic_diversity.train.cli:app
+add-train-parallel = ai_embedded_dynamic_diversity.train.parallel_cli:app
+add-viz = ai_embedded_dynamic_diversity.sim.viz_cli:app
