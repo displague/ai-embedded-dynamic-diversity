@@ -78,6 +78,16 @@ Interpretation:
 - `mean_vitality`: world life-field persistence proxy. If this collapses, adaptation may be unstable in the environment.
 - `recovery`: improvement after remap events. Low values indicate brittle remap response.
 
+## Upcoming Capability Metrics
+
+For next-stage emergent capabilities (mimicry, signaling, detection, evasion, conjoining), track additional metrics without hardcoding behavior labels into the policy:
+
+- `signal_reliability`: persistence and decodability of emitted anonymous signals across remaps/noise.
+- `signal_detection_auc`: detection quality for peer/environment/threat patterns from anonymous streams.
+- `evasion_success`: fraction of threat windows where mismatch/stress remains below threshold while vitality stays above floor.
+- `lineage_survival_score`: multi-generation survival under genetic+memory carryover and hardy disturbances.
+- `conjoining_gain`: improvement from cooperative/environment-tool coupling vs isolated-agent baseline.
+
 ## Typical Current Behavior vs Desired Behavior
 
 Typical current behavior:

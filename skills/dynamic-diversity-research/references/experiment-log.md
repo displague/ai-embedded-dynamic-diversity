@@ -98,3 +98,12 @@ Use compact entries:
   - hardy car mismatch (r6): `0.50892` vs `0.68657`
   - comparison viz: `artifacts/converge-v03-v07-vs-v02-car-crosswind.gif`
 - next action: Target `<0.50` hardy car mismatch and reduce car transfer variance under `storm/crosswind` without regressing standard transfer.
+- date: 2026-02-17
+- hypothesis: Adding explicit emergent-capability tracks (signaling, signal detection, evasion, conjoining) as measured objectives can accelerate robustness and adaptability beyond pure transfer-score optimization.
+- change: Added roadmap items and metric definitions for:
+  - emergent signaling and signal detection under anonymous channels
+  - threat evasion under disturbance/adversarial scenarios
+  - genetic+memory survival over multi-generation runs
+  - conjoining behavior (environment/tool use + bonding/formation proxies)
+- result: Work is staged in TODO/backlog with measurable outputs to integrate into future training/eval loops without forcing explicit imitation policies.
+- next action: Implement first eval harness slice (`signal_reliability`, `signal_detection_auc`, `evasion_success`) and run against champion-v03 baseline.

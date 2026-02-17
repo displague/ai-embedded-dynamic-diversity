@@ -22,6 +22,12 @@
 
 - [ ] Add policy-level task objectives on top of adaptation (navigation, stability, manipulation).
 - [ ] Add a learned (non-hardcoded) mimicry training track: environmental mimicry, peer mimicry, and threat mimicry from anonymous signals, optimized for transfer fitness rather than explicit imitation labels.
+- [ ] Add emergent signaling track (no explicit channel labels): produce robust internal/external signals under noisy/remapped embodiment conditions.
+- [ ] Add signal-detection track: distinguish peer/environment/threat signal patterns from anonymous streams with remap-robust decoding accuracy and low false positives.
+- [ ] Add evasion track: learn adaptive evasive behavior under hostile force/crosswind/threat-agent perturbations while preserving vitality and transfer.
+- [ ] Add mimicry+signaling+evasion evaluation harness (`cross-eval` extension + tests) with reproducible scenario seeds and success metrics.
+- [ ] Add genetic+memory survival curriculum: multi-generation selection with memory persistence objectives focused on hardy-line recovery and long-horizon stability.
+- [ ] Add conjoining research track: environment/tool-use coupling, genetic bonding proxies, and multi-agent organism-formation objectives under anonymous I/O.
 - [ ] Implement quantization-aware training and compare against dynamic quantization export.
 - [ ] Integrate ONNX Runtime benchmark path for Pi 5.
 - [ ] Evaluate memory gating ablations: `sigmoid` vs `symplectic` vs `symplectic+dmd+phase` using `add-gating-bench`.
