@@ -152,6 +152,22 @@
 - Generated new comparisons:
   - `artifacts/capability-v01-v01-vs-v03-car-crosswind-thrust.gif`
   - `artifacts/capability-v01-v00-vs-v03-polymorph-storm.gif`
+- Added noise curriculum support to training (`add-train`, `add-train-parallel`):
+  - `--noise-profile` (`none`, `dropout-quant-v1`, `dropout-quant-v2`)
+  - `--enable-noise-curriculum`
+  - `--noise-strength-start`
+  - `--noise-strength-end`
+  - training/eval fitness now supports deterministic noise injection with clean-observation transfer targets.
+- Added noise training tests in `tests/test_train_transfer.py`; suite now passing (`30 passed`).
+- Ran noisy-curriculum warm-start sweep `artifacts/parallel-cuda-noisecurr-v01` and promoted `variant-01` as new champion alias `artifacts/model-core-champion-v04.pt` with manifest `artifacts/model-core-champion-v04.metrics.json`:
+  - hardy poly4 clean r6 (`th=0.95`): `0.45131` vs prior `0.44531`
+  - hardy poly4 noisy-v2 r6 (`th=0.95`): `0.45133` vs prior `0.44526`
+  - hardy car mismatch r6: `0.3834` vs prior best `0.4225` and champion-v03 `0.5089`
+  - standard poly4 clean r3 (`th=0.95`): `0.49140` vs champion-v03 `0.46892`
+  - standard poly4 noisy-v2 r3 (`th=0.95`): `0.49141` vs champion-v03 `0.46892`
+  - generated comparison viz:
+    - `artifacts/noisecurr-v01-v04-vs-v03-car-crosswind-thrust.gif`
+    - `artifacts/noisecurr-v01-v04-vs-v03-polymorph-storm.gif`
 
 ## Lessons Learned
 
@@ -178,3 +194,4 @@
 - Per-embodiment profiling quickly reveals expected channel bottlenecks (e.g., `io_channels << control_dof`) and should be run before long sweeps to set realistic mapping-coverage expectations.
 - A fixed `>=85%` checkmate threshold is useful as a floor gate, but current models already exceed it on the selected hardy split; tighter thresholds or harder heldout regimes are needed for discrimination.
 - Harder noise regimes + stricter checkmate thresholds (`0.95`) create meaningful separation where `0.85` did not.
+- Injecting noisy observations while keeping transfer targets anchored to clean observations improves robustness without degrading clean transfer in this setup.

@@ -54,6 +54,63 @@ def _make_grad_scaler(enabled: bool):
         return torch.cuda.amp.GradScaler(enabled=True)
 
 
+def _resolve_noise_profile(profile: str) -> str:
+    normalized = profile.strip().lower()
+    if not normalized:
+        return "none"
+    allowed = {"none", "dropout-quant-v1", "dropout-quant-v2"}
+    if normalized not in allowed:
+        raise ValueError(f"Unknown noise profile '{profile}'. Allowed: {', '.join(sorted(allowed))}")
+    return normalized
+
+
+def _apply_observation_noise(
+    obs: torch.Tensor,
+    profile: str,
+    seed: int,
+    step: int,
+    strength: float = 1.0,
+) -> torch.Tensor:
+    s = max(0.0, float(strength))
+    if profile == "none" or s <= 1e-8:
+        return obs
+    if profile == "dropout-quant-v1":
+        gen = torch.Generator(device=obs.device)
+        gen.manual_seed(int(seed * 10007 + step * 131))
+
+        noisy = obs
+        keep = (torch.rand(obs.shape, generator=gen, device=obs.device) > min(0.95, 0.12 * s)).float()
+        noisy = noisy * keep
+        noisy = noisy + (0.045 * s) * torch.randn(obs.shape, generator=gen, device=obs.device)
+
+        min_v = torch.min(noisy, dim=1, keepdim=True).values
+        max_v = torch.max(noisy, dim=1, keepdim=True).values
+        span = (max_v - min_v).clamp_min(1e-6)
+        normalized = (noisy - min_v) / span
+        quantized = torch.round(normalized * 255.0) / 255.0
+        return quantized * span + min_v
+    if profile == "dropout-quant-v2":
+        gen = torch.Generator(device=obs.device)
+        gen.manual_seed(int(seed * 20011 + step * 313))
+
+        noisy = obs
+        keep = (torch.rand(obs.shape, generator=gen, device=obs.device) > min(0.98, 0.28 * s)).float()
+        noisy = noisy * keep
+        if step % 7 == 0:
+            brownout = (torch.rand(obs.shape[0], obs.shape[1], generator=gen, device=obs.device) > min(0.95, 0.35 * s)).float()
+            noisy = noisy * brownout
+        noisy = noisy * (1.0 + (0.08 * s) * torch.randn(obs.shape, generator=gen, device=obs.device))
+        noisy = noisy + (0.09 * s) * torch.randn(obs.shape, generator=gen, device=obs.device)
+
+        min_v = torch.min(noisy, dim=1, keepdim=True).values
+        max_v = torch.max(noisy, dim=1, keepdim=True).values
+        span = (max_v - min_v).clamp_min(1e-6)
+        normalized = (noisy - min_v) / span
+        quantized = torch.round(normalized * 31.0) / 31.0
+        return quantized * span + min_v
+    return obs
+
+
 @dataclass
 class TransferState:
     name: str
@@ -154,6 +211,9 @@ def run_gradient_epoch(
     transfer_states: dict[str, TransferState] | None = None,
     transfer_loss_weight: float = 0.0,
     transfer_samples_per_step: int = 0,
+    noise_profile: str = "none",
+    noise_strength: float = 0.0,
+    noise_seed: int = 0,
     use_amp: bool = False,
     scaler=None,
 ) -> tuple[float, torch.Tensor, float, float]:
@@ -170,7 +230,14 @@ def run_gradient_epoch(
     for step_index in range(tcfg.unroll_steps):
         t0 = time.perf_counter()
         with torch.autocast(device_type=dev.type, dtype=amp_dtype, enabled=amp_enabled):
-            obs = world.encode_observation(state, signal_dim=mcfg.signal_dim)
+            clean_obs = world.encode_observation(state, signal_dim=mcfg.signal_dim)
+            obs = _apply_observation_noise(
+                clean_obs,
+                profile=noise_profile,
+                seed=noise_seed,
+                step=step_index,
+                strength=noise_strength,
+            )
 
             remap_code = torch.zeros(tcfg.batch_size, mcfg.max_remap_groups, device=dev)
             if random.random() < remap_probability:
@@ -180,7 +247,13 @@ def run_gradient_epoch(
             out = model(obs, memory, remap_code)
             memory = out["memory"].detach()
 
-            target = torch.cat([obs[:, : mcfg.io_channels // 2], out["readiness"][:, : mcfg.io_channels - (mcfg.io_channels // 2)]], dim=1)
+            target = torch.cat(
+                [
+                    clean_obs[:, : mcfg.io_channels // 2],
+                    out["readiness"][:, : mcfg.io_channels - (mcfg.io_channels // 2)],
+                ],
+                dim=1,
+            )
             base_loss, _ = loss_fn(
                 out,
                 target,
@@ -193,7 +266,7 @@ def run_gradient_epoch(
             if transfer_states and transfer_loss_weight > 0.0:
                 transfer_loss_tensor, transfer_mismatch, _ = _transfer_mismatch_loss(
                     out_io=out["io"],
-                    obs=obs,
+                    obs=clean_obs,
                     transfer_states=transfer_states,
                     mcfg=mcfg,
                     dev=dev,
@@ -239,6 +312,9 @@ def evaluate_fitness(
     transfer_states: dict[str, TransferState] | None = None,
     transfer_fitness_weight: float = 0.0,
     transfer_samples_per_step: int = 0,
+    noise_profile: str = "none",
+    noise_strength: float = 0.0,
+    noise_seed: int = 0,
 ) -> float:
     model.eval()
     state = world.init(batch)
@@ -247,7 +323,14 @@ def evaluate_fitness(
     remap_events = 0.0
     transfer_mismatch_total = 0.0
     for step_index in range(steps):
-        obs = world.encode_observation(state, signal_dim=mcfg.signal_dim)
+        clean_obs = world.encode_observation(state, signal_dim=mcfg.signal_dim)
+        obs = _apply_observation_noise(
+            clean_obs,
+            profile=noise_profile,
+            seed=noise_seed,
+            step=step_index,
+            strength=noise_strength,
+        )
         remap = torch.zeros(batch, mcfg.max_remap_groups, device=dev)
         if random.random() < 0.3:
             remap[:, random.randrange(mcfg.max_remap_groups)] = 1.0
@@ -257,7 +340,7 @@ def evaluate_fitness(
         if transfer_states and transfer_fitness_weight > 0.0:
             _, transfer_mismatch, _ = _transfer_mismatch_loss(
                 out_io=out["io"],
-                obs=obs,
+                obs=clean_obs,
                 transfer_states=transfer_states,
                 mcfg=mcfg,
                 dev=dev,
@@ -324,6 +407,10 @@ def run(
     transfer_loss_weight: float = 0.35,
     transfer_samples_per_step: int = 2,
     transfer_fitness_weight: float = 0.08,
+    noise_profile: str = "none",
+    enable_noise_curriculum: bool = False,
+    noise_strength_start: float = 0.2,
+    noise_strength_end: float = 1.0,
     use_amp: bool = True,
     allow_tf32: bool = True,
     compile_model: bool = False,
@@ -342,6 +429,12 @@ def run(
     mcfg.enable_phase_gating = enable_phase_gating
     wcfg = WorldConfig()
     tcfg = TrainConfig(epochs=epochs, batch_size=batch_size, unroll_steps=unroll_steps, lr=lr, device=device)
+    try:
+        noise_profile_resolved = _resolve_noise_profile(noise_profile)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    if noise_strength_start < 0.0 or noise_strength_end < 0.0:
+        raise typer.BadParameter("noise_strength_start and noise_strength_end must be >= 0.0")
 
     dev = choose_device(tcfg.device, strict=strict_device)
     if dev.type == "cuda":
@@ -390,6 +483,10 @@ def run(
         "transfer_loss_weight": transfer_loss_weight,
         "transfer_samples_per_step": transfer_samples_per_step,
         "transfer_fitness_weight": transfer_fitness_weight,
+        "noise_profile": noise_profile_resolved,
+        "enable_noise_curriculum": enable_noise_curriculum,
+        "noise_strength_start": noise_strength_start,
+        "noise_strength_end": noise_strength_end,
         "use_amp": amp_enabled,
         "allow_tf32": allow_tf32 and dev.type == "cuda",
         "compile_model": compile_model,
@@ -420,6 +517,12 @@ def run(
             else:
                 remap_probability = tcfg.remap_probability
                 env_volatility = 0.0
+            if noise_profile_resolved == "none":
+                noise_strength = 0.0
+            elif enable_noise_curriculum:
+                noise_strength = _lin_schedule(noise_strength_start, noise_strength_end, epoch)
+            else:
+                noise_strength = noise_strength_end
             mean_loss, memory_snapshot, mean_step_ms, mean_transfer_mismatch = run_gradient_epoch(
                 model,
                 world,
@@ -434,6 +537,9 @@ def run(
                 transfer_states=transfer_states,
                 transfer_loss_weight=transfer_loss_weight,
                 transfer_samples_per_step=transfer_samples_per_step,
+                noise_profile=noise_profile_resolved,
+                noise_strength=noise_strength,
+                noise_seed=seed + epoch * 1009,
                 use_amp=amp_enabled,
                 scaler=scaler if amp_enabled else None,
             )
@@ -451,6 +557,9 @@ def run(
                 transfer_states=transfer_states,
                 transfer_fitness_weight=transfer_fitness_weight,
                 transfer_samples_per_step=transfer_samples_per_step,
+                noise_profile=noise_profile_resolved,
+                noise_strength=noise_strength,
+                noise_seed=seed + epoch * 3001,
             )
             metrics_records.append(
                 {
@@ -461,6 +570,7 @@ def run(
                     "mean_transfer_mismatch": mean_transfer_mismatch,
                     "remap_probability": remap_probability,
                     "env_volatility": env_volatility,
+                    "noise_strength": noise_strength,
                 }
             )
             print(
@@ -474,6 +584,8 @@ def run(
                     "profile": profile,
                     "remap_probability": remap_probability,
                     "env_volatility": env_volatility,
+                    "noise_profile": noise_profile_resolved,
+                    "noise_strength": noise_strength,
                 }
             )
         model_for_save = model._orig_mod if hasattr(model, "_orig_mod") else model
@@ -519,6 +631,12 @@ def run(
         else:
             remap_probability = tcfg.remap_probability
             env_volatility = 0.0
+        if noise_profile_resolved == "none":
+            noise_strength = 0.0
+        elif enable_noise_curriculum:
+            noise_strength = _lin_schedule(noise_strength_start, noise_strength_end, generation)
+        else:
+            noise_strength = noise_strength_end
         mean_step_acc = 0.0
         mean_transfer_mismatch_acc = 0.0
         for idx, model in enumerate(pop):
@@ -536,6 +654,9 @@ def run(
                 transfer_states=transfer_states_by_agent[idx],
                 transfer_loss_weight=transfer_loss_weight,
                 transfer_samples_per_step=transfer_samples_per_step,
+                noise_profile=noise_profile_resolved,
+                noise_strength=noise_strength,
+                noise_seed=seed + generation * 1009 + idx * 37,
                 use_amp=amp_enabled,
                 scaler=scalers[idx],
             )
@@ -549,6 +670,7 @@ def run(
                     "mean_transfer_mismatch": mean_transfer_mismatch,
                     "remap_probability": remap_probability,
                     "env_volatility": env_volatility,
+                    "noise_strength": noise_strength,
                 }
             )
 
@@ -565,6 +687,9 @@ def run(
                 transfer_states=transfer_states_by_agent[idx],
                 transfer_fitness_weight=transfer_fitness_weight,
                 transfer_samples_per_step=transfer_samples_per_step,
+                noise_profile=noise_profile_resolved,
+                noise_strength=noise_strength,
+                noise_seed=seed + generation * 3001 + idx * 53,
             )
             for idx, model in enumerate(pop)
         ]
@@ -582,6 +707,7 @@ def run(
                 "mean_transfer_mismatch": mean_transfer_mismatch_acc / max(1, len(pop)),
                 "remap_probability": remap_probability,
                 "env_volatility": env_volatility,
+                "noise_strength": noise_strength,
             }
         )
 
@@ -611,6 +737,9 @@ def run(
             transfer_states=transfer_states_by_agent[idx],
             transfer_fitness_weight=transfer_fitness_weight,
             transfer_samples_per_step=transfer_samples_per_step,
+            noise_profile=noise_profile_resolved,
+            noise_strength=noise_strength_end if noise_profile_resolved != "none" else 0.0,
+            noise_seed=seed + 99991 + idx * 97,
         )
         for idx, model in enumerate(pop)
     ]

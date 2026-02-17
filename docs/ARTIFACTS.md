@@ -6,9 +6,9 @@ This project's goal is not just to fit a single embodiment. The goal is transfer
 
 As of `2026-02-17`, using current artifacts:
 
-- Standard profile best (`mild,gust,force`): `overall_transfer_score ~= 0.4513` (`artifacts/model-core-champion-v03.pt`)
-- Hardy profile best (`gust,force,storm,blackout,crosswind`): `overall_transfer_score ~= 0.4197` (`artifacts/model-core-champion-v03.pt`, `runs_per_combo=6`)
-- Hardy `car` mismatch improved from `~0.687` to `~0.509` vs prior champion-v02, but `car` under `storm/crosswind` remains the hardest transfer case.
+- Standard profile best (`mild,gust,force`): `overall_transfer_score ~= 0.4914` (`artifacts/model-core-champion-v04.pt`, `runs_per_combo=3`, checkmate `0.95`)
+- Hardy profile best (`gust,force,storm,blackout,crosswind`): `overall_transfer_score ~= 0.4513` (`artifacts/model-core-champion-v04.pt`, `runs_per_combo=6`, checkmate `0.95`)
+- Hardy `car` mismatch improved from `~0.509` (v03) to `~0.383` (v04) under both clean and noisy-v2 checkmate evaluations.
 
 Practical near-term targets:
 
@@ -64,7 +64,8 @@ Stretch targets:
   - hardy scenario profile resolution,
   - embodiment weighting behavior,
   - capability-profile rollout metrics on `polymorph120`,
-  - binary AUC behavior for signal detection proxies.
+  - binary AUC behavior for signal detection proxies,
+  - noise profile parsing and observation-noise transforms.
 
 ## Metric Semantics
 

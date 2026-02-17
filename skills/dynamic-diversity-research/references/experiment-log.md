@@ -148,3 +148,14 @@ Use compact entries:
   - only top-2 passed `checkmate_pass_all=True`; prior champions failed full-checkmate at threshold `0.95`
   - heldout check (`drone,polymorph120`) remained pass for all candidates, so weakest link remains in-train embodiment floor (`car`).
 - next action: integrate noisy-signal curriculum into training (not only eval) and re-test whether champion-v03 line closes the `car` robustness gap under noisy checkmate.
+- date: 2026-02-17
+- hypothesis: Training with scheduled observation corruption (dropout + quantization noise) should improve both clean and noisy hardy checkmate performance, not just noisy eval metrics.
+- change: Added training noise controls in `add-train`/`add-train-parallel` (`--noise-profile`, `--enable-noise-curriculum`, `--noise-strength-start`, `--noise-strength-end`) and ran warm-start sweep `artifacts/parallel-cuda-noisecurr-v01` from `artifacts/parallel-cuda-capability-v01/variant-01.pt`.
+- result:
+  - new best checkpoint: `artifacts/parallel-cuda-noisecurr-v01/variant-01.pt`
+  - hardy poly4 r6 clean (`th=0.95`): `0.45131` (prev best `0.44531`)
+  - hardy poly4 r6 noisy-v2 (`th=0.95`): `0.45133` (prev best `0.44526`)
+  - hardy car mismatch (r6): `~0.3834` (prev best `~0.4225`, champion-v03 `~0.5089`)
+  - promoted alias: `artifacts/model-core-champion-v04.pt`
+  - visual comparisons: `artifacts/noisecurr-v01-v04-vs-v03-car-crosswind-thrust.gif`, `artifacts/noisecurr-v01-v04-vs-v03-polymorph-storm.gif`
+- next action: run capability-weighted high-repeat validation for champion-v04 and decide whether to update blended-capability champion alias; then tune noisy curriculum schedule for lower variance.

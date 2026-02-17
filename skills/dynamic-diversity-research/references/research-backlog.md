@@ -35,7 +35,7 @@
 
 ### Phase 3: Portability and Robustness (Mid -> Long-term)
 1. Hardware-agnostic I/O abstraction for single-checkpoint runtime across Pi5/phone/embedded Linux.
-2. Noisy signal resilience training (sensor dropout + quantization noise).
+2. Noisy signal resilience training (sensor dropout + quantization noise). Status: initial implementation complete (noise curriculum in training + noisy checkmate eval).
 3. Embodiment interpolation benchmarks (morphology changes during deployment).
 4. Energy-aware routing constraints in readiness and gating objectives.
 

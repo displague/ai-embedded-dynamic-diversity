@@ -13,7 +13,7 @@
 - [x] Add embodiment-aware transfer training objective and aggressive parallel launcher options (AMP/TF32/device pool/warm-start).
 - [x] Reduce hardy-line `car` mismatch below `0.90` (now `~0.7131` with `artifacts/parallel-cuda-long-v02/variant-01.pt`).
 - [x] Reduce hardy-line `car` mismatch further below `< 0.70` with improved stability (`~0.509` in `artifacts/cross-eval-cuda-converge-v03-top4-hardy-r6.json`).
-- [ ] Push hardy-line `car` mismatch toward `< 0.50` while improving car transfer variance under `storm/crosswind`.
+- [x] Push hardy-line `car` mismatch toward `< 0.50` while improving car transfer variance under `storm/crosswind` (now `~0.3833` with `artifacts/model-core-champion-v04.pt` in noisy-v2 hardy poly4 r6).
 - [x] Run car-priority hardy ranking using `--embodiment-weights` and compare top-1 stability vs unweighted champion.
 - [x] Run focused warm-start fine-tune with embodiment-transfer loss and verify hardy transfer/mismatch impact.
 - [ ] Measure Raspberry Pi 5 latency and memory for `model-core-pi5-int8.ts` with `add-bench` on-device.
@@ -22,7 +22,7 @@
 - [x] Add transfer-matrix harness: train on subset `{hexapod,car}` evaluate zero-shot on `{drone,polymorph120}` with pairwise matrix export.
 - [ ] Standardize latency benchmark matrix (P50/P95) across CPU/CUDA now and Pi5/Jetson/mobile accelerators as hardware is available.
 - [x] Add noisy-signal robustness eval profiles in `cross-eval` (`dropout-quant-v1`, `dropout-quant-v2`) and compare checkmate/transfer impact.
-- [ ] Add noisy-signal resilience curriculum in training (sensor dropout + quantization noise) and evaluate impact on hardy transfer.
+- [x] Add noisy-signal resilience curriculum in training (sensor dropout + quantization noise) and evaluate impact on hardy transfer.
 
 ## Medium Priority
 
@@ -53,6 +53,7 @@
 - [x] Continue car-focused objective weighting/sampling in training (storm/crosswind emphasis) to push hardy car mismatch below `0.9`.
 - [ ] Make CUDA PyTorch install reproducible in `uv` lock workflow (strict-device guard is in place; remaining work is lock/index standardization so plain `uv run` keeps CUDA torch).
 - [ ] Promote next champion after high-repeat validation (`runs_per_combo >= 6`) on both transfer-only and capability-weighted hardy profiles.
+- [ ] Run capability-weighted (`bio-tech-v1`) high-repeat validation for `model-core-champion-v04` and decide blended-capability champion promotion.
 
 ## Hardware-In-The-Loop
 

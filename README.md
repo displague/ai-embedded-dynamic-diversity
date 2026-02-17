@@ -102,10 +102,11 @@ Focused warm-start fine-tune from current champion:
 ~/.local/bin/uv run add-train --profile pi5 --epochs 36 --batch-size 24 --unroll-steps 18 --device cuda --gating-mode symplectic --topk-gating 4 --enable-dmd-gating --enable-phase-gating --enable-curriculum --enable-genetic-memory --embodiments "hexapod,car,drone,polymorph120" --enable-embodiment-transfer-loss --transfer-loss-weight 0.45 --transfer-fitness-weight 0.12 --transfer-samples-per-step 3 --init-weights artifacts/focused-variant03-long.pt --save-path artifacts/focused-variant03-long-poly-ft.pt
 ```
 
-Latest champion checkpoint: `artifacts/model-core-champion-v03.pt` (from `artifacts/parallel-cuda-converge-v03/variant-07.pt`).
-Latest capability sweep candidates (pending high-repeat promotion):
-- transfer-only hardy poly4 best: `artifacts/parallel-cuda-capability-v01/variant-01.pt`
-- transfer+capability hardy poly4 best: `artifacts/parallel-cuda-capability-v01/variant-00.pt`
+Latest champion checkpoint: `artifacts/model-core-champion-v04.pt` (from `artifacts/parallel-cuda-noisecurr-v01/variant-01.pt`).
+Latest noisy-curriculum sweep results:
+- transfer-only hardy poly4 (clean, r6): `artifacts/parallel-cuda-noisecurr-v01/variant-01.pt` at `~0.45131`
+- transfer-only hardy poly4 (noisy-v2, r6): `artifacts/parallel-cuda-noisecurr-v01/variant-01.pt` at `~0.45133`
+- hardy car mismatch (noisy-v2, r6): `~0.38334` (vs champion-v03 `~0.50883`)
 
 Curriculum + latent genetic memory:
 
@@ -125,6 +126,13 @@ Embodiment-aware transfer optimization (optional):
 - `--transfer-fitness-weight 0.12`
 - `--transfer-samples-per-step 3`
 - `--init-weights artifacts/focused-variant03-long.pt` for warm-start fine-tuning
+
+Noisy-signal curriculum training (optional):
+
+- `--noise-profile dropout-quant-v1` or `dropout-quant-v2`
+- `--enable-noise-curriculum`
+- `--noise-strength-start 0.25`
+- `--noise-strength-end 1.0`
 
 ## Run simulator rollout
 

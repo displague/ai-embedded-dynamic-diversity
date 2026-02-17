@@ -6,8 +6,10 @@ import pytest
 
 from ai_embedded_dynamic_diversity.config import model_config_for_profile
 from ai_embedded_dynamic_diversity.train.cli import (
+    _apply_observation_noise,
     _build_transfer_states,
     _resolve_embodiments,
+    _resolve_noise_profile,
     _transfer_mismatch_loss,
     choose_device,
 )
@@ -56,3 +58,19 @@ def test_choose_device_cuda_strict_raises_when_unavailable(monkeypatch: pytest.M
 def test_choose_device_cuda_non_strict_falls_back_to_cpu(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
     assert choose_device("cuda", strict=False).type == "cpu"
+
+
+def test_resolve_noise_profile_accepts_and_rejects() -> None:
+    assert _resolve_noise_profile("none") == "none"
+    assert _resolve_noise_profile("dropout-quant-v1") == "dropout-quant-v1"
+    assert _resolve_noise_profile("dropout-quant-v2") == "dropout-quant-v2"
+    with pytest.raises(ValueError):
+        _resolve_noise_profile("bad-noise")
+
+
+def test_apply_observation_noise_strength_controls_effect() -> None:
+    obs = torch.linspace(-1.0, 1.0, 24).view(2, 12)
+    out_none = _apply_observation_noise(obs, profile="dropout-quant-v1", seed=9, step=3, strength=0.0)
+    out_noise = _apply_observation_noise(obs, profile="dropout-quant-v1", seed=9, step=3, strength=1.0)
+    assert torch.allclose(out_none, obs)
+    assert not torch.allclose(out_noise, obs)

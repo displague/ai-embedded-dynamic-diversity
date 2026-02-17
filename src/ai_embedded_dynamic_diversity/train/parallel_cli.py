@@ -34,6 +34,11 @@ def run(
     transfer_loss_weight: float = 0.35,
     transfer_fitness_weight: float = 0.08,
     transfer_samples_per_step: int = 3,
+    noise_profile: str = "none",
+    noise_profile_cycle: str = "",
+    enable_noise_curriculum: bool = False,
+    noise_strength_start: float = 0.2,
+    noise_strength_end: float = 1.0,
     use_amp: bool = True,
     allow_tf32: bool = True,
     compile_model: bool = False,
@@ -52,6 +57,7 @@ def run(
     topk_values = [0, 4]
     dmd_flags = [False, True]
     phase_flags = [False, True]
+    noise_profiles = [x.strip().lower() for x in noise_profile_cycle.replace(";", ",").split(",") if x.strip()]
 
     jobs: list[tuple[int, list[str], str, str]] = []
     for i in range(variants):
@@ -66,6 +72,7 @@ def run(
         assigned_device = device_list[i % len(device_list)] if device_list else device
         variant_transfer_loss_weight = transfer_loss_weight * (0.85 + 0.1 * (i % 3))
         variant_transfer_fitness_weight = transfer_fitness_weight * (0.9 + 0.1 * ((i + 1) % 3))
+        variant_noise_profile = noise_profiles[i % len(noise_profiles)] if noise_profiles else noise_profile
 
         cmd = [
             sys.executable,
@@ -93,6 +100,8 @@ def run(
             str(variant_transfer_fitness_weight),
             "--transfer-samples-per-step",
             str(transfer_samples_per_step),
+            "--noise-profile",
+            variant_noise_profile,
             "--seed",
             str(13 + i),
             "--save-path",
@@ -118,6 +127,15 @@ def run(
             cmd += ["--enable-curriculum"]
         if enable_genetic_memory:
             cmd += ["--enable-genetic-memory"]
+        if variant_noise_profile != "none":
+            cmd += [
+                "--noise-strength-start",
+                str(noise_strength_start),
+                "--noise-strength-end",
+                str(noise_strength_end),
+            ]
+            if enable_noise_curriculum:
+                cmd += ["--enable-noise-curriculum"]
         jobs.append((i, cmd, save_path, assigned_device))
 
     results = []
