@@ -20,8 +20,8 @@
 
 ### Phase 1: Foundation Solidification (Now -> Near-term)
 1. Embodiment profiling CLI (`add-sim profiler`) for bottleneck I/O channels, readiness/gating saturation, memory pressure, and P50/P95 step latency. Status: implemented.
-2. Checkmate transfer suite: establish fixed acceptance threshold (`>=85%` normalized effectiveness) across `hexapod/car/drone/polymorph120` with high-repeat confidence intervals.
-3. Transfer matrix harness: train on subset embodiments and evaluate zero-shot transfer on held-out embodiments with matrix reports.
+2. Checkmate transfer suite: establish fixed acceptance threshold (`>=85%` normalized effectiveness) across `hexapod/car/drone/polymorph120` with high-repeat confidence intervals. Status: implemented (needs tighter thresholds/harder heldout regimes for discrimination).
+3. Transfer matrix harness: train on subset embodiments and evaluate zero-shot transfer on held-out embodiments with matrix reports. Status: implemented.
 4. Latency profile matrix: standardize P50/P95 runs across CPU/CUDA now; add Pi5/Jetson/mobile accelerators when hardware is available.
 5. CUDA reproducibility in `uv` lock/index workflow so `uv run` remains CUDA-backed.
 

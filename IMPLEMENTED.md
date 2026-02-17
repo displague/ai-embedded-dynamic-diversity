@@ -103,6 +103,23 @@
   - readiness/channel dynamism and memory-weight entropy
   - low/high usage control-channel indices for embodiment bottleneck inspection
 - Added profiler tests in `tests/test_sim_profiler.py`.
+- Extended `add-cross-eval` with train/heldout transfer harness features:
+  - `--train-embodiments`
+  - `--checkmate-threshold`
+  - per-checkpoint `transfer_ratio_matrix` (source/train embodiments to all eval embodiments)
+  - checkmate gate outputs (`checkmate_pass_all`, `checkmate_pass_heldout`, min/mean/heldout effectiveness)
+- Extended `add-cross-report` with:
+  - Checkmate gate table in Markdown
+  - train/heldout split summary
+  - best-checkpoint transfer ratio matrix block.
+- Added cross-eval tests for:
+  - subset/train embodiment resolution
+  - transfer-ratio matrix semantics
+  - checkmate gate computations.
+- Ran explicit zero-shot transfer matrix/checkmate artifacts (`train={hexapod,car}`, `eval={hexapod,car,drone,polymorph120}`):
+  - transfer-only: `artifacts/cross-eval-checkmate-transfer-hardy-poly4-r3.json`
+  - transfer+capability: `artifacts/cross-eval-checkmate-capability-hardy-poly4-r3.json`
+  - reports: corresponding `.md` and `.csv` files.
 - Added capability-proxy harness in `add-cross-eval` (`--capability-profile bio-tech-v1`) with environment-tied biological/technological signal proxies and metrics:
   - `signal_reliability` (with raw correlation tracked as `signal_corr_raw`)
   - `signal_detection_auc` (with raw tracked as `signal_detection_auc_raw`)
@@ -152,3 +169,4 @@
 - Capability metrics in anonymous-channel settings must be polarity-invariant (raw negative correlation or AUC<0.5 can still indicate decodable signal if interpreted with sign inversion).
 - Coevolution fitness rank still does not reliably predict cross-embodiment transfer/capability rank; promotion should stay tied to cross-eval artifacts, not training fitness alone.
 - Per-embodiment profiling quickly reveals expected channel bottlenecks (e.g., `io_channels << control_dof`) and should be run before long sweeps to set realistic mapping-coverage expectations.
+- A fixed `>=85%` checkmate threshold is useful as a floor gate, but current models already exceed it on the selected hardy split; tighter thresholds or harder heldout regimes are needed for discrimination.

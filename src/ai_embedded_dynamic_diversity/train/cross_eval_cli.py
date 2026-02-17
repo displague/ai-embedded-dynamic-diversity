@@ -180,6 +180,44 @@ def _parse_embodiment_weights(weights_csv: str, embodiments: list[str]) -> dict[
     return weights
 
 
+def _resolve_subset_embodiments(subset_csv: str, allowed_embodiments: list[str]) -> list[str]:
+    if not subset_csv.strip():
+        return []
+    allowed = set(allowed_embodiments)
+    names: list[str] = []
+    for token in subset_csv.replace(";", ",").split(","):
+        name = token.strip().lower()
+        if not name:
+            continue
+        if name not in allowed:
+            allowed_str = ", ".join(sorted(allowed))
+            raise ValueError(f"Unknown embodiment '{name}' in subset list. Allowed: {allowed_str}")
+        if name not in names:
+            names.append(name)
+    return names
+
+
+def _resolve_train_embodiments(
+    train_embodiments_csv: str,
+    all_embodiments: list[str],
+    checkpoint_flags: dict,
+) -> list[str]:
+    if train_embodiments_csv.strip():
+        return _resolve_subset_embodiments(train_embodiments_csv, all_embodiments)
+
+    flagged = checkpoint_flags.get("embodiments", [])
+    if isinstance(flagged, list):
+        inferred = [str(x).strip().lower() for x in flagged if str(x).strip()]
+        inferred = [x for x in inferred if x in all_embodiments]
+        dedup: list[str] = []
+        for name in inferred:
+            if name not in dedup:
+                dedup.append(name)
+        if dedup:
+            return dedup
+    return list(all_embodiments)
+
+
 def _weighted_transfer_score(
     by_embodiment: dict[str, dict[str, float]],
     embodiments: list[str],
@@ -194,6 +232,63 @@ def _weighted_transfer_score(
         weight = float(embodiment_weights.get(emb, 1.0))
         numer += score * weight
     return numer / denom
+
+
+def _transfer_ratio_matrix(
+    by_embodiment: dict[str, dict[str, float]],
+    source_embodiments: list[str],
+    target_embodiments: list[str],
+) -> dict[str, dict[str, float]]:
+    matrix: dict[str, dict[str, float]] = {}
+    for src in source_embodiments:
+        src_score = float(by_embodiment.get(src, {}).get("transfer_score", 0.0))
+        row: dict[str, float] = {}
+        for dst in target_embodiments:
+            dst_score = float(by_embodiment.get(dst, {}).get("transfer_score", 0.0))
+            ratio = dst_score / src_score if src_score > 1e-8 else 0.0
+            row[dst] = float(ratio)
+        matrix[src] = row
+    return matrix
+
+
+def _checkmate_metrics(
+    by_embodiment: dict[str, dict[str, float]],
+    all_embodiments: list[str],
+    train_embodiments: list[str],
+    threshold: float,
+) -> dict[str, float | bool | dict]:
+    train_set = [emb for emb in train_embodiments if emb in all_embodiments]
+    if not train_set:
+        train_set = list(all_embodiments)
+    heldout_set = [emb for emb in all_embodiments if emb not in train_set]
+
+    train_mean = sum(float(by_embodiment.get(emb, {}).get("transfer_score", 0.0)) for emb in train_set) / max(1, len(train_set))
+    if train_mean <= 1e-8:
+        effectiveness = {emb: 0.0 for emb in all_embodiments}
+    else:
+        effectiveness = {
+            emb: float(by_embodiment.get(emb, {}).get("transfer_score", 0.0) / train_mean)
+            for emb in all_embodiments
+        }
+
+    heldout_effectiveness_values = [effectiveness[emb] for emb in heldout_set] if heldout_set else []
+    all_effectiveness_values = [effectiveness[emb] for emb in all_embodiments]
+
+    checkmate_pass_all = all(val >= threshold for val in all_effectiveness_values) if all_effectiveness_values else False
+    checkmate_pass_heldout = all(val >= threshold for val in heldout_effectiveness_values) if heldout_effectiveness_values else checkmate_pass_all
+
+    return {
+        "checkmate_threshold": threshold,
+        "checkmate_train_embodiments": train_set,
+        "checkmate_heldout_embodiments": heldout_set,
+        "checkmate_train_mean_transfer": float(train_mean),
+        "checkmate_min_effectiveness": float(min(all_effectiveness_values)) if all_effectiveness_values else 0.0,
+        "checkmate_mean_effectiveness": float(sum(all_effectiveness_values) / max(1, len(all_effectiveness_values))),
+        "checkmate_heldout_effectiveness": float(sum(heldout_effectiveness_values) / max(1, len(heldout_effectiveness_values))) if heldout_effectiveness_values else 0.0,
+        "checkmate_pass_all": bool(checkmate_pass_all),
+        "checkmate_pass_heldout": bool(checkmate_pass_heldout),
+        "checkmate_effectiveness_by_embodiment": effectiveness,
+    }
 
 
 def _resolve_capability_profile(profile: str) -> str:
@@ -517,6 +612,8 @@ def run(
     runs_per_combo: int = 2,
     steps: int = 90,
     remap_every: int = 15,
+    train_embodiments: str = "",
+    checkmate_threshold: float = 0.85,
     capability_profile: str = "none",
     capability_score_weight: float = 0.0,
     world_x: int = 20,
@@ -551,6 +648,12 @@ def run(
     except ValueError as exc:
         raise typer.BadParameter(str(exc)) from exc
     try:
+        train_subset_from_cli = _resolve_subset_embodiments(train_embodiments, embodiment_list)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    if checkmate_threshold <= 0.0:
+        raise typer.BadParameter("checkmate_threshold must be > 0.0")
+    try:
         capability_profile_resolved = _resolve_capability_profile(capability_profile)
     except ValueError as exc:
         raise typer.BadParameter(str(exc)) from exc
@@ -563,6 +666,12 @@ def run(
     ranked: list[dict] = []
     for ckpt_path in ckpts:
         model, cfg, raw_ckpt = _load_model(ckpt_path, profile, dev)
+        train_embodiments_resolved = (
+            list(train_subset_from_cli)
+            if train_subset_from_cli
+            else _resolve_train_embodiments("", embodiment_list, raw_ckpt.get("run_flags", {}))
+        )
+        heldout_embodiments = [emb for emb in embodiment_list if emb not in train_embodiments_resolved]
 
         run_rows: list[dict] = []
         for emb_idx, emb_name in enumerate(embodiment_list):
@@ -622,6 +731,17 @@ def run(
                 sum(float(row["capability_score"]) for row in run_rows) / max(1, len(run_rows))
             )
         ranking_score = base_transfer_weighted + capability_score_weight * overall_capability_score
+        transfer_ratio_matrix = _transfer_ratio_matrix(
+            by_embodiment=by_embodiment,
+            source_embodiments=train_embodiments_resolved,
+            target_embodiments=embodiment_list,
+        )
+        checkmate = _checkmate_metrics(
+            by_embodiment=by_embodiment,
+            all_embodiments=embodiment_list,
+            train_embodiments=train_embodiments_resolved,
+            threshold=checkmate_threshold,
+        )
 
         ranked.append(
             {
@@ -634,6 +754,10 @@ def run(
                 "overall_mean_vitality": _avg("mean_vitality"),
                 "overall_recovery": _avg("recovery"),
                 "overall_capability_score": overall_capability_score,
+                "train_embodiments": train_embodiments_resolved,
+                "heldout_embodiments": heldout_embodiments,
+                "transfer_ratio_matrix": transfer_ratio_matrix,
+                **checkmate,
                 "by_embodiment": by_embodiment,
                 "runs": run_rows,
             }
@@ -653,6 +777,8 @@ def run(
             "runs_per_combo": runs_per_combo,
             "steps": steps,
             "remap_every": remap_every,
+            "train_embodiments": train_subset_from_cli,
+            "checkmate_threshold": checkmate_threshold,
             "capability_profile": capability_profile_resolved,
             "capability_score_weight": capability_score_weight,
             "world": {"x": world_x, "y": world_y, "z": world_z, "resource_channels": resource_channels},

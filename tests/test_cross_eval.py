@@ -7,8 +7,12 @@ from ai_embedded_dynamic_diversity.models import ModelCore
 from ai_embedded_dynamic_diversity.train.cross_eval_cli import (
     ScenarioSpec,
     _binary_auc,
+    _checkmate_metrics,
     _parse_embodiment_weights,
+    _resolve_subset_embodiments,
+    _resolve_train_embodiments,
     _resolve_scenario_profile,
+    _transfer_ratio_matrix,
     _weighted_transfer_score,
     compute_recovery_score,
     rollout_metrics,
@@ -121,6 +125,50 @@ def test_binary_auc_orders_scores() -> None:
         labels=[0, 0, 1, 1],
     )
     assert 0.0 <= auc_mixed <= 1.0
+
+
+def test_resolve_subset_embodiments_validates_membership() -> None:
+    names = _resolve_subset_embodiments("hexapod,car", ["hexapod", "car", "drone"])
+    assert names == ["hexapod", "car"]
+
+    with pytest.raises(ValueError):
+        _resolve_subset_embodiments("crawler", ["hexapod", "car", "drone"])
+
+
+def test_resolve_train_embodiments_prefers_flags_when_cli_empty() -> None:
+    inferred = _resolve_train_embodiments(
+        train_embodiments_csv="",
+        all_embodiments=["hexapod", "car", "drone", "polymorph120"],
+        checkpoint_flags={"embodiments": ["hexapod", "car"]},
+    )
+    assert inferred == ["hexapod", "car"]
+
+
+def test_transfer_ratio_matrix_and_checkmate_metrics() -> None:
+    by_embodiment = {
+        "hexapod": {"transfer_score": 0.40},
+        "car": {"transfer_score": 0.44},
+        "drone": {"transfer_score": 0.36},
+        "polymorph120": {"transfer_score": 0.34},
+    }
+    matrix = _transfer_ratio_matrix(
+        by_embodiment=by_embodiment,
+        source_embodiments=["hexapod", "car"],
+        target_embodiments=["hexapod", "car", "drone", "polymorph120"],
+    )
+    assert matrix["hexapod"]["car"] == pytest.approx(1.1)
+    assert matrix["car"]["drone"] == pytest.approx(0.36 / 0.44)
+
+    checkmate = _checkmate_metrics(
+        by_embodiment=by_embodiment,
+        all_embodiments=["hexapod", "car", "drone", "polymorph120"],
+        train_embodiments=["hexapod", "car"],
+        threshold=0.85,
+    )
+    assert checkmate["checkmate_train_embodiments"] == ["hexapod", "car"]
+    assert checkmate["checkmate_heldout_embodiments"] == ["drone", "polymorph120"]
+    assert checkmate["checkmate_pass_all"] is False
+    assert checkmate["checkmate_pass_heldout"] is False
 
 
 def test_rollout_metrics_capability_profile_returns_proxy_metrics() -> None:

@@ -18,8 +18,8 @@
 - [x] Run focused warm-start fine-tune with embodiment-transfer loss and verify hardy transfer/mismatch impact.
 - [ ] Measure Raspberry Pi 5 latency and memory for `model-core-pi5-int8.ts` with `add-bench` on-device.
 - [x] Add embodiment profiling CLI (`add-sim profiler`) for bottleneck I/O channels, readiness/gating stats, and runtime memory/latency metrics.
-- [ ] Add cross-embodiment "checkmate" suite: verify `>=85%` transfer effectiveness across 4 embodiments with high-repeat confidence intervals.
-- [ ] Add transfer-matrix harness: train on subset `{hexapod,car}` evaluate zero-shot on `{drone,polymorph120}` with pairwise matrix export.
+- [x] Add cross-embodiment "checkmate" suite: verify `>=85%` transfer effectiveness across 4 embodiments with high-repeat confidence intervals.
+- [x] Add transfer-matrix harness: train on subset `{hexapod,car}` evaluate zero-shot on `{drone,polymorph120}` with pairwise matrix export.
 - [ ] Standardize latency benchmark matrix (P50/P95) across CPU/CUDA now and Pi5/Jetson/mobile accelerators as hardware is available.
 - [ ] Add noisy-signal resilience curriculum (sensor dropout + quantization noise) and evaluate impact on hardy transfer.
 

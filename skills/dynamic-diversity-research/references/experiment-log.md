@@ -131,3 +131,11 @@ Use compact entries:
   - memory entropy near-uniform (`~0.99999`)
   - mapping coverage `~0.133` (expected from `io_channels=16` over `DOF=120`)
 - next action: Use profiler outputs to drive online-remap and noisy-signal training priorities; add transfer-matrix and checkmate suite as next validation gates.
+- date: 2026-02-17
+- hypothesis: A checkmate gate plus explicit transfer-ratio matrix (`train={hexapod,car}`, heldout `{drone,polymorph120}`) will provide a hard acceptance test and clearer zero-shot transfer diagnostics.
+- change: Extended `add-cross-eval` with `--train-embodiments` and `--checkmate-threshold`, added per-checkpoint `transfer_ratio_matrix` and checkmate pass/effectiveness outputs; updated `add-cross-report` to render checkmate tables and matrix for best checkpoint; added unit tests.
+- result:
+  - transfer-only eval: `artifacts/cross-eval-checkmate-transfer-hardy-poly4-r3.json` (best: `variant-01`)
+  - capability-weighted eval: `artifacts/cross-eval-checkmate-capability-hardy-poly4-r3.json` (best: `variant-00`)
+  - all compared checkpoints passed `checkmate_threshold=0.85` on this split (`min effectiveness ~0.94+`), indicating the gate is currently permissive for top candidates.
+- next action: raise checkmate threshold and/or harden heldout conditions (e.g., extreme scenarios, added noise/dropout) to improve ranking discrimination before champion promotion.
