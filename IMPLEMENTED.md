@@ -81,6 +81,15 @@
   - hardy overall mismatch: `0.67971 -> 0.54666`
   - hardy car mismatch: `0.91944 -> 0.71312`
   - generated comparison viz: `artifacts/cuda-long-v02-v01-car-crosswind.gif`
+- Ran convergence-focused CUDA sweep (`artifacts/parallel-cuda-converge-v03`, 10 variants, 56 epochs, warm-start from `model-core-champion-v02`) and promoted `variant-07` as new champion (`artifacts/model-core-champion-v03.pt`):
+  - hardy r6 score: `0.39073 -> 0.41967` (vs `model-core-champion-v02`)
+  - hardy car-priority r6 score: `0.37992 -> 0.41226`
+  - standard r3 score: `0.41668 -> 0.45133`
+  - hardy poly4 r3 score: `0.41222 -> 0.43419`
+  - hardy overall mismatch: `0.54291 -> 0.42497`
+  - hardy car mismatch: `0.68657 -> 0.50892`
+  - generated comparison viz: `artifacts/converge-v03-v07-vs-v02-car-crosswind.gif`
+- Added champion-v03 metrics manifest: `artifacts/model-core-champion-v03.metrics.json`.
 - Added strict device selection guard for training:
   - `add-train` now supports `--strict-device/--no-strict-device` (default strict).
   - `add-train-parallel` forwards strict mode to all variants.
@@ -108,3 +117,4 @@
 - On this hardware/software stack, `torch.compile` failed without Triton; disabling compile preserved strong performance gains from AMP/TF32 + objective tuning.
 - `uv run` can resync to CPU-only torch from lockfile; running via `.venv\\Scripts\\python` with explicit CUDA wheels kept training on GPU.
 - Guarding device selection in CLI is essential: strict `--device cuda` avoids wasting long runs on accidental CPU fallback when environments drift.
+- High-repeat validation (`runs_per_combo` 4-6) is necessary before promoting champions; some gains shrink under more repeats, but robust winners keep rank across standard/hardy/car-priority profiles.

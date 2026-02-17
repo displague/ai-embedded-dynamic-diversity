@@ -82,3 +82,19 @@ Use compact entries:
   - hardy car mismatch: `0.71312` vs `0.91944` (crossed target `<0.9`)
   - comparison viz: `artifacts/cuda-long-v02-v01-car-crosswind.gif` (`final_mismatch 0.556` vs `0.633`)
 - next action: Push car hardy mismatch below `0.70` with lower variance across repetitions and standardize CUDA lock/index handling in `uv` so plain `uv run` remains GPU-backed.
+- date: 2026-02-17
+- hypothesis: A longer convergence-focused warm-start sweep plus higher-repeat ranking (`runs_per_combo=4..6`) should improve hardy transfer while confirming stability beyond short-run noise.
+- change: Reinstalled CUDA torch in `.venv` (`cu130`), ran `artifacts/parallel-cuda-converge-v03` (10 variants, 56 epochs, warm-start from `artifacts/model-core-champion-v02.pt`), then evaluated top candidates with high-repeat validations:
+  - `artifacts/cross-eval-cuda-converge-v03-top5-hardy-r4.json`
+  - `artifacts/cross-eval-cuda-converge-v03-top5-hardy-car-priority-r4.json`
+  - `artifacts/cross-eval-cuda-converge-v03-top5-standard-r3.json`
+  - `artifacts/cross-eval-cuda-converge-v03-top5-hardy-poly4-r3.json`
+  - `artifacts/cross-eval-cuda-converge-v03-top4-hardy-r6.json`
+  - `artifacts/cross-eval-cuda-converge-v03-top4-hardy-car-priority-r6.json`
+- result: `artifacts/parallel-cuda-converge-v03/variant-07.pt` stayed #1 across all profiles/repeat levels and was promoted to `artifacts/model-core-champion-v03.pt`:
+  - hardy r6: `0.41967` vs champion-v02 `0.39073`
+  - hardy car-priority r6: `0.41226` vs `0.37992`
+  - standard r3: `0.45133` vs `0.41668`
+  - hardy car mismatch (r6): `0.50892` vs `0.68657`
+  - comparison viz: `artifacts/converge-v03-v07-vs-v02-car-crosswind.gif`
+- next action: Target `<0.50` hardy car mismatch and reduce car transfer variance under `storm/crosswind` without regressing standard transfer.

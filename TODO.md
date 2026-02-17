@@ -12,7 +12,8 @@
 - [x] Add higher-complexity embodiment (`polymorph120`) with DOF multiple of existing embodiments.
 - [x] Add embodiment-aware transfer training objective and aggressive parallel launcher options (AMP/TF32/device pool/warm-start).
 - [x] Reduce hardy-line `car` mismatch below `0.90` (now `~0.7131` with `artifacts/parallel-cuda-long-v02/variant-01.pt`).
-- [ ] Reduce hardy-line `car` mismatch further toward `< 0.70` while improving run-to-run stability in `storm/crosswind`.
+- [x] Reduce hardy-line `car` mismatch further below `< 0.70` with improved stability (`~0.509` in `artifacts/cross-eval-cuda-converge-v03-top4-hardy-r6.json`).
+- [ ] Push hardy-line `car` mismatch toward `< 0.50` while improving car transfer variance under `storm/crosswind`.
 - [x] Run car-priority hardy ranking using `--embodiment-weights` and compare top-1 stability vs unweighted champion.
 - [x] Run focused warm-start fine-tune with embodiment-transfer loss and verify hardy transfer/mismatch impact.
 - [ ] Measure Raspberry Pi 5 latency and memory for `model-core-pi5-int8.ts` with `add-bench` on-device.

@@ -45,7 +45,7 @@ pip install -e .
 CUDA wheel setup for this project venv (PowerShell):
 
 ```powershell
-~/.local/bin/uv pip install --python .venv\Scripts\python.exe --index-url https://download.pytorch.org/whl/cu128 --reinstall torch==2.10.0+cu128 torchvision==0.25.0+cu128 torchaudio==2.10.0+cu128
+~/.local/bin/uv pip install --python .venv\Scripts\python.exe --torch-backend cu130 --reinstall torch torchvision torchaudio
 @'
 import torch
 print(torch.__version__, torch.cuda.is_available(), torch.version.cuda)
@@ -90,13 +90,19 @@ Long CUDA-heavy warm-start sweep (recommended to run via project venv Python to 
 .\.venv\Scripts\python -m ai_embedded_dynamic_diversity.train.parallel_cli --variants 8 --max-workers 3 --profile pi5 --epochs 48 --batch-size 24 --unroll-steps 20 --device cuda --device-pool "cuda,cuda,cpu" --coevolution --population-size 6 --embodiments "hexapod,car,drone,polymorph120" --enable-embodiment-transfer-loss --transfer-loss-weight 0.5 --transfer-fitness-weight 0.16 --transfer-samples-per-step 4 --use-amp --allow-tf32 --init-weights artifacts/parallel-cuda-mixed-sweep/variant-01.pt --out-dir artifacts/parallel-cuda-long-v02
 ```
 
+Convergence-focused follow-up sweep (current champion path):
+
+```powershell
+.\.venv\Scripts\python -m ai_embedded_dynamic_diversity.train.parallel_cli --variants 10 --max-workers 3 --profile pi5 --epochs 56 --batch-size 24 --unroll-steps 20 --device cuda --device-pool "cuda,cuda,cpu" --coevolution --population-size 6 --embodiments "hexapod,car,drone,polymorph120" --enable-embodiment-transfer-loss --transfer-loss-weight 0.55 --transfer-fitness-weight 0.18 --transfer-samples-per-step 4 --use-amp --allow-tf32 --init-weights artifacts/model-core-champion-v02.pt --out-dir artifacts/parallel-cuda-converge-v03
+```
+
 Focused warm-start fine-tune from current champion:
 
 ```bash
 ~/.local/bin/uv run add-train --profile pi5 --epochs 36 --batch-size 24 --unroll-steps 18 --device cuda --gating-mode symplectic --topk-gating 4 --enable-dmd-gating --enable-phase-gating --enable-curriculum --enable-genetic-memory --embodiments "hexapod,car,drone,polymorph120" --enable-embodiment-transfer-loss --transfer-loss-weight 0.45 --transfer-fitness-weight 0.12 --transfer-samples-per-step 3 --init-weights artifacts/focused-variant03-long.pt --save-path artifacts/focused-variant03-long-poly-ft.pt
 ```
 
-Latest champion checkpoint: `artifacts/model-core-champion-v02.pt` (from `artifacts/parallel-cuda-long-v02/variant-01.pt`).
+Latest champion checkpoint: `artifacts/model-core-champion-v03.pt` (from `artifacts/parallel-cuda-converge-v03/variant-07.pt`).
 
 Curriculum + latent genetic memory:
 
