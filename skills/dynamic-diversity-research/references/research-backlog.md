@@ -10,3 +10,4 @@
 8. Tune transfer-fitness coupling so evolutionary selection correlates with cross-eval transfer gains (current transfer can improve while legacy fitness degrades).
 9. Add progressive embodiment curriculum (`hexapod/car/drone` -> `polymorph120`) and measure whether staged complexity reduces catastrophic remap mismatch.
 10. Standardize CUDA package sourcing for `uv` lock/index so plain `uv run` remains on CUDA torch (strict-device guard already blocks silent fallback).
+11. Add emergent mimicry research track (environmental/peer/threat mimicry) using self-supervised objectives and population interaction, avoiding explicit forced imitation labels.

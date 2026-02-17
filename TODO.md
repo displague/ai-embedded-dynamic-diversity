@@ -20,6 +20,7 @@
 ## Medium Priority
 
 - [ ] Add policy-level task objectives on top of adaptation (navigation, stability, manipulation).
+- [ ] Add a learned (non-hardcoded) mimicry training track: environmental mimicry, peer mimicry, and threat mimicry from anonymous signals, optimized for transfer fitness rather than explicit imitation labels.
 - [ ] Implement quantization-aware training and compare against dynamic quantization export.
 - [ ] Integrate ONNX Runtime benchmark path for Pi 5.
 - [ ] Evaluate memory gating ablations: `sigmoid` vs `symplectic` vs `symplectic+dmd+phase` using `add-gating-bench`.
