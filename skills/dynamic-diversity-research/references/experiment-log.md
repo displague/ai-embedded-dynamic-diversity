@@ -70,3 +70,15 @@ Use compact entries:
   - hardy poly4: `0.38828` (prev `0.38086`)
   - comparison viz: `artifacts/polyft-cuda-vs-v01-car-hardy.gif`
 - next action: Lock reproducible CUDA dependency workflow for `uv`, then run a longer RTX-only sweep using `variant-01` as warm-start with stronger storm/crosswind weighting.
+- date: 2026-02-17
+- hypothesis: A longer CUDA-heavy warm-start sweep with stronger transfer pressure (`transfer_loss_weight=0.5`, `transfer_fitness_weight=0.16`, `samples=4`) can reduce hardy mismatch and especially car mismatch below `0.9`.
+- change: Ran `artifacts/parallel-cuda-long-v02` (`8` variants, `48` epochs, warm-start from `artifacts/parallel-cuda-mixed-sweep/variant-01.pt`), then strict cross-evals (`runs_per_combo=2`) on hardy, hardy car-priority, and hardy poly4. Added strict device guard (`--strict-device`) to training CLIs with tests.
+- result: `artifacts/parallel-cuda-long-v02/variant-01.pt` became new best across all hardy evaluations:
+  - standard: `0.41071` vs old champion `0.37877`
+  - hardy: `0.38989` vs old champion `0.36234`
+  - hardy car-priority: `0.37822` vs `0.34798`
+  - hardy poly4: `0.41016` vs `0.38907`
+  - hardy overall mismatch: `0.54666` vs `0.67971`
+  - hardy car mismatch: `0.71312` vs `0.91944` (crossed target `<0.9`)
+  - comparison viz: `artifacts/cuda-long-v02-v01-car-crosswind.gif` (`final_mismatch 0.556` vs `0.633`)
+- next action: Push car hardy mismatch below `0.70` with lower variance across repetitions and standardize CUDA lock/index handling in `uv` so plain `uv run` remains GPU-backed.

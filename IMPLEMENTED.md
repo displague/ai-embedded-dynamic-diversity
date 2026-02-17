@@ -73,6 +73,19 @@
   - hardy car mismatch: `1.04158 -> 0.95847`
   - hardy poly4 score: `0.38086 -> 0.38828`
   - generated comparison viz: `artifacts/polyft-cuda-vs-v01-car-hardy.gif`
+- Ran longer CUDA-heavy warm-start sweep (`artifacts/parallel-cuda-long-v02`) from prior champion and promoted `variant-01` as new top candidate (`artifacts/model-core-champion-v02.pt`):
+  - standard score: `0.37877 -> 0.41071` (vs prior champion `artifacts/parallel-cuda-mixed-sweep/variant-01.pt`)
+  - hardy score: `0.36234 -> 0.38989` (vs prior champion `artifacts/parallel-cuda-mixed-sweep/variant-01.pt`)
+  - hardy car-priority score: `0.34798 -> 0.37822`
+  - hardy poly4 score: `0.38907 -> 0.41016`
+  - hardy overall mismatch: `0.67971 -> 0.54666`
+  - hardy car mismatch: `0.91944 -> 0.71312`
+  - generated comparison viz: `artifacts/cuda-long-v02-v01-car-crosswind.gif`
+- Added strict device selection guard for training:
+  - `add-train` now supports `--strict-device/--no-strict-device` (default strict).
+  - `add-train-parallel` forwards strict mode to all variants.
+  - requesting `--device cuda` now fails fast if CUDA is unavailable, preventing silent CPU fallback.
+- Added device-guard tests in `tests/test_train_transfer.py` and kept suite passing (`19 passed`).
 - Added tracking files (`TODO.md`, `IMPLEMENTED.md`) and updated backlog/docs.
 - Added artifact interpretation reference (`docs/ARTIFACTS.md`) with concrete success thresholds, behavior expectations, and evaluation playbooks.
 
@@ -94,3 +107,4 @@
 - Transfer-focused loss can improve cross-embodiment metrics even when the legacy fitness scalar gets worse; selection needs transfer-centric metrics, not vitality-only proxies.
 - On this hardware/software stack, `torch.compile` failed without Triton; disabling compile preserved strong performance gains from AMP/TF32 + objective tuning.
 - `uv run` can resync to CPU-only torch from lockfile; running via `.venv\\Scripts\\python` with explicit CUDA wheels kept training on GPU.
+- Guarding device selection in CLI is essential: strict `--device cuda` avoids wasting long runs on accidental CPU fallback when environments drift.

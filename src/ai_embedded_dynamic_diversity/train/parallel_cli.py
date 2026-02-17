@@ -37,6 +37,7 @@ def run(
     use_amp: bool = True,
     allow_tf32: bool = True,
     compile_model: bool = False,
+    strict_device: bool = True,
     init_weights: str = "",
     max_workers: int = 2,
     out_dir: str = "artifacts/parallel",
@@ -102,6 +103,7 @@ def run(
         cmd += ["--use-amp"] if use_amp else ["--no-use-amp"]
         cmd += ["--allow-tf32"] if allow_tf32 else ["--no-allow-tf32"]
         cmd += ["--compile-model"] if compile_model else ["--no-compile-model"]
+        cmd += ["--strict-device"] if strict_device else ["--no-strict-device"]
         if enable_embodiment_transfer_loss:
             cmd += ["--enable-embodiment-transfer-loss"]
         if init_weights:

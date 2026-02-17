@@ -52,7 +52,7 @@ print(torch.__version__, torch.cuda.is_available(), torch.version.cuda)
 '@ | .\.venv\Scripts\python -
 ```
 
-If `uv run` re-syncs CPU torch from lockfile, run training/eval via `.\.venv\Scripts\python -m ...` (or `uv run --no-sync` if your environment is already correct).
+If `uv run` re-syncs CPU torch from lockfile, run training/eval via `.\.venv\Scripts\python -m ...` (or `uv run --no-sync` if your environment is already correct). Training now defaults to strict device selection, so `--device cuda` fails fast if CUDA is unavailable.
 
 ## Run training
 
@@ -84,13 +84,19 @@ Aggressive transfer-focused sweep (embodiment-aware loss + mixed device pool):
 ~/.local/bin/uv run add-train-parallel --variants 8 --max-workers 4 --profile pi5 --epochs 30 --batch-size 20 --unroll-steps 16 --device cuda --device-pool "cuda,cuda,cpu,cpu" --coevolution --population-size 6 --embodiments "hexapod,car,drone,polymorph120" --enable-embodiment-transfer-loss --transfer-loss-weight 0.4 --transfer-fitness-weight 0.1 --transfer-samples-per-step 3 --use-amp --allow-tf32 --out-dir artifacts/parallel-aggressive
 ```
 
+Long CUDA-heavy warm-start sweep (recommended to run via project venv Python to avoid lockfile resync):
+
+```powershell
+.\.venv\Scripts\python -m ai_embedded_dynamic_diversity.train.parallel_cli --variants 8 --max-workers 3 --profile pi5 --epochs 48 --batch-size 24 --unroll-steps 20 --device cuda --device-pool "cuda,cuda,cpu" --coevolution --population-size 6 --embodiments "hexapod,car,drone,polymorph120" --enable-embodiment-transfer-loss --transfer-loss-weight 0.5 --transfer-fitness-weight 0.16 --transfer-samples-per-step 4 --use-amp --allow-tf32 --init-weights artifacts/parallel-cuda-mixed-sweep/variant-01.pt --out-dir artifacts/parallel-cuda-long-v02
+```
+
 Focused warm-start fine-tune from current champion:
 
 ```bash
 ~/.local/bin/uv run add-train --profile pi5 --epochs 36 --batch-size 24 --unroll-steps 18 --device cuda --gating-mode symplectic --topk-gating 4 --enable-dmd-gating --enable-phase-gating --enable-curriculum --enable-genetic-memory --embodiments "hexapod,car,drone,polymorph120" --enable-embodiment-transfer-loss --transfer-loss-weight 0.45 --transfer-fitness-weight 0.12 --transfer-samples-per-step 3 --init-weights artifacts/focused-variant03-long.pt --save-path artifacts/focused-variant03-long-poly-ft.pt
 ```
 
-Latest champion checkpoint from mixed CUDA/CPU sweep: `artifacts/model-core-champion-v01.pt`.
+Latest champion checkpoint: `artifacts/model-core-champion-v02.pt` (from `artifacts/parallel-cuda-long-v02/variant-01.pt`).
 
 Curriculum + latent genetic memory:
 
@@ -100,6 +106,7 @@ Curriculum + latent genetic memory:
 
 Experimental flags are optional and combinable: `--gating-mode symplectic`, `--topk-gating 4`, `--enable-dmd-gating`, `--enable-phase-gating`, `--enable-curriculum`, `--enable-genetic-memory`.
 Each run stores flags+performance+fitness in `*.metrics.json` (or set `--metrics-path`).
+Use `--strict-device` (default) to prevent accidental CPU fallback when CUDA was requested.
 
 Embodiment-aware transfer optimization (optional):
 

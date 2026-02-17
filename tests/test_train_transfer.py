@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import torch
+import typer
+import pytest
 
 from ai_embedded_dynamic_diversity.config import model_config_for_profile
 from ai_embedded_dynamic_diversity.train.cli import (
     _build_transfer_states,
     _resolve_embodiments,
     _transfer_mismatch_loss,
+    choose_device,
 )
 
 
@@ -42,3 +45,14 @@ def test_transfer_mismatch_loss_returns_scalar() -> None:
     assert mismatch.ndim == 0
     assert mismatch_value >= 0.0
     assert remap_events >= 0
+
+
+def test_choose_device_cuda_strict_raises_when_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+    with pytest.raises(typer.BadParameter):
+        choose_device("cuda", strict=True)
+
+
+def test_choose_device_cuda_non_strict_falls_back_to_cpu(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+    assert choose_device("cuda", strict=False).type == "cpu"

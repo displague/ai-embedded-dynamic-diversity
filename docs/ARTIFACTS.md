@@ -6,22 +6,22 @@ This project's goal is not just to fit a single embodiment. The goal is transfer
 
 As of `2026-02-17`, using current artifacts:
 
-- Standard profile best (`mild,gust,force`): `overall_transfer_score ~= 0.3830` (`artifacts/model-core-champion-v01.pt`)
-- Hardy profile best (`gust,force,storm,blackout,crosswind`): `overall_transfer_score ~= 0.3608` (`artifacts/model-core-champion-v01.pt`)
-- Persistent weakness: `car` under `storm/crosswind` scenarios
+- Standard profile best (`mild,gust,force`): `overall_transfer_score ~= 0.4107` (`artifacts/model-core-champion-v02.pt`)
+- Hardy profile best (`gust,force,storm,blackout,crosswind`): `overall_transfer_score ~= 0.3899` (`artifacts/model-core-champion-v02.pt`)
+- Hardy `car` mismatch improved from `~0.919` to `~0.713` vs prior champion, but `car` under `storm/crosswind` remains the hardest transfer case.
 
 Practical near-term targets:
 
-- Standard transfer score: `>= 0.385`
-- Hardy transfer score: `>= 0.362`
-- Hardy `car` transfer score: `>= 0.320`
+- Standard transfer score: `>= 0.410`
+- Hardy transfer score: `>= 0.390`
+- Hardy `car` transfer score: `>= 0.355`
 - Embodiment gap (best - worst transfer): `<= 0.090`
 
 Stretch targets:
 
-- Standard transfer score: `>= 0.395`
-- Hardy transfer score: `>= 0.370`
-- Hardy `car` transfer score: `>= 0.335`
+- Standard transfer score: `>= 0.420`
+- Hardy transfer score: `>= 0.400`
+- Hardy `car` transfer score: `>= 0.365`
 
 ## Artifact Types and How to Read Them
 

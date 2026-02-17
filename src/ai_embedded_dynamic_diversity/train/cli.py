@@ -21,11 +21,27 @@ from ai_embedded_dynamic_diversity.train.losses import loss_fn
 app = typer.Typer(add_completion=False)
 
 
-def choose_device(preferred: str) -> torch.device:
-    if preferred == "cuda" and torch.cuda.is_available():
-        return torch.device("cuda")
-    if preferred == "mps" and torch.backends.mps.is_available():
-        return torch.device("mps")
+def choose_device(preferred: str, strict: bool = True) -> torch.device:
+    normalized = preferred.strip().lower()
+    if normalized == "cuda":
+        if torch.cuda.is_available():
+            return torch.device("cuda")
+        if strict:
+            raise typer.BadParameter(
+                "CUDA was requested but is unavailable in this environment. "
+                "Check that the active Python environment has a CUDA-enabled PyTorch build."
+            )
+        return torch.device("cpu")
+    if normalized == "mps":
+        if torch.backends.mps.is_available():
+            return torch.device("mps")
+        if strict:
+            raise typer.BadParameter("MPS was requested but is unavailable in this environment.")
+        return torch.device("cpu")
+    if normalized == "cpu":
+        return torch.device("cpu")
+    if strict:
+        raise typer.BadParameter(f"Unknown device '{preferred}'. Expected one of: cpu, cuda, mps.")
     return torch.device("cpu")
 
 
@@ -311,6 +327,7 @@ def run(
     use_amp: bool = True,
     allow_tf32: bool = True,
     compile_model: bool = False,
+    strict_device: bool = True,
     init_weights: str = "",
     seed: int = 7,
     metrics_path: str = "",
@@ -326,7 +343,7 @@ def run(
     wcfg = WorldConfig()
     tcfg = TrainConfig(epochs=epochs, batch_size=batch_size, unroll_steps=unroll_steps, lr=lr, device=device)
 
-    dev = choose_device(tcfg.device)
+    dev = choose_device(tcfg.device, strict=strict_device)
     if dev.type == "cuda":
         torch.set_float32_matmul_precision("high")
         torch.backends.cuda.matmul.allow_tf32 = allow_tf32
@@ -376,6 +393,7 @@ def run(
         "use_amp": amp_enabled,
         "allow_tf32": allow_tf32 and dev.type == "cuda",
         "compile_model": compile_model,
+        "strict_device": strict_device,
         "init_weights": init_weights,
     }
 
