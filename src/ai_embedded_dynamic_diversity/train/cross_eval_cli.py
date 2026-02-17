@@ -301,6 +301,64 @@ def _resolve_capability_profile(profile: str) -> str:
     return normalized
 
 
+def _resolve_noise_profile(profile: str) -> str:
+    normalized = profile.strip().lower()
+    if not normalized:
+        return "none"
+    allowed = {"none", "dropout-quant-v1", "dropout-quant-v2"}
+    if normalized not in allowed:
+        raise ValueError(f"Unknown noise profile '{profile}'. Allowed: {', '.join(sorted(allowed))}")
+    return normalized
+
+
+def _apply_observation_noise(obs: torch.Tensor, profile: str, seed: int, step: int) -> torch.Tensor:
+    if profile == "none":
+        return obs
+    if profile == "dropout-quant-v1":
+        gen = torch.Generator(device=obs.device)
+        gen.manual_seed(int(seed * 10007 + step * 131))
+
+        noisy = obs
+        # Random channel dropout, simulating intermittent sensor failure.
+        keep = (torch.rand(obs.shape, generator=gen, device=obs.device) > 0.12).float()
+        noisy = noisy * keep
+
+        # Additive sensor noise.
+        noisy = noisy + 0.045 * torch.randn(obs.shape, generator=gen, device=obs.device)
+
+        # Quantization to 8-bit equivalent dynamic range.
+        min_v = torch.min(noisy, dim=1, keepdim=True).values
+        max_v = torch.max(noisy, dim=1, keepdim=True).values
+        span = (max_v - min_v).clamp_min(1e-6)
+        normalized = (noisy - min_v) / span
+        quantized = torch.round(normalized * 255.0) / 255.0
+        return quantized * span + min_v
+    if profile == "dropout-quant-v2":
+        gen = torch.Generator(device=obs.device)
+        gen.manual_seed(int(seed * 20011 + step * 313))
+
+        noisy = obs
+        # Aggressive channel dropout and occasional full-channel brownout.
+        keep = (torch.rand(obs.shape, generator=gen, device=obs.device) > 0.28).float()
+        noisy = noisy * keep
+        if step % 7 == 0:
+            brownout = (torch.rand(obs.shape[0], obs.shape[1], generator=gen, device=obs.device) > 0.35).float()
+            noisy = noisy * brownout
+
+        # Strong additive/multiplicative noise.
+        noisy = noisy * (1.0 + 0.08 * torch.randn(obs.shape, generator=gen, device=obs.device))
+        noisy = noisy + 0.09 * torch.randn(obs.shape, generator=gen, device=obs.device)
+
+        # Coarse quantization to ~5-bit dynamic range.
+        min_v = torch.min(noisy, dim=1, keepdim=True).values
+        max_v = torch.max(noisy, dim=1, keepdim=True).values
+        span = (max_v - min_v).clamp_min(1e-6)
+        normalized = (noisy - min_v) / span
+        quantized = torch.round(normalized * 31.0) / 31.0
+        return quantized * span + min_v
+    return obs
+
+
 def _safe_corr(a: list[float], b: list[float]) -> float:
     if len(a) != len(b) or len(a) < 2:
         return 0.0
@@ -458,6 +516,7 @@ def rollout_metrics(
     world_dims: tuple[int, int, int, int],
     device: torch.device,
     capability_profile: str = "none",
+    noise_profile: str = "none",
 ) -> dict[str, float | int]:
     wx, wy, wz, resource_channels = world_dims
     torch.manual_seed(seed)
@@ -519,11 +578,13 @@ def rollout_metrics(
         controls.force_position = torch.zeros(1, 3, device=device)
 
         with torch.no_grad():
-            obs = world.encode_observation(state, signal_dim=cfg.signal_dim)
+            clean_obs = world.encode_observation(state, signal_dim=cfg.signal_dim)
+            obs = _apply_observation_noise(clean_obs, profile=noise_profile, seed=seed, step=step)
             out = model(obs, memory, remap_code)
             memory = out["memory"]
 
-            desired = torch.tanh(obs @ projection)
+            # Robustness target is derived from clean observation to expose noise sensitivity.
+            desired = torch.tanh(clean_obs @ projection)
             applied = out["io"] @ mapping
             mismatch = float(torch.mean((applied - desired) ** 2).item())
             mismatch_values.append(mismatch)
@@ -616,6 +677,7 @@ def run(
     checkmate_threshold: float = 0.85,
     capability_profile: str = "none",
     capability_score_weight: float = 0.0,
+    noise_profile: str = "none",
     world_x: int = 20,
     world_y: int = 20,
     world_z: int = 10,
@@ -657,6 +719,10 @@ def run(
         capability_profile_resolved = _resolve_capability_profile(capability_profile)
     except ValueError as exc:
         raise typer.BadParameter(str(exc)) from exc
+    try:
+        noise_profile_resolved = _resolve_noise_profile(noise_profile)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
     if capability_score_weight < 0.0:
         raise typer.BadParameter("capability_score_weight must be >= 0.0")
 
@@ -690,6 +756,7 @@ def run(
                         world_dims=world_dims,
                         device=dev,
                         capability_profile=capability_profile_resolved,
+                        noise_profile=noise_profile_resolved,
                     )
                     run_rows.append({
                         "embodiment": emb_name,
@@ -781,6 +848,7 @@ def run(
             "checkmate_threshold": checkmate_threshold,
             "capability_profile": capability_profile_resolved,
             "capability_score_weight": capability_score_weight,
+            "noise_profile": noise_profile_resolved,
             "world": {"x": world_x, "y": world_y, "z": world_z, "resource_channels": resource_channels},
         },
         "ranked": ranked,

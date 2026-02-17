@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 import pytest
+import torch
 
 from ai_embedded_dynamic_diversity.config import ModelConfig
 from ai_embedded_dynamic_diversity.models import ModelCore
 from ai_embedded_dynamic_diversity.train.cross_eval_cli import (
     ScenarioSpec,
+    _apply_observation_noise,
     _binary_auc,
     _checkmate_metrics,
     _parse_embodiment_weights,
+    _resolve_noise_profile,
     _resolve_subset_embodiments,
     _resolve_train_embodiments,
     _resolve_scenario_profile,
@@ -125,6 +128,21 @@ def test_binary_auc_orders_scores() -> None:
         labels=[0, 0, 1, 1],
     )
     assert 0.0 <= auc_mixed <= 1.0
+
+
+def test_resolve_noise_profile_accepts_known_values() -> None:
+    assert _resolve_noise_profile("none") == "none"
+    assert _resolve_noise_profile("dropout-quant-v1") == "dropout-quant-v1"
+    assert _resolve_noise_profile("dropout-quant-v2") == "dropout-quant-v2"
+    with pytest.raises(ValueError):
+        _resolve_noise_profile("bad-profile")
+
+
+def test_apply_observation_noise_changes_tensor_for_noise_profile() -> None:
+    obs = torch.linspace(-1.0, 1.0, 16).view(1, 16)
+    out = _apply_observation_noise(obs, profile="dropout-quant-v1", seed=3, step=2)
+    assert out.shape == obs.shape
+    assert not torch.allclose(out, obs)
 
 
 def test_resolve_subset_embodiments_validates_membership() -> None:

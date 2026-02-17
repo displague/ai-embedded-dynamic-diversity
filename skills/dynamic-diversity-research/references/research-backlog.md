@@ -24,6 +24,7 @@
 3. Transfer matrix harness: train on subset embodiments and evaluate zero-shot transfer on held-out embodiments with matrix reports. Status: implemented.
 4. Latency profile matrix: standardize P50/P95 runs across CPU/CUDA now; add Pi5/Jetson/mobile accelerators when hardware is available.
 5. CUDA reproducibility in `uv` lock/index workflow so `uv run` remains CUDA-backed.
+6. Noise-robustness eval profiles in cross-eval (`dropout-quant-v1/v2`) to harden checkmate gate before champion promotion. Status: implemented.
 
 ### Phase 2: Adaptive Diversity (Near -> Mid-term)
 1. Online remap learning inside episode (learned remap policy vs static periodic remap).

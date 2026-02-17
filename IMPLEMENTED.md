@@ -120,6 +120,13 @@
   - transfer-only: `artifacts/cross-eval-checkmate-transfer-hardy-poly4-r3.json`
   - transfer+capability: `artifacts/cross-eval-checkmate-capability-hardy-poly4-r3.json`
   - reports: corresponding `.md` and `.csv` files.
+- Added observation-noise evaluation profiles in `add-cross-eval`:
+  - `--noise-profile dropout-quant-v1` (moderate dropout/noise/8-bit quant)
+  - `--noise-profile dropout-quant-v2` (aggressive dropout/noise/coarse quant)
+- Ran high-repeat noisy checkmate validation (`threshold=0.95`, `runs_per_combo=6`) with `dropout-quant-v2`:
+  - artifact: `artifacts/cross-eval-checkmate-transfer-noisyv2-hardy-poly4-r6-th095.json`
+  - top models (`variant-01`, `variant-00`) passed `checkmate_pass_all=True`
+  - prior champions (`model-core-champion-v03`, `variant-06`, `model-core-champion-v02`) failed `checkmate_pass_all`.
 - Added capability-proxy harness in `add-cross-eval` (`--capability-profile bio-tech-v1`) with environment-tied biological/technological signal proxies and metrics:
   - `signal_reliability` (with raw correlation tracked as `signal_corr_raw`)
   - `signal_detection_auc` (with raw tracked as `signal_detection_auc_raw`)
@@ -170,3 +177,4 @@
 - Coevolution fitness rank still does not reliably predict cross-embodiment transfer/capability rank; promotion should stay tied to cross-eval artifacts, not training fitness alone.
 - Per-embodiment profiling quickly reveals expected channel bottlenecks (e.g., `io_channels << control_dof`) and should be run before long sweeps to set realistic mapping-coverage expectations.
 - A fixed `>=85%` checkmate threshold is useful as a floor gate, but current models already exceed it on the selected hardy split; tighter thresholds or harder heldout regimes are needed for discrimination.
+- Harder noise regimes + stricter checkmate thresholds (`0.95`) create meaningful separation where `0.85` did not.

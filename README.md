@@ -187,6 +187,13 @@ Checkmate + transfer matrix harness (example zero-shot split):
 ~/.local/bin/uv run add-cross-report --input-path artifacts/cross-eval-checkmate-transfer-hardy-poly4-r3.json --markdown-out artifacts/cross-eval-checkmate-transfer-hardy-poly4-r3.md --csv-out artifacts/cross-eval-checkmate-transfer-hardy-poly4-r3.csv
 ```
 
+Noisy-signal robustness eval (stricter checkmate):
+
+```bash
+~/.local/bin/uv run add-cross-eval --checkpoints-list "artifacts/model-core-champion-v03.pt,artifacts/parallel-cuda-capability-v01/variant-01.pt,artifacts/parallel-cuda-capability-v01/variant-00.pt" --profile pi5 --embodiments "hexapod,car,drone,polymorph120" --train-embodiments "hexapod,car" --checkmate-threshold 0.95 --scenario-profile hardy --runs-per-combo 6 --steps 110 --remap-every 12 --noise-profile dropout-quant-v2 --output artifacts/cross-eval-checkmate-transfer-noisyv2-hardy-poly4-r6-th095.json
+~/.local/bin/uv run add-cross-report --input-path artifacts/cross-eval-checkmate-transfer-noisyv2-hardy-poly4-r6-th095.json --markdown-out artifacts/cross-eval-checkmate-transfer-noisyv2-hardy-poly4-r6-th095.md --csv-out artifacts/cross-eval-checkmate-transfer-noisyv2-hardy-poly4-r6-th095.csv
+```
+
 Focused comparison over an explicit checkpoint list:
 
 ```bash

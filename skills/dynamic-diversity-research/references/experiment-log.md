@@ -139,3 +139,12 @@ Use compact entries:
   - capability-weighted eval: `artifacts/cross-eval-checkmate-capability-hardy-poly4-r3.json` (best: `variant-00`)
   - all compared checkpoints passed `checkmate_threshold=0.85` on this split (`min effectiveness ~0.94+`), indicating the gate is currently permissive for top candidates.
 - next action: raise checkmate threshold and/or harden heldout conditions (e.g., extreme scenarios, added noise/dropout) to improve ranking discrimination before champion promotion.
+- date: 2026-02-17
+- hypothesis: Stricter checkmate threshold (`0.95`) plus stronger sensor corruption will make the gate discriminative for champion selection.
+- change: Added cross-eval noise profiles (`dropout-quant-v1`, `dropout-quant-v2`), then ran high-repeat (`runs_per_combo=6`) hardy checkmate with `train={hexapod,car}` and `noise_profile=dropout-quant-v2`.
+- result:
+  - artifact: `artifacts/cross-eval-checkmate-transfer-noisyv2-hardy-poly4-r6-th095.json`
+  - `variant-01` remained #1 (`0.44526`) and `variant-00` #2 (`0.44224`)
+  - only top-2 passed `checkmate_pass_all=True`; prior champions failed full-checkmate at threshold `0.95`
+  - heldout check (`drone,polymorph120`) remained pass for all candidates, so weakest link remains in-train embodiment floor (`car`).
+- next action: integrate noisy-signal curriculum into training (not only eval) and re-test whether champion-v03 line closes the `car` robustness gap under noisy checkmate.

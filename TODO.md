@@ -21,7 +21,8 @@
 - [x] Add cross-embodiment "checkmate" suite: verify `>=85%` transfer effectiveness across 4 embodiments with high-repeat confidence intervals.
 - [x] Add transfer-matrix harness: train on subset `{hexapod,car}` evaluate zero-shot on `{drone,polymorph120}` with pairwise matrix export.
 - [ ] Standardize latency benchmark matrix (P50/P95) across CPU/CUDA now and Pi5/Jetson/mobile accelerators as hardware is available.
-- [ ] Add noisy-signal resilience curriculum (sensor dropout + quantization noise) and evaluate impact on hardy transfer.
+- [x] Add noisy-signal robustness eval profiles in `cross-eval` (`dropout-quant-v1`, `dropout-quant-v2`) and compare checkmate/transfer impact.
+- [ ] Add noisy-signal resilience curriculum in training (sensor dropout + quantization noise) and evaluate impact on hardy transfer.
 
 ## Medium Priority
 

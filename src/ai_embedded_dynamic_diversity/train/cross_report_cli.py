@@ -30,6 +30,7 @@ def run(
     capability_profile = str(cfg.get("capability_profile", "none")).strip().lower()
     capability_enabled = capability_profile != "none"
     capability_score_weight = float(cfg.get("capability_score_weight", 0.0))
+    noise_profile = str(cfg.get("noise_profile", "none")).strip().lower()
 
     rows = []
     for idx, item in enumerate(ranked, start=1):
@@ -97,6 +98,15 @@ def run(
     weights = cfg.get("embodiment_weights", {})
     if weights:
         md_lines.append(f"Embodiment weights: `{json.dumps(weights, sort_keys=True)}`")
+        md_lines.append("")
+    if cfg.get("train_embodiments"):
+        md_lines.append(f"Train embodiments (configured): `{json.dumps(cfg.get('train_embodiments', []))}`")
+        md_lines.append("")
+    if "checkmate_threshold" in cfg:
+        md_lines.append(f"Checkmate threshold: `{cfg.get('checkmate_threshold')}`")
+        md_lines.append("")
+    if noise_profile != "none":
+        md_lines.append(f"Noise profile: `{noise_profile}`")
         md_lines.append("")
     if capability_enabled:
         md_lines.append(f"Capability profile: `{capability_profile}`")

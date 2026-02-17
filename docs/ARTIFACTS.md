@@ -87,6 +87,12 @@ Checkmate/transfer-matrix additions in cross-eval:
 - `checkmate_min_effectiveness`: worst per-embodiment transfer ratio vs train-mean baseline.
 - `transfer_ratio_matrix`: ratio table from train embodiments (rows) to eval embodiments (columns).
 
+Noise robustness additions in cross-eval:
+
+- `noise_profile=none`: clean observation evaluation.
+- `noise_profile=dropout-quant-v1`: moderate sensor dropout + additive noise + 8-bit quantization.
+- `noise_profile=dropout-quant-v2`: aggressive dropout/brownout + stronger noise + coarse quantization.
+
 ## Capability Metrics (Implemented in Cross-Eval)
 
 When `add-cross-eval` is run with `--capability-profile bio-tech-v1`, the harness computes environment-tied biological and technological signal proxies, then tracks:
@@ -158,13 +164,19 @@ Behavior we want to overcome:
 ~/.local/bin/uv run add-cross-eval --checkpoints-list "artifacts/model-a.pt,artifacts/model-b.pt" --profile pi5 --embodiments "hexapod,car,drone,polymorph120" --train-embodiments "hexapod,car" --checkmate-threshold 0.85 --scenario-profile hardy --runs-per-combo 2 --steps 110 --remap-every 12 --output artifacts/cross-eval-checkmate-hardy-poly4.json
 ```
 
-8. Generate report tables:
+8. Evaluate noisy checkmate robustness (optional):
+
+```bash
+~/.local/bin/uv run add-cross-eval --checkpoints-list "artifacts/model-a.pt,artifacts/model-b.pt" --profile pi5 --embodiments "hexapod,car,drone,polymorph120" --train-embodiments "hexapod,car" --checkmate-threshold 0.95 --scenario-profile hardy --runs-per-combo 2 --steps 110 --remap-every 12 --noise-profile dropout-quant-v2 --output artifacts/cross-eval-checkmate-noisy-hardy-poly4.json
+```
+
+9. Generate report tables:
 
 ```bash
 ~/.local/bin/uv run add-cross-report --input-path artifacts/cross-eval-hardy.json --markdown-out artifacts/cross-eval-hardy.md --csv-out artifacts/cross-eval-hardy.csv
 ```
 
-9. Visualize top-2 under the same disturbance schedule:
+10. Visualize top-2 under the same disturbance schedule:
 
 ```bash
 ~/.local/bin/uv run add-viz compare artifacts/top-1.pt artifacts/top-2.pt --profile pi5 --embodiment car --steps 160 --remap-every 20 --force-mode thrust --wind-x 0.4 --output artifacts/top1-vs-top2-car.gif
