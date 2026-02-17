@@ -8,6 +8,7 @@
 - [x] Add cross-embodiment transfer ranking (`add-cross-eval`) over `hexapod`, `car`, and `drone`.
 - [x] Add cross-eval report generation (`add-cross-report`) with rank/delta outputs.
 - [x] Add and run hardy-line transfer evaluation profile across top checkpoints.
+- [ ] Reduce hardy-line `car` mismatch (currently dominant transfer bottleneck vs `hexapod`/`drone`).
 - [ ] Measure Raspberry Pi 5 latency and memory for `model-core-pi5-int8.ts` with `add-bench` on-device.
 
 ## Medium Priority

@@ -40,6 +40,7 @@
 - Ran focused long retrain (`artifacts/focused-variant03-long.pt`) and confirmed transfer improvement vs prior top checkpoints.
 - Added hardy-line scenario profile support in cross-eval (`standard`, `hardy`, `extreme`) with stronger disturbance cases (`storm`, `blackout`, `crosswind`).
 - Ran focused curriculum retrain and hardy-line ranking (`artifacts/cross-eval-hardy-focused-vs-top.json`) to compare robustness under harsher conditions.
+- Ran additional curriculum sweep variants (`focused-curriculum-a`, `focused-curriculum-b`) and ranked them under hardy profile (`artifacts/cross-eval-hardy-curriculum-sweep.json`).
 - Added tracking files (`TODO.md`, `IMPLEMENTED.md`) and updated backlog/docs.
 
 ## Lessons Learned
@@ -53,3 +54,4 @@
 - Symplectic-style gating and DMD/phase modulation are easiest to integrate when they preserve backward compatibility with the baseline memory API.
 - Top-k slot paging is a practical first step toward manifold paging, but objective-level paging still needs dedicated work.
 - Curriculum helps hard-regime robustness, but schedule parameters need tuning; in current hardy evaluation, non-curriculum focused training remained slightly better on transfer score.
+- Curriculum variant A improved recovery but still trailed the non-curriculum focused model on overall hardy transfer score.

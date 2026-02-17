@@ -37,3 +37,8 @@ Use compact entries:
 - change: Added hardy/standard/extreme scenario profiles to `add-cross-eval`; generated focused-vs-old visualizations for `car` and `drone`; trained `artifacts/focused-variant03-curriculum.pt`; evaluated against focused and prior top checkpoints under hardy profile.
 - result: Hardy ranking in `artifacts/cross-eval-hardy-focused-vs-top.json` kept `artifacts/focused-variant03-long.pt` #1 (~0.30826), curriculum model #2 (~0.30619), both above prior parallel tops (~0.281). Generated `artifacts/focused-vs-old-top-car.gif`, `artifacts/focused-vs-old-top-drone.gif`, and `artifacts/focused-curriculum-vs-focused-long-drone-hardy.gif`.
 - next action: Tune curriculum schedules (start/end remap volatility) and re-test on hardy profile to close the remaining gap.
+- date: 2026-02-13
+- hypothesis: Curriculum schedule tuning may surpass the current focused non-curriculum champion on hardy-line transfer.
+- change: Trained `focused-curriculum-a` and `focused-curriculum-b` variants, then evaluated a hardy sweep in `artifacts/cross-eval-hardy-curriculum-sweep.json`; generated comparison visualization `artifacts/focused-currA-vs-focused-long-car-hardy.gif`.
+- result: Ranking stayed led by `artifacts/focused-variant03-long.pt` (~0.30826). Curriculum variants reached ~0.30619 (`focused-variant03-curriculum`), ~0.30564 (`focused-curriculum-a`), and ~0.29824 (`focused-curriculum-b`). All focused variants outperformed prior `parallel-long/variant-03` (~0.28134).
+- next action: Target car-specific robustness (crosswind/force) and consider embodiment-aware objective weighting in transfer score.
