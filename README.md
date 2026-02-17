@@ -89,6 +89,13 @@ Cross-embodiment transfer evaluation (`hexapod`, `car`, `drone`):
 ~/.local/bin/uv run add-cross-eval --checkpoints-dir artifacts/parallel-long --profile pi5 --embodiments 'hexapod,car,drone' --scenarios 'mild,gust,force' --runs-per-combo 2 --steps 90 --remap-every 15 --output artifacts/cross-eval-summary.json
 ```
 
+Hardy-line transfer evaluation profile (stronger disturbances):
+
+```bash
+~/.local/bin/uv run add-cross-eval --checkpoints-list "artifacts/focused-variant03-curriculum.pt,artifacts/focused-variant03-long.pt,artifacts/parallel-long/variant-03.pt,artifacts/parallel-long/variant-02.pt" --profile pi5 --embodiments "hexapod,car,drone" --scenario-profile hardy --runs-per-combo 2 --steps 110 --remap-every 12 --output artifacts/cross-eval-hardy-focused-vs-top.json
+~/.local/bin/uv run add-cross-report --input-path artifacts/cross-eval-hardy-focused-vs-top.json --markdown-out artifacts/cross-eval-hardy-focused-vs-top.md --csv-out artifacts/cross-eval-hardy-focused-vs-top.csv
+```
+
 Focused comparison over an explicit checkpoint list:
 
 ```bash

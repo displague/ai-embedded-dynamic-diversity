@@ -4,9 +4,10 @@
 
 - [ ] Run long-form RTX 5080 training sweep with curriculum schedules across `hexapod`, `car`, and `drone` embodiment mappings.
 - [x] Run `add-train-parallel` on RTX 5080 with 6-8 variants and compare fitness/logs in `artifacts/parallel/summary.json`.
-- [ ] Capture and compare side-by-side adaptation visualizations for baseline vs co-evolution checkpoints.
+- [x] Capture and compare side-by-side adaptation visualizations for baseline vs co-evolution checkpoints.
 - [x] Add cross-embodiment transfer ranking (`add-cross-eval`) over `hexapod`, `car`, and `drone`.
 - [x] Add cross-eval report generation (`add-cross-report`) with rank/delta outputs.
+- [x] Add and run hardy-line transfer evaluation profile across top checkpoints.
 - [ ] Measure Raspberry Pi 5 latency and memory for `model-core-pi5-int8.ts` with `add-bench` on-device.
 
 ## Medium Priority
@@ -16,6 +17,7 @@
 - [ ] Integrate ONNX Runtime benchmark path for Pi 5.
 - [ ] Evaluate memory gating ablations: `sigmoid` vs `symplectic` vs `symplectic+dmd+phase` using `add-gating-bench`.
 - [ ] Add manifold paging objective reduction beyond top-k slot gating (per-sample adaptive page budget).
+- [ ] Tune curriculum schedule for hardy-line gains (current curriculum run improved but did not beat non-curriculum focused run).
 
 ## Hardware-In-The-Loop
 

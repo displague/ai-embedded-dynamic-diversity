@@ -38,6 +38,8 @@
 - Added cross-eval reporting utility (`add-cross-report`) to emit ranked Markdown/CSV with per-embodiment deltas.
 - Added explicit checkpoint-list support in `add-cross-eval` for focused A/B/C comparisons.
 - Ran focused long retrain (`artifacts/focused-variant03-long.pt`) and confirmed transfer improvement vs prior top checkpoints.
+- Added hardy-line scenario profile support in cross-eval (`standard`, `hardy`, `extreme`) with stronger disturbance cases (`storm`, `blackout`, `crosswind`).
+- Ran focused curriculum retrain and hardy-line ranking (`artifacts/cross-eval-hardy-focused-vs-top.json`) to compare robustness under harsher conditions.
 - Added tracking files (`TODO.md`, `IMPLEMENTED.md`) and updated backlog/docs.
 
 ## Lessons Learned
@@ -50,3 +52,4 @@
 - A lightweight HIL bridge is useful early, but production robotics needs transport-specific safety and timing guarantees.
 - Symplectic-style gating and DMD/phase modulation are easiest to integrate when they preserve backward compatibility with the baseline memory API.
 - Top-k slot paging is a practical first step toward manifold paging, but objective-level paging still needs dedicated work.
+- Curriculum helps hard-regime robustness, but schedule parameters need tuning; in current hardy evaluation, non-curriculum focused training remained slightly better on transfer score.

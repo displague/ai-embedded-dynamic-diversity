@@ -32,3 +32,8 @@ Use compact entries:
 - change: Added `add-cross-report`, extended `add-cross-eval` with `--checkpoints-list`, trained `artifacts/focused-variant03-long.pt` (symplectic + topk + dmd + phase + coevolution + genetic memory), and evaluated against `variant-03` and `variant-02`.
 - result: Focused model ranked #1 in `artifacts/cross-eval-focused-vs-top.json` with transfer score ~0.32448 (vs ~0.29614 and ~0.29556). Generated comparison report/csv and visualization `artifacts/focused-vs-old-top-hexapod.gif`.
 - next action: Re-run focused training with curriculum enabled and compare whether robustness gains persist across harsher scenario mixes.
+- date: 2026-02-13
+- hypothesis: Curriculum-enabled focused training should improve transfer under hardy disturbance profiles.
+- change: Added hardy/standard/extreme scenario profiles to `add-cross-eval`; generated focused-vs-old visualizations for `car` and `drone`; trained `artifacts/focused-variant03-curriculum.pt`; evaluated against focused and prior top checkpoints under hardy profile.
+- result: Hardy ranking in `artifacts/cross-eval-hardy-focused-vs-top.json` kept `artifacts/focused-variant03-long.pt` #1 (~0.30826), curriculum model #2 (~0.30619), both above prior parallel tops (~0.281). Generated `artifacts/focused-vs-old-top-car.gif`, `artifacts/focused-vs-old-top-drone.gif`, and `artifacts/focused-curriculum-vs-focused-long-drone-hardy.gif`.
+- next action: Tune curriculum schedules (start/end remap volatility) and re-test on hardy profile to close the remaining gap.

@@ -2,7 +2,12 @@ from __future__ import annotations
 
 from ai_embedded_dynamic_diversity.config import ModelConfig
 from ai_embedded_dynamic_diversity.models import ModelCore
-from ai_embedded_dynamic_diversity.train.cross_eval_cli import ScenarioSpec, compute_recovery_score, rollout_metrics
+from ai_embedded_dynamic_diversity.train.cross_eval_cli import (
+    ScenarioSpec,
+    _resolve_scenario_profile,
+    compute_recovery_score,
+    rollout_metrics,
+)
 
 
 def test_compute_recovery_score_detects_post_remap_improvement() -> None:
@@ -52,3 +57,11 @@ def test_rollout_metrics_returns_transfer_keys() -> None:
     assert "mean_mismatch" in metrics
     assert "mean_vitality" in metrics
     assert metrics["remap_events"] >= 1
+
+
+def test_hardy_profile_resolves_multiple_scenarios() -> None:
+    scenarios = _resolve_scenario_profile("hardy")
+    names = [s.name for s in scenarios]
+    assert "storm" in names
+    assert "blackout" in names
+    assert len(names) >= 5

@@ -73,6 +73,45 @@ def _scenario_catalog() -> dict[str, ScenarioSpec]:
             force_duration=26,
             force_pattern="decay",
         ),
+        "storm": ScenarioSpec(
+            name="storm",
+            wind=(0.8, 0.35, 0.0),
+            wind_variation=0.45,
+            light_pos=(-0.4, 0.0, 0.25),
+            light_drift=(0.004, 0.0, 0.0),
+            light_intensity=0.55,
+            force_vector=(1.1, 0.2, 0.0),
+            force_strength=1.1,
+            force_start=10,
+            force_duration=36,
+            force_pattern="sine",
+        ),
+        "blackout": ScenarioSpec(
+            name="blackout",
+            wind=(0.25, 0.0, 0.0),
+            wind_variation=0.15,
+            light_pos=(0.25, 0.0, 0.1),
+            light_drift=(-0.004, 0.0, 0.0),
+            light_intensity=0.15,
+            force_vector=(0.75, 0.0, 0.0),
+            force_strength=0.9,
+            force_start=16,
+            force_duration=26,
+            force_pattern="pulse",
+        ),
+        "crosswind": ScenarioSpec(
+            name="crosswind",
+            wind=(0.15, 0.85, 0.0),
+            wind_variation=0.3,
+            light_pos=(-0.2, 0.15, 0.2),
+            light_drift=(0.0, -0.002, 0.0),
+            light_intensity=0.65,
+            force_vector=(0.55, 0.85, 0.0),
+            force_strength=0.95,
+            force_start=14,
+            force_duration=34,
+            force_pattern="decay",
+        ),
     }
 
 
@@ -88,6 +127,19 @@ def _resolve_scenarios(scenarios_csv: str) -> list[ScenarioSpec]:
             raise ValueError(f"Unknown scenario '{name}'. Allowed: {allowed}")
         resolved.append(catalog[name])
     return resolved
+
+
+def _resolve_scenario_profile(profile: str) -> list[ScenarioSpec]:
+    normalized = profile.strip().lower()
+    profiles = {
+        "standard": "mild,gust,force",
+        "hardy": "gust,force,storm,blackout,crosswind",
+        "extreme": "force,storm,blackout,crosswind",
+    }
+    if normalized not in profiles:
+        allowed = ", ".join(sorted(profiles))
+        raise ValueError(f"Unknown scenario profile '{profile}'. Allowed: {allowed}")
+    return _resolve_scenarios(profiles[normalized])
 
 
 def _load_model(weights: str, profile: str, device: torch.device) -> tuple[ModelCore, ModelConfig, dict]:
@@ -246,6 +298,7 @@ def run(
     profile: str = "pi5",
     embodiments: str = "hexapod,car,drone",
     scenarios: str = "mild,gust,force",
+    scenario_profile: str = "",
     runs_per_combo: int = 2,
     steps: int = 90,
     remap_every: int = 15,
@@ -269,7 +322,10 @@ def run(
             raise typer.BadParameter(f"No checkpoints matched in directory: {checkpoints_dir}")
         raise typer.BadParameter(f"No checkpoints matched: {checkpoints_glob}")
 
-    scenario_specs = _resolve_scenarios(scenarios)
+    if scenario_profile:
+        scenario_specs = _resolve_scenario_profile(scenario_profile)
+    else:
+        scenario_specs = _resolve_scenarios(scenarios)
     embodiment_list = [x.strip().lower() for x in embodiments.split(",") if x.strip()]
     if not embodiment_list:
         raise typer.BadParameter("No embodiments were provided")
@@ -340,6 +396,7 @@ def run(
             "profile": profile,
             "embodiments": embodiment_list,
             "scenarios": [s.name for s in scenario_specs],
+            "scenario_profile": scenario_profile,
             "runs_per_combo": runs_per_combo,
             "steps": steps,
             "remap_every": remap_every,
