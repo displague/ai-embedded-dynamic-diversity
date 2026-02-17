@@ -7,3 +7,5 @@
 5. Add checkpoint comparison dashboards across multiple embodiments.
 6. Tune curriculum schedules specifically against hardy-line profiles (`storm`, `blackout`, `crosswind`).
 7. Add car-focused robustness objectives and weighting to reduce persistent high mismatch under hardy profiles.
+8. Tune transfer-fitness coupling so evolutionary selection correlates with cross-eval transfer gains (current transfer can improve while legacy fitness degrades).
+9. Add progressive embodiment curriculum (`hexapod/car/drone` -> `polymorph120`) and measure whether staged complexity reduces catastrophic remap mismatch.

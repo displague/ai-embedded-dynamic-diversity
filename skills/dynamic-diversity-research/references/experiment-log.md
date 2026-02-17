@@ -47,3 +47,15 @@ Use compact entries:
 - change: Added `--embodiment-weights` support to `add-cross-eval`, added parser/weighting tests, ran weighted hardy evaluation in `artifacts/cross-eval-hardy-car-priority.json` with `hexapod=1,car=2.5,drone=1`, and generated report outputs (`.md`, `.csv`).
 - result: Top checkpoint did not change; `artifacts/focused-variant03-long.pt` remained #1 (`weighted ~0.29343`, `unweighted ~0.31016`). Car transfer remained the limiting factor despite weighted selection.
 - next action: Add car-focused objective weighting/sampling during training (storm/crosswind emphasis), then rerun hardy weighted+unweighted comparisons.
+- date: 2026-02-17
+- hypothesis: Explicit embodiment-mismatch optimization during training (including new high-DOF stress embodiment) should improve transferable adaptation, especially car mismatch under hardy stressors.
+- change: Added `polymorph120` embodiment, added embodiment-aware transfer loss/fitness terms and warm-start support to training (`--embodiments`, `--enable-embodiment-transfer-loss`, `--transfer-loss-weight`, `--transfer-fitness-weight`, `--transfer-samples-per-step`, `--init-weights`), and ran:
+  - aggressive scratch sweep: `artifacts/parallel-aggressive-cpu`
+  - warm-start fine-tune from champion: `artifacts/focused-variant03-long-poly-ft.pt`
+- result: Scratch aggressive variants did not beat champion on legacy hardy score. Warm-start fine-tune did beat champion:
+  - `artifacts/cross-eval-focused-vs-polyft-hardy.json`: `0.32899` vs `0.30826`
+  - `artifacts/cross-eval-focused-vs-polyft-standard.json`: `0.34748` vs `0.32448`
+  - `artifacts/cross-eval-focused-vs-polyft-hardy-car-priority.json`: weighted score `0.31125` vs `0.28209`
+  - car mismatch improved from `1.48385` to `1.25366`
+  - 4-emb hardy score (with `polymorph120`) also improved (`0.36389` vs `0.34795`)
+- next action: Run car-priority weighted hardy eval including `polymorph120` and tune transfer-fitness weight so proxy fitness aligns better with transfer improvements.

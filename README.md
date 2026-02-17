@@ -9,6 +9,19 @@ PyTorch research scaffold for a portable "model core" that adapts to anonymous l
 - Train in a 3D+time constrained world (Conway-inspired dynamics + resources + stress) for robust efficiency.
 - Preserve adaptation under remapped channels (e.g., actuator/function reassignment).
 
+## Embodiments (DOF)
+
+- `hexapod`: `10` DOF controls, `5` sensor channels
+- `car`: `6` DOF controls, `5` sensor channels
+- `drone`: `8` DOF controls, `5` sensor channels
+- `polymorph120`: `120` DOF controls, `12` sensor channels (complex stress-test; multiple of 10/6/8)
+
+List from CLI:
+
+```bash
+~/.local/bin/uv run add-sim embodiments
+```
+
 ## Environment
 
 - Training target: NVIDIA RTX 5080 16GB
@@ -53,6 +66,18 @@ Parallel diverse-fitness sweep:
 ~/.local/bin/uv run add-train-parallel --variants 6 --max-workers 3 --profile pi5 --epochs 10 --device cuda --out-dir artifacts/parallel
 ```
 
+Aggressive transfer-focused sweep (embodiment-aware loss + mixed device pool):
+
+```bash
+~/.local/bin/uv run add-train-parallel --variants 8 --max-workers 4 --profile pi5 --epochs 30 --batch-size 20 --unroll-steps 16 --device cuda --device-pool "cuda,cuda,cpu,cpu" --coevolution --population-size 6 --embodiments "hexapod,car,drone,polymorph120" --enable-embodiment-transfer-loss --transfer-loss-weight 0.4 --transfer-fitness-weight 0.1 --transfer-samples-per-step 3 --use-amp --allow-tf32 --out-dir artifacts/parallel-aggressive
+```
+
+Focused warm-start fine-tune from current champion:
+
+```bash
+~/.local/bin/uv run add-train --profile pi5 --epochs 36 --batch-size 24 --unroll-steps 18 --device cuda --gating-mode symplectic --topk-gating 4 --enable-dmd-gating --enable-phase-gating --enable-curriculum --enable-genetic-memory --embodiments "hexapod,car,drone,polymorph120" --enable-embodiment-transfer-loss --transfer-loss-weight 0.45 --transfer-fitness-weight 0.12 --transfer-samples-per-step 3 --init-weights artifacts/focused-variant03-long.pt --save-path artifacts/focused-variant03-long-poly-ft.pt
+```
+
 Curriculum + latent genetic memory:
 
 ```bash
@@ -61,6 +86,15 @@ Curriculum + latent genetic memory:
 
 Experimental flags are optional and combinable: `--gating-mode symplectic`, `--topk-gating 4`, `--enable-dmd-gating`, `--enable-phase-gating`, `--enable-curriculum`, `--enable-genetic-memory`.
 Each run stores flags+performance+fitness in `*.metrics.json` (or set `--metrics-path`).
+
+Embodiment-aware transfer optimization (optional):
+
+- `--embodiments "hexapod,car,drone,polymorph120"`
+- `--enable-embodiment-transfer-loss`
+- `--transfer-loss-weight 0.45`
+- `--transfer-fitness-weight 0.12`
+- `--transfer-samples-per-step 3`
+- `--init-weights artifacts/focused-variant03-long.pt` for warm-start fine-tuning
 
 ## Run simulator rollout
 

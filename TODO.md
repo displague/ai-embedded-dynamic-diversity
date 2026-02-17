@@ -9,8 +9,11 @@
 - [x] Add cross-eval report generation (`add-cross-report`) with rank/delta outputs.
 - [x] Add and run hardy-line transfer evaluation profile across top checkpoints.
 - [x] Add artifact interpretation guide (goals, "good" thresholds, failure patterns, decision rules).
-- [ ] Reduce hardy-line `car` mismatch (currently dominant transfer bottleneck vs `hexapod`/`drone`).
+- [x] Add higher-complexity embodiment (`polymorph120`) with DOF multiple of existing embodiments.
+- [x] Add embodiment-aware transfer training objective and aggressive parallel launcher options (AMP/TF32/device pool/warm-start).
+- [ ] Reduce hardy-line `car` mismatch further (improved to `~1.2537`, still dominant transfer bottleneck vs `hexapod`/`drone`).
 - [x] Run car-priority hardy ranking using `--embodiment-weights` and compare top-1 stability vs unweighted champion.
+- [x] Run focused warm-start fine-tune with embodiment-transfer loss and verify hardy transfer/mismatch impact.
 - [ ] Measure Raspberry Pi 5 latency and memory for `model-core-pi5-int8.ts` with `add-bench` on-device.
 
 ## Medium Priority
@@ -21,7 +24,7 @@
 - [ ] Evaluate memory gating ablations: `sigmoid` vs `symplectic` vs `symplectic+dmd+phase` using `add-gating-bench`.
 - [ ] Add manifold paging objective reduction beyond top-k slot gating (per-sample adaptive page budget).
 - [ ] Tune curriculum schedule for hardy-line gains (current curriculum run improved but did not beat non-curriculum focused run).
-- [ ] Add car-focused objective weighting/sampling in training (not just evaluation ranking) to attack hardy `storm/crosswind` mismatch.
+- [ ] Continue car-focused objective weighting/sampling in training (storm/crosswind emphasis) to push hardy car mismatch below `1.2`.
 
 ## Hardware-In-The-Loop
 

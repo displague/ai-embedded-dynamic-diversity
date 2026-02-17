@@ -12,6 +12,10 @@ class Embodiment:
     sensors: tuple[str, ...]
 
 
+def _indexed(prefix: str, count: int) -> tuple[str, ...]:
+    return tuple(f"{prefix}_{i:03d}" for i in range(count))
+
+
 EMBODIMENTS: dict[str, Embodiment] = {
     "hexapod": Embodiment(
         name="hexapod",
@@ -28,6 +32,29 @@ EMBODIMENTS: dict[str, Embodiment] = {
         controls=("rotor_fl", "rotor_fr", "rotor_rl", "rotor_rr", "pitch", "roll", "yaw", "thrust"),
         sensors=("vision", "imu", "altimeter", "wind", "rf"),
     ),
+    "polymorph120": Embodiment(
+        name="polymorph120",
+        controls=(
+            _indexed("locomotion_joint", 48)
+            + _indexed("manipulator_joint", 40)
+            + _indexed("spine_joint", 16)
+            + _indexed("thruster", 16)
+        ),
+        sensors=(
+            "vision",
+            "stereo_audio",
+            "imu",
+            "pressure",
+            "temperature",
+            "proximity",
+            "chemical",
+            "magnetic",
+            "rf",
+            "current",
+            "light",
+            "strain",
+        ),
+    ),
 }
 
 
@@ -37,6 +64,20 @@ def get_embodiment(name: str) -> Embodiment:
         allowed = ", ".join(sorted(EMBODIMENTS))
         raise ValueError(f"Unknown embodiment '{name}'. Choose one of: {allowed}")
     return EMBODIMENTS[key]
+
+
+def embodiment_dof_table() -> list[dict[str, int | str]]:
+    rows = []
+    for key in sorted(EMBODIMENTS):
+        emb = EMBODIMENTS[key]
+        rows.append(
+            {
+                "name": emb.name,
+                "dof": len(emb.controls),
+                "sensor_channels": len(emb.sensors),
+            }
+        )
+    return rows
 
 
 def device_map_for_embodiment(

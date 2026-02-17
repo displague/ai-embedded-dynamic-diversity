@@ -1,19 +1,19 @@
 # Artifact Interpretation Guide
 
-This project's goal is not just to fit a single embodiment. The goal is transferable adaptation: a compact model core that keeps functioning when anonymous channels are remapped, environments shift, and embodiment changes (`hexapod`, `car`, `drone`) are introduced.
+This project's goal is not just to fit a single embodiment. The goal is transferable adaptation: a compact model core that keeps functioning when anonymous channels are remapped, environments shift, and embodiment changes (`hexapod`, `car`, `drone`) are introduced. `polymorph120` is a high-DOF stress embodiment used to test scaling behavior.
 
 ## What Good Looks Like
 
 As of `2026-02-17`, using current artifacts:
 
-- Standard profile best (`mild,gust,force`): `overall_transfer_score ~= 0.3245` (`artifacts/focused-variant03-long.pt`)
-- Hardy profile best (`gust,force,storm,blackout,crosswind`): `overall_transfer_score ~= 0.3083` (`artifacts/focused-variant03-long.pt`)
+- Standard profile best (`mild,gust,force`): `overall_transfer_score ~= 0.3475` (`artifacts/focused-variant03-long-poly-ft.pt`)
+- Hardy profile best (`gust,force,storm,blackout,crosswind`): `overall_transfer_score ~= 0.3290` (`artifacts/focused-variant03-long-poly-ft.pt`)
 - Persistent weakness: `car` under `storm/crosswind` scenarios
 
 Practical near-term targets:
 
-- Standard transfer score: `>= 0.325`
-- Hardy transfer score: `>= 0.310`
+- Standard transfer score: `>= 0.348`
+- Hardy transfer score: `>= 0.330`
 - Hardy `car` transfer score: `>= 0.270`
 - Embodiment gap (best - worst transfer): `<= 0.090`
 
@@ -114,13 +114,19 @@ Behavior we want to overcome:
 ~/.local/bin/uv run add-cross-eval --checkpoints-list "artifacts/model-a.pt,artifacts/model-b.pt" --profile pi5 --embodiments "hexapod,car,drone" --embodiment-weights "hexapod=1,car=2.5,drone=1" --scenario-profile hardy --runs-per-combo 2 --steps 110 --remap-every 12 --output artifacts/cross-eval-hardy-car-priority.json
 ```
 
-5. Generate report tables:
+5. Optional high-DOF stress inclusion:
+
+```bash
+~/.local/bin/uv run add-cross-eval --checkpoints-list "artifacts/model-a.pt,artifacts/model-b.pt" --profile pi5 --embodiments "hexapod,car,drone,polymorph120" --scenario-profile hardy --runs-per-combo 2 --steps 110 --remap-every 12 --output artifacts/cross-eval-hardy-poly4.json
+```
+
+6. Generate report tables:
 
 ```bash
 ~/.local/bin/uv run add-cross-report --input-path artifacts/cross-eval-hardy.json --markdown-out artifacts/cross-eval-hardy.md --csv-out artifacts/cross-eval-hardy.csv
 ```
 
-6. Visualize top-2 under the same disturbance schedule:
+7. Visualize top-2 under the same disturbance schedule:
 
 ```bash
 ~/.local/bin/uv run add-viz compare artifacts/top-1.pt artifacts/top-2.pt --profile pi5 --embodiment car --steps 160 --remap-every 20 --force-mode thrust --wind-x 0.4 --output artifacts/top1-vs-top2-car.gif

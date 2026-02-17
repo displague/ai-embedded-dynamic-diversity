@@ -11,6 +11,7 @@
   - dynamic light source
   - force interaction and object movement
 - Added reproducible embodiment schemas (`hexapod`, `car`, `drone`) and deterministic I/O remapping.
+- Added high-complexity embodiment `polymorph120` (120 DOF; multiple of 10/6/8) and DOF reporting via `add-sim embodiments`.
 - Added visualization command for single-run adaptation with environment control traces.
 - Added side-by-side checkpoint comparison visualization under the same remap/environment schedule.
 - Added dynamic quantized TorchScript export path.
@@ -23,6 +24,18 @@
   - optional phase-aware gate modulation
   - optional DMD-inspired gate modulation
 - Added parallel diverse-fitness training launcher (`add-train-parallel`).
+- Extended training CLI with embodiment-aware transfer optimization:
+  - `--embodiments`
+  - `--enable-embodiment-transfer-loss`
+  - `--transfer-loss-weight`
+  - `--transfer-fitness-weight`
+  - `--transfer-samples-per-step`
+  - `--init-weights` warm-start support
+- Added training performance controls for aggressive runs:
+  - optional AMP (`--use-amp`)
+  - TF32 toggle (`--allow-tf32`)
+  - optional `torch.compile` (`--compile-model`, non-coevolution)
+- Extended parallel launcher with mixed-device scheduling (`--device-pool`) and transfer-objective forwarding.
 - Added symplectic/gating verification benchmark CLI (`add-gating-bench`) with long-horizon recovery score.
 - Added structured run metric tracking (`*.metrics.json`) including active flags, per-epoch/generation performance (`mean_step_ms`), and fitness.
 - Added parallel summary aggregation with flags/performance/fitness in `artifacts/parallel*/summary.json`.
@@ -44,6 +57,13 @@
 - Ran focused curriculum retrain and hardy-line ranking (`artifacts/cross-eval-hardy-focused-vs-top.json`) to compare robustness under harsher conditions.
 - Ran additional curriculum sweep variants (`focused-curriculum-a`, `focused-curriculum-b`) and ranked them under hardy profile (`artifacts/cross-eval-hardy-curriculum-sweep.json`).
 - Ran car-priority hardy ranking with embodiment weights (`artifacts/cross-eval-hardy-car-priority.json`) and confirmed the same champion remained top-ranked.
+- Ran aggressive embodiment-aware parallel sweep (`artifacts/parallel-aggressive-cpu`) and ranked variants with/without `polymorph120` in hardy profiles.
+- Ran warm-start focused fine-tune from `artifacts/focused-variant03-long.pt` to `artifacts/focused-variant03-long-poly-ft.pt`; improved hardy transfer and reduced mismatch:
+  - 3-emb standard score: `0.32448 -> 0.34748`
+  - 3-emb hardy score: `0.30826 -> 0.32899`
+  - 3-emb hardy (car-priority weighted) score: `0.28209 -> 0.31125`
+  - car mismatch: `1.48385 -> 1.25366`
+  - generated comparison viz: `artifacts/focused-vs-polyft-car-hardy.gif`
 - Added tracking files (`TODO.md`, `IMPLEMENTED.md`) and updated backlog/docs.
 - Added artifact interpretation reference (`docs/ARTIFACTS.md`) with concrete success thresholds, behavior expectations, and evaluation playbooks.
 
@@ -61,3 +81,5 @@
 - Curriculum variant A improved recovery but still trailed the non-curriculum focused model on overall hardy transfer score.
 - Weighted ranking is useful for deployment-specific selection, but unweighted transfer should remain the primary generalization gate to avoid overfitting selection criteria to a single embodiment.
 - In the current checkpoint set, car-priority weighting changed absolute score scale but not rank order; reducing car mismatch likely requires training/objective changes, not only selection weighting.
+- Warm-starting a strong transfer checkpoint and optimizing explicit embodiment-mismatch terms gave materially better hardy transfer than broad scratch sweeps under the same resource budget.
+- Transfer-focused loss can improve cross-embodiment metrics even when the legacy fitness scalar gets worse; selection needs transfer-centric metrics, not vitality-only proxies.
