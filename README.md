@@ -103,6 +103,9 @@ Focused warm-start fine-tune from current champion:
 ```
 
 Latest champion checkpoint: `artifacts/model-core-champion-v03.pt` (from `artifacts/parallel-cuda-converge-v03/variant-07.pt`).
+Latest capability sweep candidates (pending high-repeat promotion):
+- transfer-only hardy poly4 best: `artifacts/parallel-cuda-capability-v01/variant-01.pt`
+- transfer+capability hardy poly4 best: `artifacts/parallel-cuda-capability-v01/variant-00.pt`
 
 Curriculum + latent genetic memory:
 
@@ -161,6 +164,13 @@ Car-priority ranking for hardy-line selection (optional weighting):
 
 ```bash
 ~/.local/bin/uv run add-cross-eval --checkpoints-list "artifacts/focused-variant03-long.pt,artifacts/focused-variant03-curriculum.pt,artifacts/parallel-long/variant-03.pt" --profile pi5 --embodiments "hexapod,car,drone" --embodiment-weights "hexapod=1,car=2.5,drone=1" --scenario-profile hardy --runs-per-combo 2 --steps 110 --remap-every 12 --output artifacts/cross-eval-hardy-car-priority.json
+```
+
+Capability-aware cross-eval (biological/technological proxy harness):
+
+```bash
+~/.local/bin/uv run add-cross-eval --checkpoints-list "artifacts/model-core-champion-v03.pt,artifacts/parallel-cuda-capability-v01/variant-01.pt,artifacts/parallel-cuda-capability-v01/variant-00.pt" --profile pi5 --embodiments "hexapod,car,drone,polymorph120" --scenario-profile hardy --runs-per-combo 3 --steps 110 --remap-every 12 --capability-profile bio-tech-v1 --capability-score-weight 0.25 --output artifacts/cross-eval-capability-vs-champion.json
+~/.local/bin/uv run add-cross-report --input-path artifacts/cross-eval-capability-vs-champion.json --markdown-out artifacts/cross-eval-capability-vs-champion.md --csv-out artifacts/cross-eval-capability-vs-champion.csv
 ```
 
 Focused comparison over an explicit checkpoint list:

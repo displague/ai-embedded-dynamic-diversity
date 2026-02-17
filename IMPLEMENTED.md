@@ -94,9 +94,34 @@
   - `add-train` now supports `--strict-device/--no-strict-device` (default strict).
   - `add-train-parallel` forwards strict mode to all variants.
   - requesting `--device cuda` now fails fast if CUDA is unavailable, preventing silent CPU fallback.
-- Added device-guard tests in `tests/test_train_transfer.py` and kept suite passing (`19 passed`).
+- Added device-guard tests in `tests/test_train_transfer.py` and kept suite passing (`21 passed`).
 - Added tracking files (`TODO.md`, `IMPLEMENTED.md`) and updated backlog/docs.
 - Added artifact interpretation reference (`docs/ARTIFACTS.md`) with concrete success thresholds, behavior expectations, and evaluation playbooks.
+- Added capability-proxy harness in `add-cross-eval` (`--capability-profile bio-tech-v1`) with environment-tied biological/technological signal proxies and metrics:
+  - `signal_reliability` (with raw correlation tracked as `signal_corr_raw`)
+  - `signal_detection_auc` (with raw tracked as `signal_detection_auc_raw`)
+  - `evasion_success`
+  - blended `capability_score`
+- Added optional blended ranking in cross-eval:
+  - `overall_transfer_score = weighted_transfer + capability_score_weight * capability_score`
+  - preserves transfer-only outputs alongside blended score.
+- Extended `add-cross-report` to surface capability-enabled runs:
+  - ranking score + weighted/unweighted transfer split
+  - capability profile/weight context
+  - top-5 capability proxy summary table.
+- Added capability harness tests in `tests/test_cross_eval.py`:
+  - `_binary_auc` behavior
+  - capability-profile rollout on `polymorph120`
+  - range checks for raw + normalized capability metrics.
+- Restored CUDA runtime in project venv (`torch==2.10.0+cu130`) and verified RTX 5080 visibility.
+- Ran capability-focused warm-start sweep `artifacts/parallel-cuda-capability-v01` (6 variants, 40 epochs, coevolution, transfer-aware, `hexapod/car/drone/polymorph120`) initialized from `artifacts/parallel-cuda-converge-v03/variant-06.pt`.
+- New best checkpoints from this sweep:
+  - transfer-only hardy poly4 (`runs_per_combo=3`): `variant-01` at `0.44643` (vs champion-v03 `0.43419`)
+  - blended transfer+capability hardy poly4 (`capability_score_weight=0.25`): `variant-00` at `0.62127`
+  - hardy `car` mismatch improved to `0.38388` (`variant-01`) and `0.40290` (`variant-00`) vs champion-v03 `0.46295`.
+- Generated new comparisons:
+  - `artifacts/capability-v01-v01-vs-v03-car-crosswind-thrust.gif`
+  - `artifacts/capability-v01-v00-vs-v03-polymorph-storm.gif`
 
 ## Lessons Learned
 
@@ -118,3 +143,5 @@
 - `uv run` can resync to CPU-only torch from lockfile; running via `.venv\\Scripts\\python` with explicit CUDA wheels kept training on GPU.
 - Guarding device selection in CLI is essential: strict `--device cuda` avoids wasting long runs on accidental CPU fallback when environments drift.
 - High-repeat validation (`runs_per_combo` 4-6) is necessary before promoting champions; some gains shrink under more repeats, but robust winners keep rank across standard/hardy/car-priority profiles.
+- Capability metrics in anonymous-channel settings must be polarity-invariant (raw negative correlation or AUC<0.5 can still indicate decodable signal if interpreted with sign inversion).
+- Coevolution fitness rank still does not reliably predict cross-embodiment transfer/capability rank; promotion should stay tied to cross-eval artifacts, not training fitness alone.

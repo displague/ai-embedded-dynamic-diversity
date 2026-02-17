@@ -62,7 +62,9 @@ Stretch targets:
   - recovery score behavior,
   - rollout metric schema,
   - hardy scenario profile resolution,
-  - embodiment weighting behavior.
+  - embodiment weighting behavior,
+  - capability-profile rollout metrics on `polymorph120`,
+  - binary AUC behavior for signal detection proxies.
 
 ## Metric Semantics
 
@@ -78,15 +80,22 @@ Interpretation:
 - `mean_vitality`: world life-field persistence proxy. If this collapses, adaptation may be unstable in the environment.
 - `recovery`: improvement after remap events. Low values indicate brittle remap response.
 
-## Upcoming Capability Metrics
+## Capability Metrics (Implemented in Cross-Eval)
 
-For next-stage emergent capabilities (mimicry, signaling, detection, evasion, conjoining), track additional metrics without hardcoding behavior labels into the policy:
+When `add-cross-eval` is run with `--capability-profile bio-tech-v1`, the harness computes environment-tied biological and technological signal proxies, then tracks:
 
-- `signal_reliability`: persistence and decodability of emitted anonymous signals across remaps/noise.
-- `signal_detection_auc`: detection quality for peer/environment/threat patterns from anonymous streams.
-- `evasion_success`: fraction of threat windows where mismatch/stress remains below threshold while vitality stays above floor.
-- `lineage_survival_score`: multi-generation survival under genetic+memory carryover and hardy disturbances.
-- `conjoining_gain`: improvement from cooperative/environment-tool coupling vs isolated-agent baseline.
+- `signal_corr_raw`: raw correlation between emitted anonymous signal and proxy target signal.
+- `signal_reliability`: `abs(signal_corr_raw)` to support sign-inverted anonymous channels.
+- `signal_detection_auc_raw`: raw threat-detection AUC from model proxy detector.
+- `signal_detection_auc`: `max(raw_auc, 1 - raw_auc)` to score decodability independent of polarity.
+- `evasion_success`: fraction of threat-active steps that stay within mismatch/stress/vitality limits.
+- `capability_score`: blended capability metric (`0.40*reliability + 0.30*detection + 0.30*evasion`).
+
+Future additions:
+
+- `lineage_survival_score`: multi-generation survival under genetic+memory carryover.
+- `conjoining_gain`: cooperative/environment-tool coupling gain vs isolated-agent baseline.
+- mimicry/conjoining explicit proxy tracks.
 
 ## Typical Current Behavior vs Desired Behavior
 
@@ -130,13 +139,19 @@ Behavior we want to overcome:
 ~/.local/bin/uv run add-cross-eval --checkpoints-list "artifacts/model-a.pt,artifacts/model-b.pt" --profile pi5 --embodiments "hexapod,car,drone,polymorph120" --scenario-profile hardy --runs-per-combo 2 --steps 110 --remap-every 12 --output artifacts/cross-eval-hardy-poly4.json
 ```
 
-6. Generate report tables:
+6. Evaluate capability-aware ranking (optional):
+
+```bash
+~/.local/bin/uv run add-cross-eval --checkpoints-list "artifacts/model-a.pt,artifacts/model-b.pt" --profile pi5 --embodiments "hexapod,car,drone,polymorph120" --scenario-profile hardy --runs-per-combo 2 --steps 110 --remap-every 12 --capability-profile bio-tech-v1 --capability-score-weight 0.25 --output artifacts/cross-eval-hardy-capability-poly4.json
+```
+
+7. Generate report tables:
 
 ```bash
 ~/.local/bin/uv run add-cross-report --input-path artifacts/cross-eval-hardy.json --markdown-out artifacts/cross-eval-hardy.md --csv-out artifacts/cross-eval-hardy.csv
 ```
 
-7. Visualize top-2 under the same disturbance schedule:
+8. Visualize top-2 under the same disturbance schedule:
 
 ```bash
 ~/.local/bin/uv run add-viz compare artifacts/top-1.pt artifacts/top-2.pt --profile pi5 --embodiment car --steps 160 --remap-every 20 --force-mode thrust --wind-x 0.4 --output artifacts/top1-vs-top2-car.gif

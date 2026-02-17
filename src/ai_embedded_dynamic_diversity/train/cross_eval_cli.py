@@ -32,6 +32,18 @@ class ScenarioSpec:
     force_pattern: str
 
 
+@dataclass(frozen=True)
+class CapabilityProxySignals:
+    bio_chemical: float
+    bio_phototaxis: float
+    bio_mechano: float
+    tech_rf_noise: float
+    tech_telemetry: float
+    tech_bus_load: float
+    target_signal: float
+    threat_active: bool
+
+
 def _scenario_catalog() -> dict[str, ScenarioSpec]:
     return {
         "mild": ScenarioSpec(
@@ -184,6 +196,110 @@ def _weighted_transfer_score(
     return numer / denom
 
 
+def _resolve_capability_profile(profile: str) -> str:
+    normalized = profile.strip().lower()
+    if not normalized:
+        return "none"
+    allowed = {"none", "bio-tech-v1"}
+    if normalized not in allowed:
+        raise ValueError(f"Unknown capability profile '{profile}'. Allowed: {', '.join(sorted(allowed))}")
+    return normalized
+
+
+def _safe_corr(a: list[float], b: list[float]) -> float:
+    if len(a) != len(b) or len(a) < 2:
+        return 0.0
+    mean_a = sum(a) / len(a)
+    mean_b = sum(b) / len(b)
+    da = [x - mean_a for x in a]
+    db = [x - mean_b for x in b]
+    var_a = sum(x * x for x in da)
+    var_b = sum(x * x for x in db)
+    if var_a <= 1e-10 or var_b <= 1e-10:
+        return 0.0
+    cov = sum(x * y for x, y in zip(da, db)) / len(a)
+    corr = cov / math.sqrt((var_a / len(a)) * (var_b / len(b)))
+    return max(-1.0, min(1.0, corr))
+
+
+def _binary_auc(scores: list[float], labels: list[int]) -> float:
+    if len(scores) != len(labels) or len(scores) < 2:
+        return 0.5
+    pos = [float(s) for s, y in zip(scores, labels) if int(y) == 1]
+    neg = [float(s) for s, y in zip(scores, labels) if int(y) == 0]
+    if not pos or not neg:
+        return 0.5
+    wins = 0.0
+    ties = 0.0
+    for p in pos:
+        for n in neg:
+            if p > n:
+                wins += 1.0
+            elif p == n:
+                ties += 1.0
+    return (wins + 0.5 * ties) / (len(pos) * len(neg))
+
+
+def _capability_proxy_signals(
+    state,
+    controls,
+    scenario: ScenarioSpec,
+    step: int,
+    remap_happened: bool,
+    seed: int,
+) -> CapabilityProxySignals:
+    life_mean = float(state.life.mean().item())
+    stress_mean = float(state.stress.mean().item())
+    resource_mean = float(state.resources[:, :1].mean().item())
+
+    light_intensity = float(controls.light_intensity.mean().item())
+    light_pos = controls.light_position[0]
+    object_pos = state.object_pos[0]
+    light_dist = float(torch.norm(light_pos - object_pos).item())
+    wind_mag = float(torch.norm(controls.wind[0]).item())
+    vel_mag = float(torch.norm(state.object_vel[0]).item())
+    force_mag = float(torch.norm(controls.force_vector[0]).item())
+    force_strength = float(controls.force_strength[0, 0].item())
+    force_active = float(controls.force_active[0, 0].item())
+
+    # Biological-style proxies: chemotaxis, phototaxis, mechanosensation.
+    bio_chemical = resource_mean - stress_mean
+    bio_phototaxis = light_intensity * max(0.0, 1.0 - light_dist / 2.5)
+    bio_mechano = vel_mag + force_mag * force_strength * force_active
+
+    # Technological-style proxies: RF/interference, telemetry heartbeat, bus/remap load.
+    tech_rf_noise = wind_mag + 0.5 * force_strength * force_active
+    phase = (step + (seed % 17)) / 5.0
+    tech_telemetry = 0.5 + 0.5 * math.sin(phase)
+    tech_bus_load = 0.35 * stress_mean + (0.65 if remap_happened else 0.0)
+
+    # Anonymous target signal: mixed latent of biological + technological factors.
+    target_signal = math.tanh(
+        0.24 * bio_chemical
+        + 0.20 * bio_phototaxis
+        + 0.18 * bio_mechano
+        + 0.14 * tech_rf_noise
+        + 0.12 * tech_telemetry
+        + 0.12 * tech_bus_load
+    )
+    threat_active = (
+        force_active > 0.5
+        or tech_rf_noise > 0.95
+        or stress_mean > 0.60
+        or (scenario.name in {"storm", "crosswind"} and wind_mag > 0.75)
+    )
+    return CapabilityProxySignals(
+        bio_chemical=bio_chemical,
+        bio_phototaxis=bio_phototaxis,
+        bio_mechano=bio_mechano,
+        tech_rf_noise=tech_rf_noise,
+        tech_telemetry=tech_telemetry,
+        tech_bus_load=tech_bus_load,
+        target_signal=target_signal,
+        threat_active=threat_active,
+    )
+
+
 def _load_model(weights: str, profile: str, device: torch.device) -> tuple[ModelCore, ModelConfig, dict]:
     ckpt = torch.load(weights, map_location=device)
     if "model_config" in ckpt:
@@ -246,6 +362,7 @@ def rollout_metrics(
     seed: int,
     world_dims: tuple[int, int, int, int],
     device: torch.device,
+    capability_profile: str = "none",
 ) -> dict[str, float | int]:
     wx, wy, wz, resource_channels = world_dims
     torch.manual_seed(seed)
@@ -262,14 +379,23 @@ def rollout_metrics(
 
     mismatch_values: list[float] = []
     vitality_values: list[float] = []
+    stress_values: list[float] = []
     remap_steps: list[int] = []
+    signal_target_values: list[float] = []
+    signal_emit_values: list[float] = []
+    detection_score_values: list[float] = []
+    threat_labels: list[int] = []
+    threat_steps = 0
+    evasion_success_steps = 0
 
     for step in range(steps):
         remap_code = torch.zeros(1, cfg.max_remap_groups, device=device)
+        remap_happened = False
         if step > 0 and step % remap_every == 0:
             remap_steps.append(step)
             mapping = device_map_for_embodiment(cfg.io_channels, emb, device=device, permutation_seed=seed + step * 17)
             remap_code[:, step % cfg.max_remap_groups] = 1.0
+            remap_happened = True
 
         controls = world.default_controls(1)
         phase = step / 7.0
@@ -306,10 +432,37 @@ def rollout_metrics(
             applied = out["io"] @ mapping
             mismatch = float(torch.mean((applied - desired) ** 2).item())
             mismatch_values.append(mismatch)
+            signal_emit = float(torch.tanh(out["io"].mean()).item())
+            detection_score = float(
+                torch.sigmoid(1.2 * torch.mean(torch.abs(out["readiness"])) + 0.8 * torch.mean(out["energy"])).item()
+            )
 
             action = applied.mean(dim=1, keepdim=True).repeat(1, wx * wy * wz)
             state = world.step(state, action, controls=controls)
             vitality_values.append(float(state.life.mean().item()))
+            stress_values.append(float(state.stress.mean().item()))
+
+            if capability_profile != "none":
+                proxy = _capability_proxy_signals(
+                    state=state,
+                    controls=controls,
+                    scenario=scenario,
+                    step=step,
+                    remap_happened=remap_happened,
+                    seed=seed,
+                )
+                threat = 1 if proxy.threat_active else 0
+                threat_labels.append(threat)
+                signal_target_values.append(proxy.target_signal)
+                signal_emit_values.append(signal_emit)
+                detection_score_values.append(detection_score)
+                if threat:
+                    threat_steps += 1
+                    step_stress = stress_values[-1]
+                    step_vitality = vitality_values[-1]
+                    # Evasion proxy: remain viable and controlled while threat is active.
+                    if mismatch < 0.90 and step_stress < 0.78 and step_vitality > 0.012:
+                        evasion_success_steps += 1
 
     mean_mismatch = sum(mismatch_values) / max(1, len(mismatch_values))
     mean_vitality = sum(vitality_values) / max(1, len(vitality_values))
@@ -321,7 +474,7 @@ def rollout_metrics(
         + 0.15 * recovery
     )
 
-    return {
+    metrics = {
         "mean_mismatch": mean_mismatch,
         "final_mismatch": mismatch_values[-1],
         "mean_vitality": mean_vitality,
@@ -330,6 +483,25 @@ def rollout_metrics(
         "transfer_score": transfer_score,
         "remap_events": len(remap_steps),
     }
+    if capability_profile != "none":
+        signal_corr_raw = _safe_corr(signal_emit_values, signal_target_values)
+        signal_reliability = abs(signal_corr_raw)
+        signal_detection_auc_raw = _binary_auc(detection_score_values, threat_labels)
+        signal_detection_auc = max(signal_detection_auc_raw, 1.0 - signal_detection_auc_raw)
+        evasion_success = float(evasion_success_steps / max(1, threat_steps))
+        capability_score = 0.40 * signal_reliability + 0.30 * signal_detection_auc + 0.30 * evasion_success
+        metrics.update(
+            {
+                "signal_corr_raw": signal_corr_raw,
+                "signal_reliability": signal_reliability,
+                "signal_detection_auc_raw": signal_detection_auc_raw,
+                "signal_detection_auc": signal_detection_auc,
+                "evasion_success": evasion_success,
+                "capability_score": capability_score,
+                "threat_steps": threat_steps,
+            }
+        )
+    return metrics
 
 
 @app.command()
@@ -345,6 +517,8 @@ def run(
     runs_per_combo: int = 2,
     steps: int = 90,
     remap_every: int = 15,
+    capability_profile: str = "none",
+    capability_score_weight: float = 0.0,
     world_x: int = 20,
     world_y: int = 20,
     world_z: int = 10,
@@ -376,6 +550,12 @@ def run(
         embodiment_weight_map = _parse_embodiment_weights(embodiment_weights, embodiment_list)
     except ValueError as exc:
         raise typer.BadParameter(str(exc)) from exc
+    try:
+        capability_profile_resolved = _resolve_capability_profile(capability_profile)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    if capability_score_weight < 0.0:
+        raise typer.BadParameter("capability_score_weight must be >= 0.0")
 
     dev = torch.device(device)
     world_dims = (world_x, world_y, world_z, resource_channels)
@@ -400,6 +580,7 @@ def run(
                         seed=combo_seed,
                         world_dims=world_dims,
                         device=dev,
+                        capability_profile=capability_profile_resolved,
                     )
                     run_rows.append({
                         "embodiment": emb_name,
@@ -420,24 +601,42 @@ def run(
                 "mean_vitality": float(sum(float(x["mean_vitality"]) for x in subset) / max(1, len(subset))),
                 "recovery": float(sum(float(x["recovery"]) for x in subset) / max(1, len(subset))),
             }
+            if capability_profile_resolved != "none":
+                by_embodiment[emb_name].update(
+                    {
+                        "signal_reliability": float(sum(float(x["signal_reliability"]) for x in subset) / max(1, len(subset))),
+                        "signal_detection_auc": float(sum(float(x["signal_detection_auc"]) for x in subset) / max(1, len(subset))),
+                        "evasion_success": float(sum(float(x["evasion_success"]) for x in subset) / max(1, len(subset))),
+                        "capability_score": float(sum(float(x["capability_score"]) for x in subset) / max(1, len(subset))),
+                    }
+                )
+
+        base_transfer_weighted = _weighted_transfer_score(
+            by_embodiment=by_embodiment,
+            embodiments=embodiment_list,
+            embodiment_weights=embodiment_weight_map,
+        )
+        overall_capability_score = 0.0
+        if capability_profile_resolved != "none":
+            overall_capability_score = float(
+                sum(float(row["capability_score"]) for row in run_rows) / max(1, len(run_rows))
+            )
+        ranking_score = base_transfer_weighted + capability_score_weight * overall_capability_score
 
         ranked.append(
             {
                 "checkpoint": ckpt_path,
                 "flags": raw_ckpt.get("run_flags", {}),
-                "overall_transfer_score": _avg("transfer_score"),
+                "overall_transfer_score": ranking_score,
                 "overall_transfer_score_unweighted": _avg("transfer_score"),
+                "overall_transfer_score_weighted": base_transfer_weighted,
                 "overall_mean_mismatch": _avg("mean_mismatch"),
                 "overall_mean_vitality": _avg("mean_vitality"),
                 "overall_recovery": _avg("recovery"),
+                "overall_capability_score": overall_capability_score,
                 "by_embodiment": by_embodiment,
                 "runs": run_rows,
             }
-        )
-        ranked[-1]["overall_transfer_score"] = _weighted_transfer_score(
-            by_embodiment=by_embodiment,
-            embodiments=embodiment_list,
-            embodiment_weights=embodiment_weight_map,
         )
 
     ranked.sort(key=lambda x: x["overall_transfer_score"], reverse=True)
@@ -454,6 +653,8 @@ def run(
             "runs_per_combo": runs_per_combo,
             "steps": steps,
             "remap_every": remap_every,
+            "capability_profile": capability_profile_resolved,
+            "capability_score_weight": capability_score_weight,
             "world": {"x": world_x, "y": world_y, "z": world_z, "resource_channels": resource_channels},
         },
         "ranked": ranked,

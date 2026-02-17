@@ -25,7 +25,8 @@
 - [ ] Add emergent signaling track (no explicit channel labels): produce robust internal/external signals under noisy/remapped embodiment conditions.
 - [ ] Add signal-detection track: distinguish peer/environment/threat signal patterns from anonymous streams with remap-robust decoding accuracy and low false positives.
 - [ ] Add evasion track: learn adaptive evasive behavior under hostile force/crosswind/threat-agent perturbations while preserving vitality and transfer.
-- [ ] Add mimicry+signaling+evasion evaluation harness (`cross-eval` extension + tests) with reproducible scenario seeds and success metrics.
+- [x] Add signaling+detection+evasion evaluation harness (`cross-eval` capability profile + tests) with reproducible scenario seeds and success metrics.
+- [ ] Extend capability harness with explicit mimicry and conjoining proxies (peer/environment/threat imitation quality + cooperative gain metrics).
 - [ ] Add genetic+memory survival curriculum: multi-generation selection with memory persistence objectives focused on hardy-line recovery and long-horizon stability.
 - [ ] Add conjoining research track: environment/tool-use coupling, genetic bonding proxies, and multi-agent organism-formation objectives under anonymous I/O.
 - [ ] Implement quantization-aware training and compare against dynamic quantization export.
@@ -35,6 +36,7 @@
 - [ ] Tune curriculum schedule for hardy-line gains (current curriculum run improved but did not beat non-curriculum focused run).
 - [x] Continue car-focused objective weighting/sampling in training (storm/crosswind emphasis) to push hardy car mismatch below `0.9`.
 - [ ] Make CUDA PyTorch install reproducible in `uv` lock workflow (strict-device guard is in place; remaining work is lock/index standardization so plain `uv run` keeps CUDA torch).
+- [ ] Promote next champion after high-repeat validation (`runs_per_combo >= 6`) on both transfer-only and capability-weighted hardy profiles.
 
 ## Hardware-In-The-Loop
 

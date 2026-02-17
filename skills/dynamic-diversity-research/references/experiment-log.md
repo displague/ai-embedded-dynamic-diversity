@@ -107,3 +107,17 @@ Use compact entries:
   - conjoining behavior (environment/tool use + bonding/formation proxies)
 - result: Work is staged in TODO/backlog with measurable outputs to integrate into future training/eval loops without forcing explicit imitation policies.
 - next action: Implement first eval harness slice (`signal_reliability`, `signal_detection_auc`, `evasion_success`) and run against champion-v03 baseline.
+- date: 2026-02-17
+- hypothesis: Environment-tied biological/technological proxy signals in cross-eval will expose emergent signaling/detection/evasion behavior without hardcoding explicit behavior labels.
+- change: Extended `add-cross-eval` with `--capability-profile bio-tech-v1` and blended ranking (`--capability-score-weight`), then added capability-aware reporting and tests.
+- result: Capability metrics are now emitted per run/embodiment (`signal_corr_raw`, `signal_reliability`, `signal_detection_auc_raw`, `signal_detection_auc`, `evasion_success`, `capability_score`). Initial baseline showed polarity sensitivity artifacts, so scoring was updated to be polarity-invariant (`abs(corr)`, `max(auc, 1-auc)`), aligned with anonymous-channel semantics.
+- next action: Run a new CUDA warm-start sweep and compare transfer-only vs blended capability ranking across all four embodiments.
+- date: 2026-02-17
+- hypothesis: Warm-starting from `variant-06` with strong transfer pressure and poly4 curriculum will improve both hardy transfer and capability proxies, especially `car` mismatch.
+- change: Ran `artifacts/parallel-cuda-capability-v01` (`6` variants, `40` epochs, `hexapod/car/drone/polymorph120`, transfer loss/fitness enabled, warm-start from `artifacts/parallel-cuda-converge-v03/variant-06.pt`) and evaluated with/without capability profile under hardy poly4 (`runs_per_combo=3`).
+- result:
+  - transfer-only best: `variant-01` score `0.44643` (vs champion-v03 `0.43419`)
+  - blended transfer+capability best (`weight=0.25`): `variant-00` score `0.62127`
+  - hardy `car` mismatch improved to `0.38388` (`variant-01`) and `0.40290` (`variant-00`) vs champion-v03 `0.46295`
+  - generated behavior comparisons: `artifacts/capability-v01-v01-vs-v03-car-crosswind-thrust.gif`, `artifacts/capability-v01-v00-vs-v03-polymorph-storm.gif`
+- next action: Validate `variant-00` and `variant-01` with higher-repeat (`runs_per_combo >= 6`) standard+hardy+car-priority checks before champion promotion; add explicit mimicry/conjoining proxies to capability harness.

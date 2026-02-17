@@ -6,6 +6,7 @@ from ai_embedded_dynamic_diversity.config import ModelConfig
 from ai_embedded_dynamic_diversity.models import ModelCore
 from ai_embedded_dynamic_diversity.train.cross_eval_cli import (
     ScenarioSpec,
+    _binary_auc,
     _parse_embodiment_weights,
     _resolve_scenario_profile,
     _weighted_transfer_score,
@@ -106,3 +107,70 @@ def test_weighted_transfer_score_prioritizes_target_embodiment() -> None:
     assert score_equal == pytest.approx(0.30)
     assert score_car_heavy == pytest.approx((0.40 + 0.20 * 3.0 + 0.30) / 5.0)
     assert score_car_heavy < score_equal
+
+
+def test_binary_auc_orders_scores() -> None:
+    auc = _binary_auc(
+        scores=[0.2, 0.3, 0.8, 0.9],
+        labels=[0, 0, 1, 1],
+    )
+    assert auc == pytest.approx(1.0)
+
+    auc_mixed = _binary_auc(
+        scores=[0.1, 0.9, 0.8, 0.2],
+        labels=[0, 0, 1, 1],
+    )
+    assert 0.0 <= auc_mixed <= 1.0
+
+
+def test_rollout_metrics_capability_profile_returns_proxy_metrics() -> None:
+    cfg = ModelConfig(
+        signal_dim=16,
+        hidden_dim=24,
+        edge_nodes=20,
+        memory_slots=8,
+        memory_dim=12,
+        io_channels=6,
+        max_remap_groups=4,
+    )
+    model = ModelCore(**cfg.__dict__)
+    scenario = ScenarioSpec(
+        name="storm",
+        wind=(0.8, 0.35, 0.0),
+        wind_variation=0.45,
+        light_pos=(-0.4, 0.0, 0.25),
+        light_drift=(0.004, 0.0, 0.0),
+        light_intensity=0.55,
+        force_vector=(1.1, 0.2, 0.0),
+        force_strength=1.1,
+        force_start=4,
+        force_duration=8,
+        force_pattern="pulse",
+    )
+
+    metrics = rollout_metrics(
+        model=model,
+        cfg=cfg,
+        embodiment_name="polymorph120",
+        scenario=scenario,
+        steps=20,
+        remap_every=5,
+        seed=19,
+        world_dims=(8, 8, 4, 3),
+        device=model.passive.edge_projection.weight.device,
+        capability_profile="bio-tech-v1",
+    )
+
+    assert "capability_score" in metrics
+    assert "signal_reliability" in metrics
+    assert "signal_corr_raw" in metrics
+    assert "signal_detection_auc" in metrics
+    assert "signal_detection_auc_raw" in metrics
+    assert "evasion_success" in metrics
+    assert "threat_steps" in metrics
+    assert 0.0 <= float(metrics["signal_reliability"]) <= 1.0
+    assert -1.0 <= float(metrics["signal_corr_raw"]) <= 1.0
+    assert 0.0 <= float(metrics["signal_detection_auc_raw"]) <= 1.0
+    assert 0.5 <= float(metrics["signal_detection_auc"]) <= 1.0
+    assert 0.0 <= float(metrics["evasion_success"]) <= 1.0
+    assert int(metrics["threat_steps"]) >= 1
