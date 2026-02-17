@@ -130,7 +130,14 @@ Embodiment-aware transfer optimization (optional):
 
 ```bash
 ~/.local/bin/uv run add-sim --steps 10 --batch-size 2 --device cpu
+~/.local/bin/uv run add-sim profiler --embodiment polymorph120 --profile pi5 --steps 120 --batch-size 4 --remap-every 15 --device cuda --output artifacts/embodiment-profile.json
 ```
+
+`add-sim profiler` emits:
+- runtime latencies (`step_latency_ms_p50`, `step_latency_ms_p95`)
+- runtime memory (`state_mb`, `memory_tensor_mb`, `peak_gpu_alloc_mb`)
+- effectiveness/dynamism proxies (`mean_mismatch`, `channel_firing_fraction`, `readiness_sparsity`, `memory_weight_entropy`)
+- low/high usage control-channel indices for embodiment bottleneck analysis.
 
 Visualization is independent of training loop execution and can use any checkpoint:
 

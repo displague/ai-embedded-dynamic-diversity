@@ -97,6 +97,12 @@
 - Added device-guard tests in `tests/test_train_transfer.py` and kept suite passing (`21 passed`).
 - Added tracking files (`TODO.md`, `IMPLEMENTED.md`) and updated backlog/docs.
 - Added artifact interpretation reference (`docs/ARTIFACTS.md`) with concrete success thresholds, behavior expectations, and evaluation playbooks.
+- Added embodiment profiling command (`add-sim profiler`) with JSON outputs for:
+  - P50/P95 step latency
+  - runtime memory usage (`state_mb`, `memory_tensor_mb`, `peak_gpu_alloc_mb`)
+  - readiness/channel dynamism and memory-weight entropy
+  - low/high usage control-channel indices for embodiment bottleneck inspection
+- Added profiler tests in `tests/test_sim_profiler.py`.
 - Added capability-proxy harness in `add-cross-eval` (`--capability-profile bio-tech-v1`) with environment-tied biological/technological signal proxies and metrics:
   - `signal_reliability` (with raw correlation tracked as `signal_corr_raw`)
   - `signal_detection_auc` (with raw tracked as `signal_detection_auc_raw`)
@@ -145,3 +151,4 @@
 - High-repeat validation (`runs_per_combo` 4-6) is necessary before promoting champions; some gains shrink under more repeats, but robust winners keep rank across standard/hardy/car-priority profiles.
 - Capability metrics in anonymous-channel settings must be polarity-invariant (raw negative correlation or AUC<0.5 can still indicate decodable signal if interpreted with sign inversion).
 - Coevolution fitness rank still does not reliably predict cross-embodiment transfer/capability rank; promotion should stay tied to cross-eval artifacts, not training fitness alone.
+- Per-embodiment profiling quickly reveals expected channel bottlenecks (e.g., `io_channels << control_dof`) and should be run before long sweeps to set realistic mapping-coverage expectations.

@@ -121,3 +121,13 @@ Use compact entries:
   - hardy `car` mismatch improved to `0.38388` (`variant-01`) and `0.40290` (`variant-00`) vs champion-v03 `0.46295`
   - generated behavior comparisons: `artifacts/capability-v01-v01-vs-v03-car-crosswind-thrust.gif`, `artifacts/capability-v01-v00-vs-v03-polymorph-storm.gif`
 - next action: Validate `variant-00` and `variant-01` with higher-repeat (`runs_per_combo >= 6`) standard+hardy+car-priority checks before champion promotion; add explicit mimicry/conjoining proxies to capability harness.
+- date: 2026-02-17
+- hypothesis: A dedicated embodiment profiler will expose low-utilization channels, readiness saturation, and runtime pressure early, accelerating transfer/debug loops.
+- change: Added `add-sim profiler` in `src/ai_embedded_dynamic_diversity/sim/cli.py` with metrics JSON output and tests (`tests/test_sim_profiler.py`), then ran a CUDA profile on `polymorph120` into `artifacts/profiler-polymorph120-v01.json`.
+- result: Profiler reports expected bottleneck and dynamism signals:
+  - latency: `p50 ~3.16ms`, `p95 ~3.98ms`
+  - peak GPU alloc: `~11.54MB`
+  - channel firing fraction: `~0.133`
+  - memory entropy near-uniform (`~0.99999`)
+  - mapping coverage `~0.133` (expected from `io_channels=16` over `DOF=120`)
+- next action: Use profiler outputs to drive online-remap and noisy-signal training priorities; add transfer-matrix and checkmate suite as next validation gates.

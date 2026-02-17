@@ -17,10 +17,18 @@
 - [x] Run car-priority hardy ranking using `--embodiment-weights` and compare top-1 stability vs unweighted champion.
 - [x] Run focused warm-start fine-tune with embodiment-transfer loss and verify hardy transfer/mismatch impact.
 - [ ] Measure Raspberry Pi 5 latency and memory for `model-core-pi5-int8.ts` with `add-bench` on-device.
+- [x] Add embodiment profiling CLI (`add-sim profiler`) for bottleneck I/O channels, readiness/gating stats, and runtime memory/latency metrics.
+- [ ] Add cross-embodiment "checkmate" suite: verify `>=85%` transfer effectiveness across 4 embodiments with high-repeat confidence intervals.
+- [ ] Add transfer-matrix harness: train on subset `{hexapod,car}` evaluate zero-shot on `{drone,polymorph120}` with pairwise matrix export.
+- [ ] Standardize latency benchmark matrix (P50/P95) across CPU/CUDA now and Pi5/Jetson/mobile accelerators as hardware is available.
+- [ ] Add noisy-signal resilience curriculum (sensor dropout + quantization noise) and evaluate impact on hardy transfer.
 
 ## Medium Priority
 
 - [ ] Add policy-level task objectives on top of adaptation (navigation, stability, manipulation).
+- [ ] Add dynamic embodiment discovery at runtime (auto-infer I/O schema + safe default remap groups) without recompilation.
+- [ ] Add online remap learning within episode (learned remap policy vs static periodic remaps).
+- [ ] Add few-shot embodiment adaptation protocol (`<10` gradient steps) and measure adaptation slope vs zero-shot.
 - [ ] Add a learned (non-hardcoded) mimicry training track: environmental mimicry, peer mimicry, and threat mimicry from anonymous signals, optimized for transfer fitness rather than explicit imitation labels.
 - [ ] Add emergent signaling track (no explicit channel labels): produce robust internal/external signals under noisy/remapped embodiment conditions.
 - [ ] Add signal-detection track: distinguish peer/environment/threat signal patterns from anonymous streams with remap-robust decoding accuracy and low false positives.
@@ -29,8 +37,15 @@
 - [ ] Extend capability harness with explicit mimicry and conjoining proxies (peer/environment/threat imitation quality + cooperative gain metrics).
 - [ ] Add genetic+memory survival curriculum: multi-generation selection with memory persistence objectives focused on hardy-line recovery and long-horizon stability.
 - [ ] Add conjoining research track: environment/tool-use coupling, genetic bonding proxies, and multi-agent organism-formation objectives under anonymous I/O.
+- [ ] Add multi-scale gating (global policy gate + local edge response gate) and compare against current single-scale gating family.
+- [ ] Add genetic memory bank for warm-start retrieval across morphology families.
 - [ ] Implement quantization-aware training and compare against dynamic quantization export.
 - [ ] Integrate ONNX Runtime benchmark path for Pi 5.
+- [ ] Add hardware-agnostic runtime I/O abstraction for single-checkpoint deployment across Pi5/phone/embedded Linux.
+- [ ] Add adaptive batch/chunk streaming path for reduced peak memory during long rollouts.
+- [ ] Add runtime embodiment switching without model reload (stateless memory reset and/or memory handoff policies).
+- [ ] Add telemetry feedback loop from deployment inference to curriculum retraining datasets.
+- [ ] Add lightweight inference service wrapper (HTTP + UDP bridge + metric export), and evaluate ONNX-runtime image footprint.
 - [ ] Evaluate memory gating ablations: `sigmoid` vs `symplectic` vs `symplectic+dmd+phase` using `add-gating-bench`.
 - [ ] Add manifold paging objective reduction beyond top-k slot gating (per-sample adaptive page budget).
 - [ ] Tune curriculum schedule for hardy-line gains (current curriculum run improved but did not beat non-curriculum focused run).
