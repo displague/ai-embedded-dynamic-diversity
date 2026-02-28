@@ -101,12 +101,8 @@ def run(
             else autopoietic_loss_weight
         )
 
-        venv_python = str(Path(".venv") / "Scripts" / "python.exe")
-        if not Path(venv_python).exists():
-            venv_python = sys.executable # Fallback
-
         cmd = [
-            venv_python,
+            sys.executable,
             "-m",
             "ai_embedded_dynamic_diversity.train.cli",
             "--profile",
