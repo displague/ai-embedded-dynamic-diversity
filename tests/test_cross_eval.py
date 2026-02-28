@@ -11,12 +11,16 @@ from ai_embedded_dynamic_diversity.train.cross_eval_cli import (
     _binary_auc,
     _checkmate_metrics,
     _parse_embodiment_weights,
+    _prelife_metrics_for_checkpoint,
+    _resolve_prelife_profile,
+    _resolve_prelife_seeds,
     _resolve_noise_profile,
     _resolve_subset_embodiments,
     _resolve_train_embodiments,
     _resolve_scenario_profile,
     _transfer_ratio_matrix,
     _weighted_transfer_score,
+    _normalize_prelife_score,
     compute_recovery_score,
     rollout_metrics,
 )
@@ -240,3 +244,38 @@ def test_rollout_metrics_capability_profile_returns_proxy_metrics() -> None:
     assert 0.5 <= float(metrics["signal_detection_auc"]) <= 1.0
     assert 0.0 <= float(metrics["evasion_success"]) <= 1.0
     assert int(metrics["threat_steps"]) >= 1
+
+
+def test_resolve_prelife_profile_and_seeds() -> None:
+    assert _resolve_prelife_profile("none") == "none"
+    assert _resolve_prelife_profile("dense-vs-control-v1") == "dense-vs-control-v1"
+    with pytest.raises(ValueError):
+        _resolve_prelife_profile("bad")
+
+    assert _resolve_prelife_seeds("3", base_seed=100) == [100, 101, 102]
+    assert _resolve_prelife_seeds("7,9", base_seed=100) == [7, 9]
+
+
+def test_normalize_prelife_score_in_unit_range() -> None:
+    score = _normalize_prelife_score(
+        {
+            "dense_replication_rate": 2.0,
+            "control_replication_rate": 0.2,
+            "dense_self_modification_rate": 0.8,
+            "dense_novelty_growth_slope": 0.4,
+            "dense_description_copy_fidelity": 0.9,
+            "dense_symbiogenesis_event_count": 2.0,
+        }
+    )
+    assert 0.0 <= score <= 1.0
+
+
+def test_prelife_metrics_for_checkpoint_returns_score() -> None:
+    raw, score = _prelife_metrics_for_checkpoint(
+        profile="dense-vs-control-v1",
+        prelife_steps=40,
+        prelife_seeds=[3, 5],
+    )
+    assert "dense_replication_rate" in raw
+    assert "control_replication_rate" in raw
+    assert 0.0 <= score <= 1.0

@@ -12,6 +12,7 @@ import typer
 from ai_embedded_dynamic_diversity.config import ModelConfig, model_config_for_profile
 from ai_embedded_dynamic_diversity.models import ModelCore
 from ai_embedded_dynamic_diversity.sim.embodiments import device_map_for_embodiment, get_embodiment
+from ai_embedded_dynamic_diversity.sim.prelife_cli import run_prelife_simulation
 from ai_embedded_dynamic_diversity.sim.world import DynamicDiversityWorld
 
 app = typer.Typer(add_completion=False)
@@ -299,6 +300,79 @@ def _resolve_capability_profile(profile: str) -> str:
     if normalized not in allowed:
         raise ValueError(f"Unknown capability profile '{profile}'. Allowed: {', '.join(sorted(allowed))}")
     return normalized
+
+
+def _resolve_prelife_profile(profile: str) -> str:
+    normalized = profile.strip().lower()
+    if not normalized:
+        return "none"
+    allowed = {"none", "dense-vs-control-v1"}
+    if normalized not in allowed:
+        raise ValueError(f"Unknown prelife profile '{profile}'. Allowed: {', '.join(sorted(allowed))}")
+    return normalized
+
+
+def _resolve_prelife_seeds(seeds: str, base_seed: int) -> list[int]:
+    raw = seeds.strip()
+    if not raw:
+        return [base_seed]
+    if "," not in raw and ";" not in raw:
+        count = int(raw)
+        if count <= 0:
+            raise ValueError("prelife_seeds count must be > 0")
+        return [base_seed + i for i in range(count)]
+    items = [x.strip() for x in raw.replace(";", ",").split(",") if x.strip()]
+    parsed = [int(x) for x in items]
+    if not parsed:
+        raise ValueError("prelife_seeds list is empty")
+    return parsed
+
+
+def _normalize_prelife_score(metrics: dict[str, float]) -> float:
+    dense_rep = float(metrics.get("dense_replication_rate", 0.0))
+    control_rep = float(metrics.get("control_replication_rate", 0.0))
+    dense_self_mod = float(metrics.get("dense_self_modification_rate", 0.0))
+    novelty = float(metrics.get("dense_novelty_growth_slope", 0.0))
+    fidelity = float(metrics.get("dense_description_copy_fidelity", 0.0))
+    symbio = float(metrics.get("dense_symbiogenesis_event_count", 0.0))
+
+    contrast = dense_rep - control_rep
+    rep_score = max(0.0, min(1.0, contrast / (1.0 + abs(dense_rep))))
+    self_mod_score = max(0.0, min(1.0, dense_self_mod / (1.0 + abs(dense_self_mod))))
+    novelty_score = max(0.0, min(1.0, novelty / (1.0 + abs(novelty))))
+    fidelity_score = max(0.0, min(1.0, fidelity))
+    symbio_score = max(0.0, min(1.0, symbio / 5.0))
+    return 0.35 * rep_score + 0.20 * self_mod_score + 0.15 * novelty_score + 0.20 * fidelity_score + 0.10 * symbio_score
+
+
+def _prelife_metrics_for_checkpoint(
+    profile: str,
+    prelife_steps: int,
+    prelife_seeds: list[int],
+) -> tuple[dict[str, float], float]:
+    if profile == "none":
+        return {}, 0.0
+
+    if profile != "dense-vs-control-v1":
+        raise ValueError(f"Unsupported prelife profile '{profile}'")
+
+    dense_runs = [run_prelife_simulation(substrate="bytecode_dense", steps=prelife_steps, seed=s) for s in prelife_seeds]
+    ctrl_runs = [run_prelife_simulation(substrate="sublike_control", steps=prelife_steps, seed=s) for s in prelife_seeds]
+
+    def _avg(items: list[dict], key: str) -> float:
+        vals = [float(item["metrics"].get(key, 0.0)) for item in items]
+        return float(sum(vals) / max(1, len(vals)))
+
+    raw = {
+        "dense_replication_rate": _avg(dense_runs, "replication_rate"),
+        "control_replication_rate": _avg(ctrl_runs, "replication_rate"),
+        "dense_self_modification_rate": _avg(dense_runs, "self_modification_rate"),
+        "dense_novelty_growth_slope": _avg(dense_runs, "novelty_growth_slope"),
+        "dense_description_copy_fidelity": _avg(dense_runs, "description_copy_fidelity"),
+        "dense_symbiogenesis_event_count": _avg(dense_runs, "symbiogenesis_event_count"),
+    }
+    score = _normalize_prelife_score(raw)
+    return raw, score
 
 
 def _resolve_noise_profile(profile: str) -> str:
@@ -677,6 +751,10 @@ def run(
     checkmate_threshold: float = 0.85,
     capability_profile: str = "none",
     capability_score_weight: float = 0.0,
+    prelife_profile: str = "none",
+    prelife_score_weight: float = 0.0,
+    prelife_steps: int = 120,
+    prelife_seeds: str = "2",
     noise_profile: str = "none",
     world_x: int = 20,
     world_y: int = 20,
@@ -720,11 +798,23 @@ def run(
     except ValueError as exc:
         raise typer.BadParameter(str(exc)) from exc
     try:
+        prelife_profile_resolved = _resolve_prelife_profile(prelife_profile)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    try:
+        prelife_seed_list = _resolve_prelife_seeds(prelife_seeds, base_seed=seed + 8100)
+    except (ValueError, TypeError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    try:
         noise_profile_resolved = _resolve_noise_profile(noise_profile)
     except ValueError as exc:
         raise typer.BadParameter(str(exc)) from exc
     if capability_score_weight < 0.0:
         raise typer.BadParameter("capability_score_weight must be >= 0.0")
+    if prelife_score_weight < 0.0:
+        raise typer.BadParameter("prelife_score_weight must be >= 0.0")
+    if prelife_steps <= 0:
+        raise typer.BadParameter("prelife_steps must be > 0")
 
     dev = torch.device(device)
     world_dims = (world_x, world_y, world_z, resource_channels)
@@ -792,12 +882,21 @@ def run(
             embodiments=embodiment_list,
             embodiment_weights=embodiment_weight_map,
         )
+        prelife_metrics, overall_prelife_score = _prelife_metrics_for_checkpoint(
+            profile=prelife_profile_resolved,
+            prelife_steps=prelife_steps,
+            prelife_seeds=prelife_seed_list,
+        )
         overall_capability_score = 0.0
         if capability_profile_resolved != "none":
             overall_capability_score = float(
                 sum(float(row["capability_score"]) for row in run_rows) / max(1, len(run_rows))
             )
-        ranking_score = base_transfer_weighted + capability_score_weight * overall_capability_score
+        ranking_score = (
+            base_transfer_weighted
+            + capability_score_weight * overall_capability_score
+            + prelife_score_weight * overall_prelife_score
+        )
         transfer_ratio_matrix = _transfer_ratio_matrix(
             by_embodiment=by_embodiment,
             source_embodiments=train_embodiments_resolved,
@@ -821,9 +920,14 @@ def run(
                 "overall_mean_vitality": _avg("mean_vitality"),
                 "overall_recovery": _avg("recovery"),
                 "overall_capability_score": overall_capability_score,
+                "overall_prelife_score": overall_prelife_score,
+                "ranking_component_transfer": base_transfer_weighted,
+                "ranking_component_capability": capability_score_weight * overall_capability_score,
+                "ranking_component_prelife": prelife_score_weight * overall_prelife_score,
                 "train_embodiments": train_embodiments_resolved,
                 "heldout_embodiments": heldout_embodiments,
                 "transfer_ratio_matrix": transfer_ratio_matrix,
+                "prelife_metrics": prelife_metrics,
                 **checkmate,
                 "by_embodiment": by_embodiment,
                 "runs": run_rows,
@@ -848,6 +952,10 @@ def run(
             "checkmate_threshold": checkmate_threshold,
             "capability_profile": capability_profile_resolved,
             "capability_score_weight": capability_score_weight,
+            "prelife_profile": prelife_profile_resolved,
+            "prelife_score_weight": prelife_score_weight,
+            "prelife_steps": prelife_steps,
+            "prelife_seeds": prelife_seed_list,
             "noise_profile": noise_profile_resolved,
             "world": {"x": world_x, "y": world_y, "z": world_z, "resource_channels": resource_channels},
         },
