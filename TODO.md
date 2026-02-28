@@ -51,7 +51,7 @@
 - [x] Add hardware-agnostic runtime I/O abstraction for single-checkpoint deployment across Pi5/phone/embedded Linux.
 - [x] Add adaptive batch/chunk streaming path for reduced peak memory during long rollouts.
 - [x] Add runtime embodiment switching without model reload (stateless memory reset and/or memory handoff policies).
-- [ ] Add telemetry feedback loop from deployment inference to curriculum retraining datasets.
+- [x] Add telemetry feedback loop from deployment inference to curriculum retraining datasets.
 - [ ] Add lightweight inference service wrapper (HTTP + UDP bridge + metric export), and evaluate ONNX-runtime image footprint.
 - [ ] Evaluate memory gating ablations: `sigmoid` vs `symplectic` vs `symplectic+dmd+phase` using `add-gating-bench`.
 - [ ] Add manifold paging objective reduction beyond top-k slot gating (per-sample adaptive page budget).

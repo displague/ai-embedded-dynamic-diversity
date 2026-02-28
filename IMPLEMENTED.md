@@ -39,6 +39,10 @@
   - `stateless` mode: memory reset to zero genetic prior.
   - `bank` mode: retrieval of morphology-specific memory priors from `GeneticMemoryBank`.
   - `handoff` mode: preservation of dynamic memory state across different embodiments.
+- Added telemetry feedback loop (`deploy/telemetry.py`) with:
+  - `TelemetryCollector` for logging per-step inference signals, outputs, and metadata.
+  - Support for aggregating collected logs into curriculum retraining datasets.
+  - Robust timestamped file storage with collision-prevention counters.
 - Added UDP hardware-in-the-loop adapter CLI.
 - Added configurable memory gating research modes:
   - `sigmoid` baseline
