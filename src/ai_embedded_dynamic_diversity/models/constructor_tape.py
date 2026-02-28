@@ -16,8 +16,9 @@ _INT_FIELDS = {
     "io_channels",
     "max_remap_groups",
     "topk_gating",
+    "emergent_signal_dim",
 }
-_BOOL_FIELDS = {"enable_dmd_gating", "enable_phase_gating"}
+_BOOL_FIELDS = {"enable_dmd_gating", "enable_phase_gating", "enable_multi_scale_gating"}
 _STR_FIELDS = {"gating_mode"}
 
 

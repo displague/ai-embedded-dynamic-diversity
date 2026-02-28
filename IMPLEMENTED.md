@@ -347,14 +347,18 @@
   - Morphology-family keyed memory storage and retrieval.
   - Training CLI integration via `--memory-bank-path` flag.
   - Support for warm-start memory retrieval and multi-generation persistence.
+- Expanded Universal Constructor architecture:
+  - Updated `ConstructorTape` to support `enable_multi_scale_gating` and `emergent_signal_dim`.
+  - Generated and verified `v07` constructor tape (`artifacts/model-core-v07.tape.json`) matching champion metadata.
+  - Verified full reconstruction of `ModelCore` from parametric tape description.
 
 ## Agent Continuity And Handoff Infrastructure
-
 - Ran high-repeat validation (`runs_per_combo=12`, `steps=60`) for champion candidates using `bio-tech-v1` capability profile:
-  - `model-core-champion-v06.pt`: `0.54907` (Current Champion - curriculum power optimized)
-  - `model-core-champion-v05.pt`: `0.54813` (Prior Champion)
-  - `model-core-champion-v04.pt`: `0.54947` (Legacy baseline)
-  - Confirmed `model-core-champion-v06` promotion based on improved cross-embodiment robustness and higher capability_score (0.584) vs v5.
+  - `model-core-champion-v07.pt`: `0.57046` (Current Champion - autopoietic optimized)
+  - `model-core-champion-v06.pt`: `0.54907` (Prior Champion)
+  - `model-core-champion-v05.pt`: `0.54813`
+  - Confirmed `model-core-champion-v07` promotion based on superior autopoietic fitness and cross-embodiment transfer score.
+
 - Audited symbiogenesis proxies in long-horizon coevolution:
   - Verified **+66% emergent signal variance gain** over 40 generations.
   - Verified **+16% signal detection improvement** (decoding accuracy) in competitive peer scenarios.
