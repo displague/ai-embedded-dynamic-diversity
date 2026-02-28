@@ -71,17 +71,6 @@ def run(
     env = dict(os.environ)
     env["PYTHONPATH"] = "src"
 
-    # Ensure child processes use the same virtual environment
-    venv_path = os.environ.get("VIRTUAL_ENV")
-    if venv_path:
-        env["VIRTUAL_ENV"] = venv_path
-        # On Windows, binaries are in Scripts
-        bin_dir = str(Path(venv_path) / "Scripts")
-        if os.name == "nt":
-            env["PATH"] = bin_dir + os.pathsep + env.get("PATH", "")
-        else:
-            env["PATH"] = str(Path(venv_path) / "bin") + os.pathsep + env.get("PATH", "")
-
     device_list = [x.strip() for x in device_pool.replace(";", ",").split(",") if x.strip()]
 
     gating_modes = ["sigmoid", "symplectic"]
