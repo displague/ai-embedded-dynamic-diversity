@@ -241,12 +241,13 @@ def run_gradient_epoch(
     noise_seed: int = 0,
     use_amp: bool = False,
     scaler=None,
+    remap_loss_weight: float = 0.1,
     enable_autopoietic_objective: bool = False,
     autopoietic_loss_weight: float = 0.10,
     autopoietic_self_repair_weight: float = 0.35,
     autopoietic_closure_weight: float = 0.45,
     autopoietic_resource_cycle_weight: float = 0.20,
-) -> tuple[float, torch.Tensor, float, float, float, float]:
+) -> tuple[float, torch.Tensor, float, float, float, float, float]:
     state = world.init(tcfg.batch_size)
     if genetic_memory is None:
         memory = model.init_memory(tcfg.batch_size, mcfg.memory_slots, mcfg.memory_dim, dev)
@@ -255,6 +256,7 @@ def run_gradient_epoch(
     epoch_loss = 0.0
     step_times = []
     transfer_mismatch_total = 0.0
+    remap_loss_total = 0.0
     autopoietic_score_total = 0.0
     autopoietic_loss_total = 0.0
     amp_enabled = use_amp and dev.type == "cuda"
@@ -286,13 +288,16 @@ def run_gradient_epoch(
                 ],
                 dim=1,
             )
-            base_loss, _ = loss_fn(
+            base_loss, logs = loss_fn(
                 out,
                 target,
                 entropy_weight=tcfg.entropy_weight,
                 energy_weight=tcfg.energy_weight,
                 memory_consistency_weight=tcfg.memory_consistency_weight,
+                remap_loss_weight=remap_loss_weight,
+                target_remap_code=remap_code,
             )
+            remap_loss_total += logs["remap_loss"]
             transfer_mismatch = 0.0
             transfer_loss_tensor = out["io"].new_zeros(())
             if transfer_states and transfer_loss_weight > 0.0:
@@ -340,6 +345,7 @@ def run_gradient_epoch(
     final_memory = memory.mean(dim=0, keepdim=True).detach()
     mean_step_ms = sum(step_times) / max(1, len(step_times))
     mean_transfer_mismatch = transfer_mismatch_total / max(1, tcfg.unroll_steps)
+    mean_remap_loss = remap_loss_total / max(1, tcfg.unroll_steps)
     mean_autopoietic_score = autopoietic_score_total / max(1, tcfg.unroll_steps)
     mean_autopoietic_loss = autopoietic_loss_total / max(1, tcfg.unroll_steps)
     return (
@@ -347,6 +353,7 @@ def run_gradient_epoch(
         final_memory,
         mean_step_ms,
         mean_transfer_mismatch,
+        mean_remap_loss,
         mean_autopoietic_score,
         mean_autopoietic_loss,
     )
@@ -504,6 +511,7 @@ def run(
     autopoietic_self_repair_weight: float = 0.35,
     autopoietic_closure_weight: float = 0.45,
     autopoietic_resource_cycle_weight: float = 0.20,
+    remap_loss_weight: float = 0.1,
     noise_profile: str = "none",
     enable_noise_curriculum: bool = False,
     noise_strength_start: float = 0.2,
@@ -539,6 +547,8 @@ def run(
         raise typer.BadParameter("noise_strength_start and noise_strength_end must be >= 0.0")
     if autopoietic_loss_weight < 0.0:
         raise typer.BadParameter("autopoietic_loss_weight must be >= 0.0")
+    if remap_loss_weight < 0.0:
+        raise typer.BadParameter("remap_loss_weight must be >= 0.0")
 
     dev = choose_device(tcfg.device, strict=strict_device)
     if dev.type == "cuda":
@@ -592,6 +602,7 @@ def run(
         "autopoietic_self_repair_weight": autopoietic_self_repair_weight,
         "autopoietic_closure_weight": autopoietic_closure_weight,
         "autopoietic_resource_cycle_weight": autopoietic_resource_cycle_weight,
+        "remap_loss_weight": remap_loss_weight,
         "noise_profile": noise_profile_resolved,
         "enable_noise_curriculum": enable_noise_curriculum,
         "noise_strength_start": noise_strength_start,
@@ -694,6 +705,7 @@ def run(
                     "fitness": fitness,
                     "mean_step_ms": mean_step_ms,
                     "mean_transfer_mismatch": mean_transfer_mismatch,
+                    "mean_remap_loss": mean_remap_loss,
                     "mean_autopoietic_score": mean_autopoietic_score,
                     "autopoietic_loss_component": mean_autopoietic_loss,
                     "remap_probability": remap_probability,
@@ -708,6 +720,7 @@ def run(
                     "fitness": fitness,
                     "mean_step_ms": mean_step_ms,
                     "mean_transfer_mismatch": mean_transfer_mismatch,
+                    "mean_remap_loss": mean_remap_loss,
                     "mean_autopoietic_score": mean_autopoietic_score,
                     "autopoietic_loss_component": mean_autopoietic_loss,
                     "device": str(dev),
@@ -779,6 +792,7 @@ def run(
                 _,
                 step_ms,
                 mean_transfer_mismatch,
+                mean_remap_loss,
                 mean_autopoietic_score,
                 mean_autopoietic_loss,
             ) = run_gradient_epoch(
@@ -799,6 +813,7 @@ def run(
                 noise_seed=seed + generation * 1009 + idx * 37,
                 use_amp=amp_enabled,
                 scaler=scalers[idx],
+                remap_loss_weight=remap_loss_weight,
                 enable_autopoietic_objective=enable_autopoietic_objective,
                 autopoietic_loss_weight=autopoietic_loss_weight,
                 autopoietic_self_repair_weight=autopoietic_self_repair_weight,
@@ -813,6 +828,7 @@ def run(
                     "agent": idx,
                     "warmup_loss": warmup_loss,
                     "mean_transfer_mismatch": mean_transfer_mismatch,
+                    "mean_remap_loss": mean_remap_loss,
                     "mean_autopoietic_score": mean_autopoietic_score,
                     "autopoietic_loss_component": mean_autopoietic_loss,
                     "remap_probability": remap_probability,

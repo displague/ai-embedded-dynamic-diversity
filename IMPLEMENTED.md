@@ -268,6 +268,11 @@
   - `register_embodiment` for on-the-fly additions.
   - `discover_from_spec` for inferred I/O schemas from JSON/dict.
   - auto-indexed control/sensor naming for rapid prototyping.
+- Added learned online remapping within episode (`ModelCore.remap_predictor`) with:
+  - latent-to-remap projection head.
+  - `remap_loss` (MSE) to train the predictor against environmental ground truth.
+  - CLI support (`--remap-loss-weight`) for both standard and coevolution training modes.
+  - Support for zero-shot remap inference when `remap_code` is not provided.
 
 ## Agent Continuity And Handoff Infrastructure
 

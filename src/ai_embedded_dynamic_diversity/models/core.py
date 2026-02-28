@@ -134,15 +134,32 @@ class ModelCore(nn.Module):
         )
         self.memory_to_edge = nn.Linear(memory_dim, edge_nodes)
         self.router = AnonymousEdgeRouter(edge_nodes, io_channels, max_remap_groups)
+        self.remap_predictor = nn.Sequential(
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.SiLU(),
+            nn.Linear(hidden_dim, max_remap_groups),
+        )
 
     def init_memory(self, batch_size: int, memory_slots: int, memory_dim: int, device: str | torch.device) -> torch.Tensor:
         return torch.zeros(batch_size, memory_slots, memory_dim, device=device)
 
-    def forward(self, signal: torch.Tensor, memory: torch.Tensor, remap_code: torch.Tensor) -> dict[str, torch.Tensor]:
+    def forward(
+        self,
+        signal: torch.Tensor,
+        memory: torch.Tensor,
+        remap_code: torch.Tensor | None = None,
+    ) -> dict[str, torch.Tensor]:
         latent, readiness, energy = self.passive(signal)
         read, new_memory, memory_weights = self.active(latent, memory)
         refined_readiness = torch.sigmoid(readiness + self.memory_to_edge(read))
-        io = self.router(refined_readiness, remap_code)
+        
+        # Predict remap code from latent state
+        predicted_remap = torch.sigmoid(self.remap_predictor(latent))
+        
+        # Use provided remap_code if available, otherwise use predicted
+        current_remap = remap_code if remap_code is not None else predicted_remap
+        
+        io = self.router(refined_readiness, current_remap)
         return {
             "latent": latent,
             "readiness": refined_readiness,
@@ -150,4 +167,5 @@ class ModelCore(nn.Module):
             "io": io,
             "memory": new_memory,
             "memory_weights": memory_weights,
+            "predicted_remap": predicted_remap,
         }
