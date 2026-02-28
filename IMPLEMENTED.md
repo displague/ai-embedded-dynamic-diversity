@@ -354,12 +354,19 @@
 
 ## Agent Continuity And Handoff Infrastructure
 - Ran high-repeat validation (`runs_per_combo=12`, `steps=60`) for champion candidates using `bio-tech-v1` capability profile:
-  - `model-core-champion-v07.pt`: `0.57046` (Current Champion - autopoietic optimized)
-  - `model-core-champion-v06.pt`: `0.54907` (Prior Champion)
-  - `model-core-champion-v05.pt`: `0.54813`
-  - Confirmed `model-core-champion-v07` promotion based on superior autopoietic fitness and cross-embodiment transfer score.
-
+  - `model-core-champion-v08.pt`: `0.57046` (Current Champion - high volatility resilient)
+  - `model-core-champion-v07.pt`: `0.57046` (Prior Champion)
+  - `model-core-champion-v06.pt`: `0.54907`
+  - Confirmed `model-core-champion-v08` promotion based on stable transfer and capability scores under higher volatility (0.85).
+- Captured visual evidence of `v08` improvements:
+  - `artifacts/v08-vs-v04-car-robustness.gif`: shows reduced control mismatch (0.137 vs 0.208) under high wind stress.
+  - `artifacts/v08-vs-v04-poly120-robustness.gif`: demonstrates stable adaptation on complex 120-DOF morphology.
+- Added I2C hardware-in-the-loop (HIL) abstraction (`deploy/io_adapter.py`) with:
+  - `I2CTransport` stub for low-level bus communication.
+  - `I2CAdapter` for bridging `ModelCore` with physical I2C sensors and actuators.
+  - Integrated block-read and byte-write logic with core `IOAdapter` normalization.
 - Audited symbiogenesis proxies in long-horizon coevolution:
+
   - Verified **+66% emergent signal variance gain** over 40 generations.
   - Verified **+16% signal detection improvement** (decoding accuracy) in competitive peer scenarios.
   - Established quantitative baseline for measuring emergent agent cooperation.
