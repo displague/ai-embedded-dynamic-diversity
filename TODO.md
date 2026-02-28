@@ -36,7 +36,7 @@
 - [x] Add online remap learning within episode (learned remap policy vs static periodic remaps).
 - [x] Add few-shot embodiment adaptation protocol (`<10` gradient steps) and measure adaptation slope vs zero-shot.
 - [ ] Add a learned (non-hardcoded) mimicry training track: environmental mimicry, peer mimicry, and threat mimicry from anonymous signals, optimized for transfer fitness rather than explicit imitation labels.
-- [ ] Add emergent signaling track (no explicit channel labels): produce robust internal/external signals under noisy/remapped embodiment conditions.
+- [x] Add emergent signaling track (no explicit channel labels): produce robust internal/external signals under noisy/remapped embodiment conditions.
 - [x] Add signal-detection track: distinguish peer/environment/threat signal patterns from anonymous streams with remap-robust decoding accuracy and low false positives.
 - [x] Add evasion track: learn adaptive evasive behavior under hostile force/crosswind/threat-agent perturbations while preserving vitality and transfer.
 - [x] Add signaling+detection+evasion evaluation harness (`cross-eval` capability profile + tests) with reproducible scenario seeds and success metrics.

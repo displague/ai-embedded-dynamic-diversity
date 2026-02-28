@@ -251,7 +251,8 @@ def run_gradient_epoch(
     autopoietic_closure_weight: float = 0.45,
     autopoietic_resource_cycle_weight: float = 0.20,
     detection_loss_weight: float = 0.1,
-) -> tuple[float, torch.Tensor, float, float, float, float, float, float]:
+    emergent_signal_loss_weight: float = 0.05,
+) -> tuple[float, torch.Tensor, float, float, float, float, float, float, float]:
     state = world.init(tcfg.batch_size)
     if genetic_memory is None:
         memory = model.init_memory(tcfg.batch_size, mcfg.memory_slots, mcfg.memory_dim, dev)
@@ -262,6 +263,7 @@ def run_gradient_epoch(
     transfer_mismatch_total = 0.0
     remap_loss_total = 0.0
     detection_loss_total = 0.0
+    emergent_signal_loss_total = 0.0
     autopoietic_score_total = 0.0
     autopoietic_loss_total = 0.0
     amp_enabled = use_amp and dev.type == "cuda"
@@ -312,9 +314,11 @@ def run_gradient_epoch(
                 target_remap_code=remap_code,
                 detection_loss_weight=detection_loss_weight,
                 target_signal_type=target_signal_type,
+                emergent_signal_loss_weight=emergent_signal_loss_weight,
             )
             remap_loss_total += logs["remap_loss"]
             detection_loss_total += logs["detection_loss"]
+            emergent_signal_loss_total += logs["emergent_signal_loss"]
             transfer_mismatch = 0.0
             transfer_loss_tensor = out["io"].new_zeros(())
             if transfer_states and transfer_loss_weight > 0.0:
@@ -364,6 +368,7 @@ def run_gradient_epoch(
     mean_transfer_mismatch = transfer_mismatch_total / max(1, tcfg.unroll_steps)
     mean_remap_loss = remap_loss_total / max(1, tcfg.unroll_steps)
     mean_detection_loss = detection_loss_total / max(1, tcfg.unroll_steps)
+    mean_emergent_signal_loss = emergent_signal_loss_total / max(1, tcfg.unroll_steps)
     mean_autopoietic_score = autopoietic_score_total / max(1, tcfg.unroll_steps)
     mean_autopoietic_loss = autopoietic_loss_total / max(1, tcfg.unroll_steps)
     return (
@@ -373,6 +378,7 @@ def run_gradient_epoch(
         mean_transfer_mismatch,
         mean_remap_loss,
         mean_detection_loss,
+        mean_emergent_signal_loss,
         mean_autopoietic_score,
         mean_autopoietic_loss,
     )
@@ -534,6 +540,7 @@ def run(
     autopoietic_resource_cycle_weight: float = 0.20,
     remap_loss_weight: float = 0.1,
     detection_loss_weight: float = 0.1,
+    emergent_signal_loss_weight: float = 0.05,
     noise_profile: str = "none",
     enable_noise_curriculum: bool = False,
     noise_strength_start: float = 0.2,
@@ -648,6 +655,7 @@ def run(
         "autopoietic_resource_cycle_weight": autopoietic_resource_cycle_weight,
         "remap_loss_weight": remap_loss_weight,
         "detection_loss_weight": detection_loss_weight,
+        "emergent_signal_loss_weight": emergent_signal_loss_weight,
         "noise_profile": noise_profile_resolved,
         "enable_noise_curriculum": enable_noise_curriculum,
         "noise_strength_start": noise_strength_start,
@@ -763,6 +771,7 @@ def run(
                     "mean_transfer_mismatch": mean_transfer_mismatch,
                     "mean_remap_loss": mean_remap_loss,
                     "mean_detection_loss": mean_detection_loss,
+                    "mean_emergent_signal_loss": mean_emergent_signal_loss,
                     "mean_autopoietic_score": mean_autopoietic_score,
                     "autopoietic_loss_component": mean_autopoietic_loss,
                     "remap_probability": remap_probability,
@@ -779,6 +788,7 @@ def run(
                     "mean_transfer_mismatch": mean_transfer_mismatch,
                     "mean_remap_loss": mean_remap_loss,
                     "mean_detection_loss": mean_detection_loss,
+                    "mean_emergent_signal_loss": mean_emergent_signal_loss,
                     "mean_autopoietic_score": mean_autopoietic_score,
                     "autopoietic_loss_component": mean_autopoietic_loss,
                     "device": str(dev),
@@ -896,6 +906,7 @@ def run(
                     "mean_transfer_mismatch": mean_transfer_mismatch,
                     "mean_remap_loss": mean_remap_loss,
                     "mean_detection_loss": mean_detection_loss,
+                    "mean_emergent_signal_loss": mean_emergent_signal_loss,
                     "mean_autopoietic_score": mean_autopoietic_score,
                     "autopoietic_loss_component": mean_autopoietic_loss,
                     "remap_probability": remap_probability,

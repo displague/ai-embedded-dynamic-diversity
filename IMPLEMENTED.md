@@ -284,6 +284,10 @@
   - Dynamic threat agent simulation with pursuit logic and stress-proximity coupling.
   - Mixed observation encoding for concurrent sensing and signal detection tasks.
 - Added signal detection head (`ModelCore.signal_decoder`) and `detection_loss` (CrossEntropy) to optimize signal categorization from anonymous streams.
+- Added emergent signaling track (`ModelCore.emergent_signal_head`) with:
+  - Variance-based optimization (`emergent_signal_loss`) to reward signal diversity and avoid zero/constant collapse.
+  - Training CLI support via `--emergent-signal-loss-weight` flag.
+  - Integration with standard and coevolution training cycles.
 - Added learned online remapping within episode (`ModelCore.remap_predictor`) with:
   - latent-to-remap projection head.
   - `remap_loss` (MSE) to train the predictor against environmental ground truth.

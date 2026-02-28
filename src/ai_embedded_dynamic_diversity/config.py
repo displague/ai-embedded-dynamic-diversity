@@ -15,6 +15,7 @@ class ModelConfig:
     enable_dmd_gating: bool = False
     enable_phase_gating: bool = False
     enable_multi_scale_gating: bool = False
+    emergent_signal_dim: int = 8
 
 
 @dataclass

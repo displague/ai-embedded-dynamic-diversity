@@ -121,6 +121,7 @@ class ModelCore(nn.Module):
         enable_dmd_gating: bool = False,
         enable_phase_gating: bool = False,
         enable_multi_scale_gating: bool = False,
+        emergent_signal_dim: int = 8,
     ):
         super().__init__()
         self.enable_multi_scale_gating = enable_multi_scale_gating
@@ -150,6 +151,12 @@ class ModelCore(nn.Module):
             nn.Linear(hidden_dim, hidden_dim),
             nn.SiLU(),
             nn.Linear(hidden_dim, 4), # 4 signal types: none, peer, env, threat
+        )
+        self.emergent_signal_head = nn.Sequential(
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.SiLU(),
+            nn.Linear(hidden_dim, emergent_signal_dim),
+            nn.Tanh(),
         )
 
     def init_memory(self, batch_size: int, memory_slots: int, memory_dim: int, device: str | torch.device) -> torch.Tensor:
@@ -183,8 +190,8 @@ class ModelCore(nn.Module):
         # Use provided remap_code if available, otherwise use predicted
         current_remap = remap_code if remap_code is not None else predicted_remap
 
-        # Predict signal type (detection task)
-        predicted_signal_type = self.signal_decoder(latent)
+        # Emergent signal generation (track without explicit labels)
+        emergent_signal = self.emergent_signal_head(latent)
 
         io = self.router(refined_readiness, current_remap)
 
@@ -197,4 +204,5 @@ class ModelCore(nn.Module):
             "memory_weights": memory_weights,
             "predicted_remap": predicted_remap,
             "predicted_signal_type": predicted_signal_type,
+            "emergent_signal": emergent_signal,
         }
