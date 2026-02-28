@@ -3,11 +3,10 @@
 ## Common Scenarios
 
 1. "Need to run/interpret convergence ratchet cycles"
-- skill: `dynamic-diversity-research`
+- skill: `ai-convergence-research`
 - load first:
   - `SKILL.md`
   - `references/session-lessons-latest.md`
-  - `references/lessons-common.md`
 
 2. "Need updated gif package for embodiment evolution"
 - skill: `dynamic-diversity-research`
@@ -16,21 +15,22 @@
   - `references/lessons-common.md`
 
 3. "Need handoff for successor agent"
-- skill: `dynamic-diversity-research`
+- skill: `agent-management`
 - load first:
-  - `references/handoff-playbook.md`
+  - `SKILL.md`
+  - `assets/handoff-packet-example.json`
   - `scripts/validate_handoff_packet.py`
 
 ## Unique/Edge Scenarios
 
 1. "Cross-platform agent compatibility drift"
-- skill: `dynamic-diversity-research`
+- skill: `agent-management`
 - load first:
-  - `references/lessons-unique.md`
-  - `references/handoff-playbook.md`
+  - `SKILL.md`
+  - `scripts/check_agent_drift.py`
 
 2. "Metric/ranking disagreement between artifacts"
 - skill: `dynamic-diversity-research`
 - load first:
+  - `SKILL.md`
   - `references/lessons-unique.md`
-  - `references/session-lessons-latest.md`

@@ -261,6 +261,14 @@
 
 ## Agent Continuity And Handoff Infrastructure
 
+- Added modularized skill structure:
+  - `skills/dynamic-diversity-research`: core embodiment and transfer research.
+  - `skills/ai-convergence-research`: advanced convergence (universal constructor, pre-life, autopoiesis).
+  - `skills/agent-management`: handoff, continuity, and contract synchronization.
+- Relocated handoff-related scripts to `skills/agent-management/scripts/`:
+  - `check_agent_drift.py`
+  - `gen_reference_subset.py`
+  - `validate_handoff_packet.py`
 - Added repository-level agent policy in `AGENTS.md` with:
   - invariant precedence
   - strict lifecycle states

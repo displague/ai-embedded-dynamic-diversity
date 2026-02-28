@@ -2,16 +2,27 @@
 
 ## dynamic-diversity-research
 
-- purpose: Embodied convergence research operations in this repository.
+- purpose: Embodied diversity research focusing on cross-embodiment transfer and adaptive anonymous-channel model cores.
 - triggers:
-  - convergence ratchet workflows
-  - cross-eval/report interpretation
+  - embodiment spread/hardiness/noise experiments
+  - cross-eval/report ranking interpretation
   - storyboard artifact generation
-  - handoff/return continuity updates
-- avoid when: task does not involve this repository's convergence platform.
 - definition: `skills/dynamic-diversity-research/SKILL.md`
-- primary references:
-  - `skills/dynamic-diversity-research/references/handoff-playbook.md`
-  - `skills/dynamic-diversity-research/references/session-lessons-latest.md`
-  - `skills/dynamic-diversity-research/references/lessons-common.md`
-  - `skills/dynamic-diversity-research/references/lessons-unique.md`
+
+## ai-convergence-research
+
+- purpose: Advanced convergence research focusing on universal constructors, pre-life emergence, and autopoietic closure metrics.
+- triggers:
+  - universal-constructor model instantiation
+  - pre-life emergence simulation tracks
+  - autopoietic closure metrics interpretation
+- definition: `skills/ai-convergence-research/SKILL.md`
+
+## agent-management
+
+- purpose: Devex and management workflows for multi-agent handoff, continuity, and contract synchronization.
+- triggers:
+  - multi-agent handoff/return packet preparation
+  - contract/mirror synchronization checks
+  - reference subset generation
+- definition: `skills/agent-management/SKILL.md`

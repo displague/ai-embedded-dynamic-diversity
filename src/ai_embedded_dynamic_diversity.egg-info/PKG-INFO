@@ -22,6 +22,19 @@ PyTorch research scaffold for a portable "model core" that adapts to anonymous l
 - Train in a 3D+time constrained world (Conway-inspired dynamics + resources + stress) for robust efficiency.
 - Preserve adaptation under remapped channels (e.g., actuator/function reassignment).
 
+## Embodiments (DOF)
+
+- `hexapod`: `10` DOF controls, `5` sensor channels
+- `car`: `6` DOF controls, `5` sensor channels
+- `drone`: `8` DOF controls, `5` sensor channels
+- `polymorph120`: `120` DOF controls, `12` sensor channels (complex stress-test; multiple of 10/6/8)
+
+List from CLI:
+
+```bash
+~/.local/bin/uv run add-sim embodiments
+```
+
 ## Environment
 
 - Training target: NVIDIA RTX 5080 16GB
@@ -41,6 +54,18 @@ python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -e .
 ```
+
+CUDA wheel setup for this project venv (PowerShell):
+
+```powershell
+~/.local/bin/uv pip install --python .venv\Scripts\python.exe --torch-backend cu130 --reinstall torch torchvision torchaudio
+@'
+import torch
+print(torch.__version__, torch.cuda.is_available(), torch.version.cuda)
+'@ | .\.venv\Scripts\python -
+```
+
+If `uv run` re-syncs CPU torch from lockfile, run training/eval via `.\.venv\Scripts\python -m ...` (or `uv run --no-sync` if your environment is already correct). Training now defaults to strict device selection, so `--device cuda` fails fast if CUDA is unavailable.
 
 ## Run training
 
@@ -66,6 +91,48 @@ Parallel diverse-fitness sweep:
 ~/.local/bin/uv run add-train-parallel --variants 6 --max-workers 3 --profile pi5 --epochs 10 --device cuda --out-dir artifacts/parallel
 ```
 
+Aggressive transfer-focused sweep (embodiment-aware loss + mixed device pool):
+
+```bash
+~/.local/bin/uv run add-train-parallel --variants 8 --max-workers 4 --profile pi5 --epochs 30 --batch-size 20 --unroll-steps 16 --device cuda --device-pool "cuda,cuda,cpu,cpu" --coevolution --population-size 6 --embodiments "hexapod,car,drone,polymorph120" --enable-embodiment-transfer-loss --transfer-loss-weight 0.4 --transfer-fitness-weight 0.1 --transfer-samples-per-step 3 --use-amp --allow-tf32 --out-dir artifacts/parallel-aggressive
+```
+
+Constructor-aware parallel sweep (mixed architecture tapes):
+
+```bash
+~/.local/bin/uv run add-train-parallel --variants 6 --max-workers 3 --profile pi5 --epochs 20 --device cuda --constructor-tape-cycle "artifacts/tape-a.json,artifacts/tape-b.json" --out-dir artifacts/parallel-constructor
+```
+
+Autopoietic-aware parallel sweep (objective on + weight cycling):
+
+```bash
+~/.local/bin/uv run add-train-parallel --variants 6 --max-workers 3 --profile pi5 --epochs 20 --device cuda --enable-autopoietic-objective --autopoietic-loss-weight-cycle "0.08,0.12,0.16" --out-dir artifacts/parallel-autopoiesis
+```
+
+Long CUDA-heavy warm-start sweep (recommended to run via project venv Python to avoid lockfile resync):
+
+```powershell
+.\.venv\Scripts\python -m ai_embedded_dynamic_diversity.train.parallel_cli --variants 8 --max-workers 3 --profile pi5 --epochs 48 --batch-size 24 --unroll-steps 20 --device cuda --device-pool "cuda,cuda,cpu" --coevolution --population-size 6 --embodiments "hexapod,car,drone,polymorph120" --enable-embodiment-transfer-loss --transfer-loss-weight 0.5 --transfer-fitness-weight 0.16 --transfer-samples-per-step 4 --use-amp --allow-tf32 --init-weights artifacts/parallel-cuda-mixed-sweep/variant-01.pt --out-dir artifacts/parallel-cuda-long-v02
+```
+
+Convergence-focused follow-up sweep (current champion path):
+
+```powershell
+.\.venv\Scripts\python -m ai_embedded_dynamic_diversity.train.parallel_cli --variants 10 --max-workers 3 --profile pi5 --epochs 56 --batch-size 24 --unroll-steps 20 --device cuda --device-pool "cuda,cuda,cpu" --coevolution --population-size 6 --embodiments "hexapod,car,drone,polymorph120" --enable-embodiment-transfer-loss --transfer-loss-weight 0.55 --transfer-fitness-weight 0.18 --transfer-samples-per-step 4 --use-amp --allow-tf32 --init-weights artifacts/model-core-champion-v02.pt --out-dir artifacts/parallel-cuda-converge-v03
+```
+
+Focused warm-start fine-tune from current champion:
+
+```bash
+~/.local/bin/uv run add-train --profile pi5 --epochs 36 --batch-size 24 --unroll-steps 18 --device cuda --gating-mode symplectic --topk-gating 4 --enable-dmd-gating --enable-phase-gating --enable-curriculum --enable-genetic-memory --embodiments "hexapod,car,drone,polymorph120" --enable-embodiment-transfer-loss --transfer-loss-weight 0.45 --transfer-fitness-weight 0.12 --transfer-samples-per-step 3 --init-weights artifacts/focused-variant03-long.pt --save-path artifacts/focused-variant03-long-poly-ft.pt
+```
+
+Latest champion checkpoint: `artifacts/model-core-champion-v04.pt` (from `artifacts/parallel-cuda-noisecurr-v01/variant-01.pt`).
+Latest noisy-curriculum sweep results:
+- transfer-only hardy poly4 (clean, r6): `artifacts/parallel-cuda-noisecurr-v01/variant-01.pt` at `~0.45131`
+- transfer-only hardy poly4 (noisy-v2, r6): `artifacts/parallel-cuda-noisecurr-v01/variant-01.pt` at `~0.45133`
+- hardy car mismatch (noisy-v2, r6): `~0.38334` (vs champion-v03 `~0.50883`)
+
 Curriculum + latent genetic memory:
 
 ```bash
@@ -74,12 +141,52 @@ Curriculum + latent genetic memory:
 
 Experimental flags are optional and combinable: `--gating-mode symplectic`, `--topk-gating 4`, `--enable-dmd-gating`, `--enable-phase-gating`, `--enable-curriculum`, `--enable-genetic-memory`.
 Each run stores flags+performance+fitness in `*.metrics.json` (or set `--metrics-path`).
+Use `--strict-device` (default) to prevent accidental CPU fallback when CUDA was requested.
+
+Autopoietic objective coupling (optional, default off):
+
+- `--enable-autopoietic-objective`
+- `--autopoietic-loss-weight 0.10`
+- `--autopoietic-self-repair-weight 0.35`
+- `--autopoietic-closure-weight 0.45`
+- `--autopoietic-resource-cycle-weight 0.20`
+
+Constructor-tape driven architecture (optional):
+
+- `--constructor-tape-path artifacts/constructor-tape.json`
+- Tape format: `{"version": 1, "tokens": ["signal_dim=48", "hidden_dim=64", "memory_slots=24", ...]}`
+- If a tape is provided, architecture dimensions/gating come from the tape and are also saved in checkpoint metadata as `constructor_tape`.
+
+Embodiment-aware transfer optimization (optional):
+
+- `--embodiments "hexapod,car,drone,polymorph120"`
+- `--enable-embodiment-transfer-loss`
+- `--transfer-loss-weight 0.45`
+- `--transfer-fitness-weight 0.12`
+- `--transfer-samples-per-step 3`
+- `--init-weights artifacts/focused-variant03-long.pt` for warm-start fine-tuning
+
+Noisy-signal curriculum training (optional):
+
+- `--noise-profile dropout-quant-v1` or `dropout-quant-v2`
+- `--enable-noise-curriculum`
+- `--noise-strength-start 0.25`
+- `--noise-strength-end 1.0`
 
 ## Run simulator rollout
 
 ```bash
 ~/.local/bin/uv run add-sim --steps 10 --batch-size 2 --device cpu
+~/.local/bin/uv run add-sim profiler --embodiment polymorph120 --profile pi5 --steps 120 --batch-size 4 --remap-every 15 --device cuda --output artifacts/embodiment-profile.json
+~/.local/bin/uv run add-sim profiler --profile base --constructor-tape-path artifacts/constructor-tape.json --steps 120 --batch-size 4 --output artifacts/embodiment-profile-tape.json
 ```
+
+`add-sim profiler` emits:
+- runtime latencies (`step_latency_ms_p50`, `step_latency_ms_p95`)
+- runtime memory (`state_mb`, `memory_tensor_mb`, `peak_gpu_alloc_mb`)
+- effectiveness/dynamism proxies (`mean_mismatch`, `channel_firing_fraction`, `readiness_sparsity`, `memory_weight_entropy`)
+- autopoietic closure metrics (`closure_resilience`, `organizational_persistence`, `self_repair_response`, `resource_cycle_efficiency`, `autopoietic_score`)
+- low/high usage control-channel indices for embodiment bottleneck analysis.
 
 Visualization is independent of training loop execution and can use any checkpoint:
 
@@ -89,6 +196,18 @@ Visualization is independent of training loop execution and can use any checkpoi
 ```
 
 `force-mode` options: `none`, `poke`, `press`, `push`, `continuous-blow`, `thrust`, `move`.
+
+Convergence storyboard GIF package (top-k checkpoints from cross-eval):
+
+```bash
+~/.local/bin/uv run add-viz storyboard --cross-eval-json artifacts/cross-eval-convergence-ratchet.json --top-k 2 --scenario-profile hardy --steps 170 --remap-every 18 --output-dir artifacts/viz-storyboard --manifest-output artifacts/viz-storyboard/manifest.json --include-montage
+```
+
+`add-viz storyboard` emits:
+- per-embodiment evolution GIFs (`*-evolution.gif`)
+- per-embodiment top-1 vs top-2 compare GIFs
+- a montage GIF (`convergence-storyboard.gif`)
+- a manifest JSON linking GIFs and final mismatch/vitality metrics
 
 Memory gating benchmark:
 
@@ -102,6 +221,86 @@ Cross-embodiment transfer evaluation (`hexapod`, `car`, `drone`):
 ~/.local/bin/uv run add-cross-eval --checkpoints-dir artifacts/parallel-long --profile pi5 --embodiments 'hexapod,car,drone' --scenarios 'mild,gust,force' --runs-per-combo 2 --steps 90 --remap-every 15 --output artifacts/cross-eval-summary.json
 ```
 
+Hardy-line transfer evaluation profile (stronger disturbances):
+
+```bash
+~/.local/bin/uv run add-cross-eval --checkpoints-list "artifacts/focused-variant03-curriculum.pt,artifacts/focused-variant03-long.pt,artifacts/parallel-long/variant-03.pt,artifacts/parallel-long/variant-02.pt" --profile pi5 --embodiments "hexapod,car,drone" --scenario-profile hardy --runs-per-combo 2 --steps 110 --remap-every 12 --output artifacts/cross-eval-hardy-focused-vs-top.json
+~/.local/bin/uv run add-cross-report --input-path artifacts/cross-eval-hardy-focused-vs-top.json --markdown-out artifacts/cross-eval-hardy-focused-vs-top.md --csv-out artifacts/cross-eval-hardy-focused-vs-top.csv
+```
+
+Car-priority ranking for hardy-line selection (optional weighting):
+
+```bash
+~/.local/bin/uv run add-cross-eval --checkpoints-list "artifacts/focused-variant03-long.pt,artifacts/focused-variant03-curriculum.pt,artifacts/parallel-long/variant-03.pt" --profile pi5 --embodiments "hexapod,car,drone" --embodiment-weights "hexapod=1,car=2.5,drone=1" --scenario-profile hardy --runs-per-combo 2 --steps 110 --remap-every 12 --output artifacts/cross-eval-hardy-car-priority.json
+```
+
+Capability-aware cross-eval (biological/technological proxy harness):
+
+```bash
+~/.local/bin/uv run add-cross-eval --checkpoints-list "artifacts/model-core-champion-v03.pt,artifacts/parallel-cuda-capability-v01/variant-01.pt,artifacts/parallel-cuda-capability-v01/variant-00.pt" --profile pi5 --embodiments "hexapod,car,drone,polymorph120" --scenario-profile hardy --runs-per-combo 3 --steps 110 --remap-every 12 --capability-profile bio-tech-v1 --capability-score-weight 0.25 --output artifacts/cross-eval-capability-vs-champion.json
+~/.local/bin/uv run add-cross-report --input-path artifacts/cross-eval-capability-vs-champion.json --markdown-out artifacts/cross-eval-capability-vs-champion.md --csv-out artifacts/cross-eval-capability-vs-champion.csv
+```
+
+Convergence ranking with pre-life weighted term:
+
+```bash
+~/.local/bin/uv run add-cross-eval --checkpoints-list "artifacts/model-core-champion-v04.pt,artifacts/parallel-cuda-noisecurr-v01/variant-00.pt,artifacts/parallel-cuda-noisecurr-v01/variant-01.pt" --profile pi5 --embodiments "hexapod,car,drone,polymorph120" --scenario-profile hardy --runs-per-combo 4 --steps 110 --remap-every 12 --capability-profile bio-tech-v1 --capability-score-weight 0.20 --prelife-profile dense-vs-control-v1 --prelife-score-weight 0.25 --prelife-steps 120 --prelife-seeds 3 --output artifacts/cross-eval-convergence-v1.json
+~/.local/bin/uv run add-cross-report --input-path artifacts/cross-eval-convergence-v1.json --markdown-out artifacts/cross-eval-convergence-v1.md --csv-out artifacts/cross-eval-convergence-v1.csv
+```
+
+Convergence gates + autopoiesis-weighted ranking:
+
+```bash
+~/.local/bin/uv run add-cross-eval --checkpoints-list "artifacts/model-core-champion-v04.pt,artifacts/parallel-cuda-noisecurr-v01/variant-00.pt,artifacts/parallel-cuda-noisecurr-v01/variant-01.pt" --profile pi5 --embodiments "hexapod,car,drone,polymorph120" --scenario-profile hardy --runs-per-combo 4 --steps 110 --remap-every 12 --capability-profile bio-tech-v1 --capability-score-weight 0.20 --prelife-profile dense-vs-control-v1 --prelife-score-weight 0.25 --autopoiesis-score-weight 0.15 --enable-convergence-gates --symbio-min-threshold 0.45 --autopoiesis-min-threshold 0.55 --convergence-thresholds-output artifacts/convergence-thresholds.json --output artifacts/cross-eval-convergence-v2.json
+~/.local/bin/uv run add-cross-report --input-path artifacts/cross-eval-convergence-v2.json --markdown-out artifacts/cross-eval-convergence-v2.md --csv-out artifacts/cross-eval-convergence-v2.csv
+```
+
+`add-cross-eval` now emits progressive gate-ratcheting guidance to `artifacts/convergence-thresholds.json`.
+
+Balanced threshold-ratchet cycles (multi-cycle convergence run):
+
+```bash
+~/.local/bin/uv run add-cross-eval --checkpoints-list "artifacts/model-core-champion-v04.pt,artifacts/parallel-cuda-noisecurr-v01/variant-00.pt,artifacts/parallel-cuda-noisecurr-v01/variant-01.pt" --profile pi5 --embodiments "hexapod,car,drone,polymorph120" --scenario-profile hardy --runs-per-combo 2 --steps 90 --remap-every 12 --capability-profile bio-tech-v1 --capability-score-weight 0.20 --prelife-profile dense-vs-control-v1 --prelife-score-weight 0.25 --autopoiesis-score-weight 0.15 --enable-convergence-gates --symbio-min-threshold 0.47 --autopoiesis-min-threshold 0.38 --enable-threshold-ratchet --ratchet-max-cycles 4 --ratchet-symbio-step 0.02 --ratchet-autopoiesis-step 0.03 --ratchet-summary-output artifacts/convergence-ratchet-summary.json --output artifacts/cross-eval-convergence-ratchet.json
+~/.local/bin/uv run add-cross-report --input-path artifacts/cross-eval-convergence-ratchet.json --markdown-out artifacts/cross-eval-convergence-ratchet.md --csv-out artifacts/cross-eval-convergence-ratchet.csv
+```
+
+Checkmate + transfer matrix harness (example zero-shot split):
+
+```bash
+~/.local/bin/uv run add-cross-eval --checkpoints-list "artifacts/model-core-champion-v03.pt,artifacts/parallel-cuda-capability-v01/variant-01.pt,artifacts/parallel-cuda-capability-v01/variant-00.pt" --profile pi5 --embodiments "hexapod,car,drone,polymorph120" --train-embodiments "hexapod,car" --checkmate-threshold 0.85 --scenario-profile hardy --runs-per-combo 3 --steps 110 --remap-every 12 --output artifacts/cross-eval-checkmate-transfer-hardy-poly4-r3.json
+~/.local/bin/uv run add-cross-report --input-path artifacts/cross-eval-checkmate-transfer-hardy-poly4-r3.json --markdown-out artifacts/cross-eval-checkmate-transfer-hardy-poly4-r3.md --csv-out artifacts/cross-eval-checkmate-transfer-hardy-poly4-r3.csv
+```
+
+Noisy-signal robustness eval (stricter checkmate):
+
+```bash
+~/.local/bin/uv run add-cross-eval --checkpoints-list "artifacts/model-core-champion-v03.pt,artifacts/parallel-cuda-capability-v01/variant-01.pt,artifacts/parallel-cuda-capability-v01/variant-00.pt" --profile pi5 --embodiments "hexapod,car,drone,polymorph120" --train-embodiments "hexapod,car" --checkmate-threshold 0.95 --scenario-profile hardy --runs-per-combo 6 --steps 110 --remap-every 12 --noise-profile dropout-quant-v2 --output artifacts/cross-eval-checkmate-transfer-noisyv2-hardy-poly4-r6-th095.json
+~/.local/bin/uv run add-cross-report --input-path artifacts/cross-eval-checkmate-transfer-noisyv2-hardy-poly4-r6-th095.json --markdown-out artifacts/cross-eval-checkmate-transfer-noisyv2-hardy-poly4-r6-th095.md --csv-out artifacts/cross-eval-checkmate-transfer-noisyv2-hardy-poly4-r6-th095.csv
+```
+
+Pre-life emergence experiments:
+
+```bash
+~/.local/bin/uv run add-prelife run --substrate bytecode_dense --steps 400 --seed 17 --output artifacts/prelife-emergence-dense.json
+~/.local/bin/uv run add-prelife run --substrate sublike_control --steps 400 --seed 17 --output artifacts/prelife-emergence-control.json
+~/.local/bin/uv run add-prelife report --input-path artifacts/prelife-emergence-dense.json --markdown-out artifacts/prelife-emergence-dense.md --csv-out artifacts/prelife-emergence-dense.csv
+```
+
+`add-prelife` tracks:
+- first replication step and replication/self-modification rates
+- lineage depth (`p50`, `p95`)
+- novelty growth slope
+- description-copy fidelity
+- symbiogenesis event counts
+- substrate phase-transition step (when detected)
+
+Focused comparison over an explicit checkpoint list:
+
+```bash
+~/.local/bin/uv run add-cross-eval --checkpoints-list \"artifacts/focused-variant03-long.pt,artifacts/parallel-long/variant-03.pt,artifacts/parallel-long/variant-02.pt\" --profile pi5 --embodiments 'hexapod,car,drone' --scenarios 'mild,gust,force' --runs-per-combo 2 --steps 90 --remap-every 15 --output artifacts/cross-eval-focused-vs-top.json
+~/.local/bin/uv run add-cross-report --input-path artifacts/cross-eval-focused-vs-top.json --markdown-out artifacts/cross-eval-focused-vs-top.md --csv-out artifacts/cross-eval-focused-vs-top.csv
+```
+
 ## Export for edge
 
 ```bash
@@ -109,21 +308,58 @@ Cross-embodiment transfer evaluation (`hexapod`, `car`, `drone`):
 ~/.local/bin/uv run add-export onnx --weights artifacts/model-core.pt --output artifacts/model-core.onnx --opset 17
 ~/.local/bin/uv run add-export quantized-torchscript --weights artifacts/model-core-pi5.pt --output artifacts/model-core-pi5-int8.ts
 ~/.local/bin/uv run add-bench --weights artifacts/model-core-pi5.pt --profile pi5 --device cpu --steps 300
+~/.local/bin/uv run add-bench matrix --weights artifacts/model-core-pi5.pt --profile pi5 --targets "cpu=cpu,cuda=cuda,pi5=external,jetson=external,mobile=external" --batch-sizes "1,4,8" --steps 300 --output artifacts/latency-matrix.json
 ~/.local/bin/uv run add-hil udp-bridge --weights artifacts/model-core-pi5.pt --listen-port 45454 --send-port 45455
 ```
+
+`add-bench matrix` standardizes a single JSON matrix artifact with per-target status:
+- `ok`: benchmarked on this host
+- `skipped`: target requested but unavailable on this host (for example `cuda` without GPU)
+- `hardware_pending`: placeholder row for hardware not present here (for example `pi5`, `jetson`, `mobile`)
+
+When running on a specific device host, remap target labels to local runtime devices (for example on Pi5: `--targets "pi5=cpu"`).
 
 ## Project layout
 
 - `src/ai_embedded_dynamic_diversity/models/core.py`: passive/active tensor core and anonymous edge router.
 - `src/ai_embedded_dynamic_diversity/sim/world.py`: 3D+time world with life/resource/stress fields.
 - `src/ai_embedded_dynamic_diversity/sim/embodiments.py`: reproducible embodiment schemas and mapping generation.
+- `src/ai_embedded_dynamic_diversity/models/constructor_tape.py`: external constructor-tape schema and config parsing.
+- `src/ai_embedded_dynamic_diversity/models/universal_constructor.py`: universal-constructor style model build + description copier.
 - `src/ai_embedded_dynamic_diversity/train/cli.py`: unrolled training with remap perturbations.
 - `src/ai_embedded_dynamic_diversity/train/cross_eval_cli.py`: cross-embodiment transfer evaluation and ranking.
+- `src/ai_embedded_dynamic_diversity/train/cross_report_cli.py`: delta/summary report generation for cross-eval outputs.
 - `src/ai_embedded_dynamic_diversity/deploy/cli.py`: TorchScript and ONNX export path.
 - `src/ai_embedded_dynamic_diversity/sim/viz_cli.py`: remap adaptation visualization (GIF/MP4 output).
+- `src/ai_embedded_dynamic_diversity/sim/prelife_cli.py`: pre-life emergence run/report commands and metrics.
 - `src/ai_embedded_dynamic_diversity/deploy/bench_cli.py`: inference latency benchmarking for edge validation.
 - `src/ai_embedded_dynamic_diversity/deploy/hil_cli.py`: UDP hardware-in-the-loop adapter.
 - `skills/dynamic-diversity-research/SKILL.md`: workflow for future AI agents continuing research.
+- `docs/ARTIFACTS.md`: artifact interpretation guide (goals, success criteria, expected behavior, failure patterns).
+
+## Agent Operating Model
+
+Canonical policy and handoff surfaces:
+
+- `AGENTS.md`: repository-level invariants, lifecycle states, and packet requirements.
+- `.agents/README.md`: compatibility and startup ordering for successor agents.
+- `.agents/subagent-*.md`: role contracts (`orchestrator`, `convergence-operator`, `viz-storyboard-operator`, `evaluation-auditor`, `docs-handoff-curator`).
+- `.agents/handoff-*.md` + `.agents/return-protocol.md`: strict handoff/return lifecycle and packet template.
+- `skills/dynamic-diversity-research/SKILL.md`: thin reusable skill definition.
+- `skills/dynamic-diversity-research/references/*`: deep references loaded on demand.
+- `skills/_index/*`: catalog/taxonomy/scenario maps for low-context retrieval.
+
+Cross-platform compatibility mirrors:
+
+- `.claude/agents/*.md`
+- `.opencode/agents/*.md`
+
+Successor startup order:
+
+1. `AGENTS.md`
+2. Assigned subagent role contract in `.agents/subagent-*.md`
+3. Relevant `skills/*/SKILL.md`
+4. Only `reference_subset_recommended` listed in latest handoff packet
 
 ## Immediate next experiments
 
