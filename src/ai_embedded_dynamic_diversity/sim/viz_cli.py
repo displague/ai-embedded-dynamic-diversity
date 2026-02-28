@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import random
-from dataclasses import dataclass
+import json
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
 import torch
@@ -37,6 +38,46 @@ class VizParams:
     light_drift_x: float
     light_drift_y: float
     light_drift_z: float
+
+
+def _checkpoint_label(path: str) -> str:
+    return Path(path).stem
+
+
+def _resolve_storyboard_embodiments(embodiments_csv: str, fallback: list[str]) -> list[str]:
+    if not embodiments_csv.strip():
+        return list(fallback)
+    names: list[str] = []
+    for token in embodiments_csv.replace(";", ",").split(","):
+        name = token.strip().lower()
+        if not name:
+            continue
+        if name not in names:
+            names.append(name)
+    return names
+
+
+def _resolve_storyboard_scenarios(scenario_profile: str, scenarios_csv: str) -> list[str]:
+    if scenarios_csv.strip():
+        return [x.strip().lower() for x in scenarios_csv.replace(";", ",").split(",") if x.strip()]
+    normalized = scenario_profile.strip().lower()
+    profiles = {
+        "standard": ["gust", "force"],
+        "hardy": ["storm", "crosswind", "blackout"],
+        "extreme": ["storm", "crosswind", "blackout"],
+    }
+    if normalized not in profiles:
+        allowed = ", ".join(sorted(profiles))
+        raise ValueError(f"Unknown scenario profile '{scenario_profile}'. Allowed: {allowed}")
+    return profiles[normalized]
+
+
+def _select_storyboard_checkpoints(ranked: list[dict], top_k: int) -> list[str]:
+    if top_k <= 0:
+        raise ValueError("top_k must be > 0")
+    if not ranked:
+        return []
+    return [str(item["checkpoint"]) for item in ranked[:top_k] if "checkpoint" in item]
 
 
 def _load_model(weights: str | None, profile: str, device: torch.device) -> tuple[ModelCore, object]:
@@ -322,6 +363,184 @@ def _save_compare(output: str, left: dict, right: dict, left_name: str, right_na
     plt.close(fig)
 
 
+def _scenario_viz_overrides(name: str) -> dict:
+    scenario = name.strip().lower()
+    if scenario == "gust":
+        return {
+            "force_mode": "press",
+            "force_start": 18,
+            "force_duration": 16,
+            "force_sustain": 0.7,
+            "force_x": 0.6,
+            "force_y": 0.0,
+            "force_z": 0.0,
+            "wind_x": 0.45,
+            "wind_y": 0.1,
+            "wind_z": 0.0,
+            "wind_variation": 0.25,
+            "light_x": -0.3,
+            "light_y": 0.0,
+            "light_z": 0.3,
+            "light_intensity": 0.8,
+            "light_drift_x": 0.002,
+            "light_drift_y": 0.0,
+            "light_drift_z": 0.0,
+        }
+    if scenario == "force":
+        return {
+            "force_mode": "thrust",
+            "force_start": 20,
+            "force_duration": 26,
+            "force_sustain": 1.0,
+            "force_x": 0.85,
+            "force_y": 0.0,
+            "force_z": 0.0,
+            "wind_x": 0.2,
+            "wind_y": 0.0,
+            "wind_z": 0.0,
+            "wind_variation": 0.1,
+            "light_x": -0.15,
+            "light_y": 0.0,
+            "light_z": 0.25,
+            "light_intensity": 0.7,
+            "light_drift_x": 0.0,
+            "light_drift_y": 0.0,
+            "light_drift_z": 0.0,
+        }
+    if scenario == "storm":
+        return {
+            "force_mode": "continuous-blow",
+            "force_start": 10,
+            "force_duration": 36,
+            "force_sustain": 1.1,
+            "force_x": 1.1,
+            "force_y": 0.2,
+            "force_z": 0.0,
+            "wind_x": 0.8,
+            "wind_y": 0.35,
+            "wind_z": 0.0,
+            "wind_variation": 0.45,
+            "light_x": -0.4,
+            "light_y": 0.0,
+            "light_z": 0.25,
+            "light_intensity": 0.55,
+            "light_drift_x": 0.004,
+            "light_drift_y": 0.0,
+            "light_drift_z": 0.0,
+        }
+    if scenario == "blackout":
+        return {
+            "force_mode": "press",
+            "force_start": 16,
+            "force_duration": 26,
+            "force_sustain": 0.9,
+            "force_x": 0.75,
+            "force_y": 0.0,
+            "force_z": 0.0,
+            "wind_x": 0.25,
+            "wind_y": 0.0,
+            "wind_z": 0.0,
+            "wind_variation": 0.15,
+            "light_x": 0.25,
+            "light_y": 0.0,
+            "light_z": 0.1,
+            "light_intensity": 0.15,
+            "light_drift_x": -0.004,
+            "light_drift_y": 0.0,
+            "light_drift_z": 0.0,
+        }
+    if scenario == "crosswind":
+        return {
+            "force_mode": "thrust",
+            "force_start": 14,
+            "force_duration": 34,
+            "force_sustain": 0.95,
+            "force_x": 0.55,
+            "force_y": 0.85,
+            "force_z": 0.0,
+            "wind_x": 0.15,
+            "wind_y": 0.85,
+            "wind_z": 0.0,
+            "wind_variation": 0.3,
+            "light_x": -0.2,
+            "light_y": 0.15,
+            "light_z": 0.2,
+            "light_intensity": 0.65,
+            "light_drift_x": 0.0,
+            "light_drift_y": -0.002,
+            "light_drift_z": 0.0,
+        }
+    raise ValueError(f"Unsupported storyboard scenario: {name}")
+
+
+def _params_for_scenario(base: VizParams, scenario_name: str) -> VizParams:
+    merged = {**asdict(base), **_scenario_viz_overrides(scenario_name)}
+    return VizParams(**merged)
+
+
+def _save_storyboard_montage(output: str, panels: dict[str, dict], title: str) -> None:
+    import matplotlib.pyplot as plt
+    from matplotlib import animation
+
+    if not panels:
+        return
+    Path(output).parent.mkdir(parents=True, exist_ok=True)
+
+    names = list(panels.keys())
+    frames = min(len(panels[name]["life_frames"]) for name in names)
+    cols = 2
+    rows = (len(names) + cols - 1) // cols
+    fig, axes = plt.subplots(rows, cols, figsize=(6 * cols, 4 * rows))
+    if not hasattr(axes, "__iter__"):
+        axes = [axes]
+    axes_list = list(axes.flatten()) if hasattr(axes, "flatten") else list(axes)
+
+    heatmaps = {}
+    texts = {}
+    for idx, name in enumerate(names):
+        ax = axes_list[idx]
+        result = panels[name]
+        heat = ax.imshow(result["life_frames"][0], cmap="viridis", vmin=0.0, vmax=1.0)
+        ax.set_title(name)
+        txt = ax.text(0.02, 0.98, "", transform=ax.transAxes, va="top", color="white", fontsize=9, family="monospace")
+        heatmaps[name] = heat
+        texts[name] = txt
+
+    for ax in axes_list[len(names):]:
+        ax.axis("off")
+
+    fig.suptitle(title)
+
+    def _init():
+        artists = []
+        for name in names:
+            heatmaps[name].set_data(panels[name]["life_frames"][0])
+            texts[name].set_text("")
+            artists.extend([heatmaps[name], texts[name]])
+        return tuple(artists)
+
+    def _update(i: int):
+        artists = []
+        for name in names:
+            result = panels[name]
+            heatmaps[name].set_data(result["life_frames"][i])
+            texts[name].set_text(
+                f"mismatch={result['mismatch_values'][i]:.4f}\n"
+                f"vitality={result['vitality_values'][i]:.4f}\n"
+                f"force={result['force_values'][i]:.3f}"
+            )
+            artists.extend([heatmaps[name], texts[name]])
+        return tuple(artists)
+
+    anim = animation.FuncAnimation(fig, _update, init_func=_init, frames=frames, interval=80, blit=True)
+    ext = Path(output).suffix.lower()
+    if ext == ".gif":
+        anim.save(output, writer=animation.PillowWriter(fps=12))
+    else:
+        anim.save(output, writer="ffmpeg", fps=18)
+    plt.close(fig)
+
+
 @app.command()
 def run(
     weights: str = "",
@@ -492,6 +711,190 @@ def compare(
             "right_final_mismatch": right_result["mismatch_values"][-1],
             "left_final_vitality": left_result["vitality_values"][-1],
             "right_final_vitality": right_result["vitality_values"][-1],
+        }
+    )
+
+
+@app.command()
+def storyboard(
+    cross_eval_json: str = "artifacts/cross-eval-summary.json",
+    top_k: int = 2,
+    embodiments: str = "",
+    scenario_profile: str = "hardy",
+    scenarios: str = "",
+    profile: str = "",
+    steps: int = 170,
+    remap_every: int = 18,
+    world_x: int = 20,
+    world_y: int = 20,
+    world_z: int = 10,
+    resource_channels: int = 5,
+    output_dir: str = "artifacts/viz-storyboard",
+    manifest_output: str = "artifacts/viz-storyboard/manifest.json",
+    include_montage: bool = True,
+    device: str = "cpu",
+    seed: int = 11,
+) -> None:
+    try:
+        import matplotlib.pyplot as _  # noqa: F401
+    except ImportError as exc:
+        raise typer.BadParameter("matplotlib is required for visualization. Install dependencies with uv sync.") from exc
+
+    payload = json.loads(Path(cross_eval_json).read_text(encoding="utf-8"))
+    ranked = payload.get("ranked", [])
+    if not isinstance(ranked, list) or not ranked:
+        raise typer.BadParameter(f"No ranked checkpoints found in {cross_eval_json}")
+
+    selected_checkpoints = _select_storyboard_checkpoints(ranked, top_k=top_k)
+    if not selected_checkpoints:
+        raise typer.BadParameter("No checkpoints available for storyboard generation")
+
+    cfg = payload.get("config", {})
+    fallback_embodiments = [str(x).strip().lower() for x in cfg.get("embodiments", []) if str(x).strip()]
+    if not fallback_embodiments:
+        fallback_embodiments = ["hexapod", "car", "drone", "polymorph120"]
+    embodiment_list = _resolve_storyboard_embodiments(embodiments, fallback=fallback_embodiments)
+    scenario_names = _resolve_storyboard_scenarios(scenario_profile=scenario_profile, scenarios_csv=scenarios)
+    if not scenario_names:
+        raise typer.BadParameter("No storyboard scenarios were selected")
+
+    resolved_profile = profile.strip() or str(cfg.get("profile", "pi5"))
+    dev = torch.device(device)
+    random.seed(seed)
+    torch.manual_seed(seed)
+
+    base_params = VizParams(
+        steps=steps,
+        remap_every=remap_every,
+        force_mode="push",
+        force_start=24,
+        force_duration=28,
+        force_sustain=0.8,
+        force_x=0.8,
+        force_y=0.0,
+        force_z=0.0,
+        wind_x=0.4,
+        wind_y=0.0,
+        wind_z=0.0,
+        wind_variation=0.2,
+        light_x=-0.3,
+        light_y=0.0,
+        light_z=0.2,
+        light_intensity=0.75,
+        light_drift_x=0.002,
+        light_drift_y=0.0,
+        light_drift_z=0.0,
+    )
+
+    world = DynamicDiversityWorld(world_x, world_y, world_z, resource_channels, decay=0.03, device=str(dev))
+    base_state = world.init(batch_size=1)
+    model_cache: dict[str, tuple[ModelCore, object]] = {}
+    results_for_montage: dict[str, dict] = {}
+    generated_artifacts: list[dict] = []
+
+    out_dir = Path(output_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    for scenario_idx, scenario_name in enumerate(scenario_names):
+        scenario_params = _params_for_scenario(base_params, scenario_name)
+        for emb_idx, embodiment_name in enumerate(embodiment_list):
+            get_embodiment(embodiment_name)
+            run_results: list[tuple[str, dict, object]] = []
+            for rank_idx, ckpt_path in enumerate(selected_checkpoints):
+                if ckpt_path not in model_cache:
+                    model_cache[ckpt_path] = _load_model(ckpt_path, resolved_profile, dev)
+                model, cfg_obj = model_cache[ckpt_path]
+                control_dim = len(get_embodiment(embodiment_name).controls)
+                local_seed = seed + emb_idx * 100 + scenario_idx * 1000
+                torch.manual_seed(local_seed)
+                projection = torch.randn(cfg_obj.signal_dim, control_dim, device=dev) * 0.3
+                result = _simulate(
+                    model=model,
+                    cfg=cfg_obj,
+                    world=world,
+                    initial_state=base_state,
+                    params=scenario_params,
+                    embodiment_name=embodiment_name,
+                    projection=projection,
+                    device=dev,
+                    seed_offset=local_seed + rank_idx * 17,
+                )
+                run_results.append((ckpt_path, result, cfg_obj))
+
+            primary_ckpt, primary_result, _ = run_results[0]
+            evo_name = f"{scenario_name}-{embodiment_name}-{_checkpoint_label(primary_ckpt)}-evolution.gif"
+            evo_path = str(out_dir / evo_name)
+            _save_single(
+                evo_path,
+                primary_result,
+                title=f"{embodiment_name} | {scenario_name} | {_checkpoint_label(primary_ckpt)}",
+            )
+
+            item = {
+                "scenario": scenario_name,
+                "embodiment": embodiment_name,
+                "primary_checkpoint": primary_ckpt,
+                "evolution_gif": evo_path,
+                "final_mismatch": float(primary_result["mismatch_values"][-1]),
+                "final_vitality": float(primary_result["vitality_values"][-1]),
+            }
+            if scenario_idx == 0:
+                results_for_montage[embodiment_name] = primary_result
+
+            if len(run_results) >= 2:
+                left_ckpt, left_result, _ = run_results[0]
+                right_ckpt, right_result, _ = run_results[1]
+                compare_name = (
+                    f"{scenario_name}-{embodiment_name}-{_checkpoint_label(left_ckpt)}-vs-{_checkpoint_label(right_ckpt)}.gif"
+                )
+                compare_path = str(out_dir / compare_name)
+                _save_compare(
+                    compare_path,
+                    left_result,
+                    right_result,
+                    left_name=_checkpoint_label(left_ckpt),
+                    right_name=_checkpoint_label(right_ckpt),
+                )
+                item["compare_gif"] = compare_path
+                item["compare_left_checkpoint"] = left_ckpt
+                item["compare_right_checkpoint"] = right_ckpt
+                item["compare_left_final_mismatch"] = float(left_result["mismatch_values"][-1])
+                item["compare_right_final_mismatch"] = float(right_result["mismatch_values"][-1])
+            generated_artifacts.append(item)
+
+    montage_path = ""
+    if include_montage and results_for_montage:
+        montage_path = str(out_dir / "convergence-storyboard.gif")
+        _save_storyboard_montage(
+            output=montage_path,
+            panels=results_for_montage,
+            title=f"Embodied Convergence Storyboard ({scenario_names[0]})",
+        )
+
+    manifest = {
+        "cross_eval_json": cross_eval_json,
+        "profile": resolved_profile,
+        "selected_checkpoints": selected_checkpoints,
+        "embodiments": embodiment_list,
+        "scenarios": scenario_names,
+        "steps": steps,
+        "remap_every": remap_every,
+        "output_dir": output_dir,
+        "montage_gif": montage_path,
+        "artifacts": generated_artifacts,
+    }
+    Path(manifest_output).parent.mkdir(parents=True, exist_ok=True)
+    Path(manifest_output).write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+
+    print(
+        {
+            "manifest": manifest_output,
+            "output_dir": output_dir,
+            "embodiments": len(embodiment_list),
+            "scenarios": len(scenario_names),
+            "checkpoints": len(selected_checkpoints),
+            "generated_artifacts": len(generated_artifacts),
+            "montage": montage_path,
         }
     )
 
