@@ -40,11 +40,20 @@ def run(
     autopoietic_closure_weight: float = 0.45,
     autopoietic_resource_cycle_weight: float = 0.20,
     autopoietic_loss_weight_cycle: str = "",
+    remap_loss_weight: float = 0.1,
+    detection_loss_weight: float = 0.1,
+    emergent_signal_loss_weight: float = 0.05,
+    genetic_memory_persistence_weight: float = 0.05,
+    paging_loss_weight: float = 0.01,
     noise_profile: str = "none",
     noise_profile_cycle: str = "",
     enable_noise_curriculum: bool = False,
     noise_strength_start: float = 0.2,
     noise_strength_end: float = 1.0,
+    enable_multi_scale_gating: bool = True,
+    enable_qat: bool = False,
+    curriculum_power: float = 1.0,
+    memory_bank_path: str = "",
     use_amp: bool = True,
     allow_tf32: bool = True,
     compile_model: bool = False,
@@ -124,6 +133,18 @@ def run(
             str(autopoietic_closure_weight),
             "--autopoietic-resource-cycle-weight",
             str(autopoietic_resource_cycle_weight),
+            "--remap-loss-weight",
+            str(remap_loss_weight),
+            "--detection-loss-weight",
+            str(detection_loss_weight),
+            "--emergent-signal-loss-weight",
+            str(emergent_signal_loss_weight),
+            "--genetic-memory-persistence-weight",
+            str(genetic_memory_persistence_weight),
+            "--paging-loss-weight",
+            str(paging_loss_weight),
+            "--curriculum-power",
+            str(curriculum_power),
             "--noise-profile",
             variant_noise_profile,
             "--seed",
@@ -147,6 +168,12 @@ def run(
             cmd += ["--constructor-tape-path", variant_constructor_tape]
         if coevolution:
             cmd += ["--coevolution", "--population-size", str(population_size)]
+        if enable_multi_scale_gating:
+            cmd += ["--enable-multi-scale-gating"]
+        if enable_qat:
+            cmd += ["--enable-qat"]
+        if memory_bank_path:
+            cmd += ["--memory-bank-path", memory_bank_path]
         if enable_dmd:
             cmd += ["--enable-dmd-gating"]
         if enable_phase:

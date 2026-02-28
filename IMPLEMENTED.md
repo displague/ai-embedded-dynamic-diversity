@@ -325,6 +325,10 @@
   - Attachment logic based on proximity between object and tool agents.
   - Co-movement physics for attached agents.
   - Extended observation encoding with tool position and coupling status.
+- Added learned mimicry track (`sim/mimicry.py`) with:
+  - `MimicryWorld` for simulating peer agents with dynamic signals.
+  - Environmental state coupling (signals driven by resources and light phase).
+  - Integrated mimicry signals into anonymous observation streams for emergent mirroring.
 - Added learned online remapping within episode (`ModelCore.remap_predictor`) with:
   - latent-to-remap projection head.
   - `remap_loss` (MSE) to train the predictor against environmental ground truth.
