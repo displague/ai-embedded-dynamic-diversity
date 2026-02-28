@@ -53,6 +53,9 @@
   - `sigmoid` baseline
   - `symplectic` (tanh + max pooling + learnable scale)
   - optional `top-k` memory slot paging
+- Evaluated memory gating ablations using `add-gating-bench`:
+  - `symplectic_topk` demonstrated highest recovery scores (~28k) vs baseline `sigmoid` (~1.8k).
+  - Verified `symplectic` dynamics provide better long-horizon stability after signal shocks.
   - optional phase-aware gate modulation
   - optional DMD-inspired gate modulation
 - Added parallel diverse-fitness training launcher (`add-train-parallel`).

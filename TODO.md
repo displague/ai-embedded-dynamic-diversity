@@ -53,7 +53,7 @@
 - [x] Add runtime embodiment switching without model reload (stateless memory reset and/or memory handoff policies).
 - [x] Add telemetry feedback loop from deployment inference to curriculum retraining datasets.
 - [x] Add lightweight inference service wrapper (HTTP + UDP bridge + metric export), and evaluate ONNX-runtime image footprint.
-- [ ] Evaluate memory gating ablations: `sigmoid` vs `symplectic` vs `symplectic+dmd+phase` using `add-gating-bench`.
+- [x] Evaluate memory gating ablations: `sigmoid` vs `symplectic` vs `symplectic+dmd+phase` using `add-gating-bench`.
 - [ ] Add manifold paging objective reduction beyond top-k slot gating (per-sample adaptive page budget).
 - [ ] Tune curriculum schedule for hardy-line gains (current curriculum run improved but did not beat non-curriculum focused run).
 - [x] Continue car-focused objective weighting/sampling in training (storm/crosswind emphasis) to push hardy car mismatch below `0.9`.
