@@ -34,6 +34,11 @@
   - `AdaptiveStreamer` for memory-efficient processing of long signal sequences.
   - Sequential memory-persistence logic across chunk boundaries.
   - Generator-based rollout processing for low peak-memory overhead.
+- Added runtime embodiment switching and memory handoff policies (`deploy/switching.py`) with:
+  - `EmbodimentSwitcher` for transitioning between morphology families without model reload.
+  - `stateless` mode: memory reset to zero genetic prior.
+  - `bank` mode: retrieval of morphology-specific memory priors from `GeneticMemoryBank`.
+  - `handoff` mode: preservation of dynamic memory state across different embodiments.
 - Added UDP hardware-in-the-loop adapter CLI.
 - Added configurable memory gating research modes:
   - `sigmoid` baseline
