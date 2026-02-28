@@ -86,7 +86,7 @@ def _load_model(weights: str | None, profile: str, device: torch.device) -> tupl
         cfg = model_config_for_profile(ckpt.get("profile", profile))
         cfg = type(cfg)(**ckpt["model_config"])
         model = ModelCore(**cfg.__dict__).to(device)
-        model.load_state_dict(ckpt["model"])
+        model.load_state_dict(ckpt["model"], strict=False)
         model.eval()
         return model, cfg
     cfg = model_config_for_profile(profile)
