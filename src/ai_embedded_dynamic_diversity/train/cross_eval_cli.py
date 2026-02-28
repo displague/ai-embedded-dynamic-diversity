@@ -1021,6 +1021,7 @@ def run(
     ratchet_summary_output: str = "artifacts/convergence-ratchet-summary.json",
     convergence_thresholds_output: str = "artifacts/convergence-thresholds.json",
     noise_profile: str = "none",
+    storyboard_manifest: str = "",
     world_x: int = 20,
     world_y: int = 20,
     world_z: int = 10,
@@ -1159,6 +1160,7 @@ def run(
                 "symbio_min_threshold": current_symbio_threshold,
                 "autopoiesis_min_threshold": current_autopoiesis_threshold,
                 "noise_profile": noise_profile_resolved,
+                "storyboard_manifest": storyboard_manifest,
                 "enable_threshold_ratchet": enable_threshold_ratchet,
                 "ratchet_max_cycles": ratchet_max_cycles,
                 "ratchet_symbio_step": ratchet_symbio_step,
@@ -1233,6 +1235,8 @@ def run(
         "selected_cycle_index": selected_cycle_idx,
         "cycles": cycle_records,
     }
+    if storyboard_manifest.strip():
+        selected_payload["storyboard_manifest"] = storyboard_manifest.strip()
 
     best = selected_payload["ranked"][0]
     threshold_payload = _build_convergence_threshold_payload(
