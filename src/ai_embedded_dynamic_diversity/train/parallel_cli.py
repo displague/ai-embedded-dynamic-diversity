@@ -43,6 +43,8 @@ def run(
     allow_tf32: bool = True,
     compile_model: bool = False,
     strict_device: bool = True,
+    constructor_tape_path: str = "",
+    constructor_tape_cycle: str = "",
     init_weights: str = "",
     max_workers: int = 2,
     out_dir: str = "artifacts/parallel",
@@ -58,6 +60,7 @@ def run(
     dmd_flags = [False, True]
     phase_flags = [False, True]
     noise_profiles = [x.strip().lower() for x in noise_profile_cycle.replace(";", ",").split(",") if x.strip()]
+    constructor_tapes = [x.strip() for x in constructor_tape_cycle.replace(";", ",").split(",") if x.strip()]
 
     jobs: list[tuple[int, list[str], str, str]] = []
     for i in range(variants):
@@ -73,6 +76,7 @@ def run(
         variant_transfer_loss_weight = transfer_loss_weight * (0.85 + 0.1 * (i % 3))
         variant_transfer_fitness_weight = transfer_fitness_weight * (0.9 + 0.1 * ((i + 1) % 3))
         variant_noise_profile = noise_profiles[i % len(noise_profiles)] if noise_profiles else noise_profile
+        variant_constructor_tape = constructor_tapes[i % len(constructor_tapes)] if constructor_tapes else constructor_tape_path
 
         cmd = [
             sys.executable,
@@ -117,6 +121,8 @@ def run(
             cmd += ["--enable-embodiment-transfer-loss"]
         if init_weights:
             cmd += ["--init-weights", init_weights]
+        if variant_constructor_tape:
+            cmd += ["--constructor-tape-path", variant_constructor_tape]
         if coevolution:
             cmd += ["--coevolution", "--population-size", str(population_size)]
         if enable_dmd:
@@ -166,6 +172,8 @@ def run(
                     "flags": metrics_payload.get("flags", {}),
                     "fitness": last.get("best_fitness", last.get("fitness")),
                     "mean_step_ms": last.get("mean_step_ms"),
+                    "constructor_tape_path": (metrics_payload.get("flags", {}) or {}).get("constructor_tape_path"),
+                    "constructor_tape_version": (metrics_payload.get("flags", {}) or {}).get("constructor_tape_version"),
                 }
             )
             print({"variant": idx, "code": code, "checkpoint": save_path})
