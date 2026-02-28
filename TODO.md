@@ -20,7 +20,7 @@
 - [x] Add embodiment profiling CLI (`add-sim profiler`) for bottleneck I/O channels, readiness/gating stats, and runtime memory/latency metrics.
 - [x] Add cross-embodiment "checkmate" suite: verify `>=85%` transfer effectiveness across 4 embodiments with high-repeat confidence intervals.
 - [x] Add transfer-matrix harness: train on subset `{hexapod,car}` evaluate zero-shot on `{drone,polymorph120}` with pairwise matrix export.
-- [ ] Standardize latency benchmark matrix (P50/P95) across CPU/CUDA now and Pi5/Jetson/mobile accelerators as hardware is available.
+- [x] Standardize latency benchmark matrix (P50/P95) across CPU/CUDA now and Pi5/Jetson/mobile accelerators as hardware is available.
 - [x] Add noisy-signal robustness eval profiles in `cross-eval` (`dropout-quant-v1`, `dropout-quant-v2`) and compare checkmate/transfer impact.
 - [x] Add noisy-signal resilience curriculum in training (sensor dropout + quantization noise) and evaluate impact on hardy transfer.
 
@@ -28,6 +28,7 @@
 
 - [ ] Add policy-level task objectives on top of adaptation (navigation, stability, manipulation).
 - [ ] Add dynamic embodiment discovery at runtime (auto-infer I/O schema + safe default remap groups) without recompilation.
+- [x] Add constructor-tape architecture path (external parametric description) for universal-constructor style model instantiation and checkpoint metadata persistence.
 - [ ] Add online remap learning within episode (learned remap policy vs static periodic remaps).
 - [ ] Add few-shot embodiment adaptation protocol (`<10` gradient steps) and measure adaptation slope vs zero-shot.
 - [ ] Add a learned (non-hardcoded) mimicry training track: environmental mimicry, peer mimicry, and threat mimicry from anonymous signals, optimized for transfer fitness rather than explicit imitation labels.
@@ -38,6 +39,7 @@
 - [ ] Extend capability harness with explicit mimicry and conjoining proxies (peer/environment/threat imitation quality + cooperative gain metrics).
 - [ ] Add genetic+memory survival curriculum: multi-generation selection with memory persistence objectives focused on hardy-line recovery and long-horizon stability.
 - [ ] Add conjoining research track: environment/tool-use coupling, genetic bonding proxies, and multi-agent organism-formation objectives under anonymous I/O.
+- [x] Add pre-life/self-modification emergence simulation track with replication, novelty, and symbiogenesis detection metrics + report artifacts.
 - [ ] Add multi-scale gating (global policy gate + local edge response gate) and compare against current single-scale gating family.
 - [ ] Add genetic memory bank for warm-start retrieval across morphology families.
 - [ ] Implement quantization-aware training and compare against dynamic quantization export.
@@ -54,6 +56,7 @@
 - [ ] Make CUDA PyTorch install reproducible in `uv` lock workflow (strict-device guard is in place; remaining work is lock/index standardization so plain `uv run` keeps CUDA torch).
 - [ ] Promote next champion after high-repeat validation (`runs_per_combo >= 6`) on both transfer-only and capability-weighted hardy profiles.
 - [ ] Run capability-weighted (`bio-tech-v1`) high-repeat validation for `model-core-champion-v04` and decide blended-capability champion promotion.
+- [x] Integrate pre-life convergence term into `cross-eval`/`cross-report` ranking so transfer/hardiness/capability/replication are evaluated in a unified promotion pipeline.
 
 ## Hardware-In-The-Loop
 

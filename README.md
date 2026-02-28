@@ -84,6 +84,12 @@ Aggressive transfer-focused sweep (embodiment-aware loss + mixed device pool):
 ~/.local/bin/uv run add-train-parallel --variants 8 --max-workers 4 --profile pi5 --epochs 30 --batch-size 20 --unroll-steps 16 --device cuda --device-pool "cuda,cuda,cpu,cpu" --coevolution --population-size 6 --embodiments "hexapod,car,drone,polymorph120" --enable-embodiment-transfer-loss --transfer-loss-weight 0.4 --transfer-fitness-weight 0.1 --transfer-samples-per-step 3 --use-amp --allow-tf32 --out-dir artifacts/parallel-aggressive
 ```
 
+Constructor-aware parallel sweep (mixed architecture tapes):
+
+```bash
+~/.local/bin/uv run add-train-parallel --variants 6 --max-workers 3 --profile pi5 --epochs 20 --device cuda --constructor-tape-cycle "artifacts/tape-a.json,artifacts/tape-b.json" --out-dir artifacts/parallel-constructor
+```
+
 Long CUDA-heavy warm-start sweep (recommended to run via project venv Python to avoid lockfile resync):
 
 ```powershell
@@ -118,6 +124,12 @@ Experimental flags are optional and combinable: `--gating-mode symplectic`, `--t
 Each run stores flags+performance+fitness in `*.metrics.json` (or set `--metrics-path`).
 Use `--strict-device` (default) to prevent accidental CPU fallback when CUDA was requested.
 
+Constructor-tape driven architecture (optional):
+
+- `--constructor-tape-path artifacts/constructor-tape.json`
+- Tape format: `{"version": 1, "tokens": ["signal_dim=48", "hidden_dim=64", "memory_slots=24", ...]}`
+- If a tape is provided, architecture dimensions/gating come from the tape and are also saved in checkpoint metadata as `constructor_tape`.
+
 Embodiment-aware transfer optimization (optional):
 
 - `--embodiments "hexapod,car,drone,polymorph120"`
@@ -139,6 +151,7 @@ Noisy-signal curriculum training (optional):
 ```bash
 ~/.local/bin/uv run add-sim --steps 10 --batch-size 2 --device cpu
 ~/.local/bin/uv run add-sim profiler --embodiment polymorph120 --profile pi5 --steps 120 --batch-size 4 --remap-every 15 --device cuda --output artifacts/embodiment-profile.json
+~/.local/bin/uv run add-sim profiler --profile base --constructor-tape-path artifacts/constructor-tape.json --steps 120 --batch-size 4 --output artifacts/embodiment-profile-tape.json
 ```
 
 `add-sim profiler` emits:
@@ -188,6 +201,13 @@ Capability-aware cross-eval (biological/technological proxy harness):
 ~/.local/bin/uv run add-cross-report --input-path artifacts/cross-eval-capability-vs-champion.json --markdown-out artifacts/cross-eval-capability-vs-champion.md --csv-out artifacts/cross-eval-capability-vs-champion.csv
 ```
 
+Convergence ranking with pre-life weighted term:
+
+```bash
+~/.local/bin/uv run add-cross-eval --checkpoints-list "artifacts/model-core-champion-v04.pt,artifacts/parallel-cuda-noisecurr-v01/variant-00.pt,artifacts/parallel-cuda-noisecurr-v01/variant-01.pt" --profile pi5 --embodiments "hexapod,car,drone,polymorph120" --scenario-profile hardy --runs-per-combo 4 --steps 110 --remap-every 12 --capability-profile bio-tech-v1 --capability-score-weight 0.20 --prelife-profile dense-vs-control-v1 --prelife-score-weight 0.25 --prelife-steps 120 --prelife-seeds 3 --output artifacts/cross-eval-convergence-v1.json
+~/.local/bin/uv run add-cross-report --input-path artifacts/cross-eval-convergence-v1.json --markdown-out artifacts/cross-eval-convergence-v1.md --csv-out artifacts/cross-eval-convergence-v1.csv
+```
+
 Checkmate + transfer matrix harness (example zero-shot split):
 
 ```bash
@@ -201,6 +221,22 @@ Noisy-signal robustness eval (stricter checkmate):
 ~/.local/bin/uv run add-cross-eval --checkpoints-list "artifacts/model-core-champion-v03.pt,artifacts/parallel-cuda-capability-v01/variant-01.pt,artifacts/parallel-cuda-capability-v01/variant-00.pt" --profile pi5 --embodiments "hexapod,car,drone,polymorph120" --train-embodiments "hexapod,car" --checkmate-threshold 0.95 --scenario-profile hardy --runs-per-combo 6 --steps 110 --remap-every 12 --noise-profile dropout-quant-v2 --output artifacts/cross-eval-checkmate-transfer-noisyv2-hardy-poly4-r6-th095.json
 ~/.local/bin/uv run add-cross-report --input-path artifacts/cross-eval-checkmate-transfer-noisyv2-hardy-poly4-r6-th095.json --markdown-out artifacts/cross-eval-checkmate-transfer-noisyv2-hardy-poly4-r6-th095.md --csv-out artifacts/cross-eval-checkmate-transfer-noisyv2-hardy-poly4-r6-th095.csv
 ```
+
+Pre-life emergence experiments:
+
+```bash
+~/.local/bin/uv run add-prelife run --substrate bytecode_dense --steps 400 --seed 17 --output artifacts/prelife-emergence-dense.json
+~/.local/bin/uv run add-prelife run --substrate sublike_control --steps 400 --seed 17 --output artifacts/prelife-emergence-control.json
+~/.local/bin/uv run add-prelife report --input-path artifacts/prelife-emergence-dense.json --markdown-out artifacts/prelife-emergence-dense.md --csv-out artifacts/prelife-emergence-dense.csv
+```
+
+`add-prelife` tracks:
+- first replication step and replication/self-modification rates
+- lineage depth (`p50`, `p95`)
+- novelty growth slope
+- description-copy fidelity
+- symbiogenesis event counts
+- substrate phase-transition step (when detected)
 
 Focused comparison over an explicit checkpoint list:
 
@@ -216,19 +252,30 @@ Focused comparison over an explicit checkpoint list:
 ~/.local/bin/uv run add-export onnx --weights artifacts/model-core.pt --output artifacts/model-core.onnx --opset 17
 ~/.local/bin/uv run add-export quantized-torchscript --weights artifacts/model-core-pi5.pt --output artifacts/model-core-pi5-int8.ts
 ~/.local/bin/uv run add-bench --weights artifacts/model-core-pi5.pt --profile pi5 --device cpu --steps 300
+~/.local/bin/uv run add-bench matrix --weights artifacts/model-core-pi5.pt --profile pi5 --targets "cpu=cpu,cuda=cuda,pi5=external,jetson=external,mobile=external" --batch-sizes "1,4,8" --steps 300 --output artifacts/latency-matrix.json
 ~/.local/bin/uv run add-hil udp-bridge --weights artifacts/model-core-pi5.pt --listen-port 45454 --send-port 45455
 ```
+
+`add-bench matrix` standardizes a single JSON matrix artifact with per-target status:
+- `ok`: benchmarked on this host
+- `skipped`: target requested but unavailable on this host (for example `cuda` without GPU)
+- `hardware_pending`: placeholder row for hardware not present here (for example `pi5`, `jetson`, `mobile`)
+
+When running on a specific device host, remap target labels to local runtime devices (for example on Pi5: `--targets "pi5=cpu"`).
 
 ## Project layout
 
 - `src/ai_embedded_dynamic_diversity/models/core.py`: passive/active tensor core and anonymous edge router.
 - `src/ai_embedded_dynamic_diversity/sim/world.py`: 3D+time world with life/resource/stress fields.
 - `src/ai_embedded_dynamic_diversity/sim/embodiments.py`: reproducible embodiment schemas and mapping generation.
+- `src/ai_embedded_dynamic_diversity/models/constructor_tape.py`: external constructor-tape schema and config parsing.
+- `src/ai_embedded_dynamic_diversity/models/universal_constructor.py`: universal-constructor style model build + description copier.
 - `src/ai_embedded_dynamic_diversity/train/cli.py`: unrolled training with remap perturbations.
 - `src/ai_embedded_dynamic_diversity/train/cross_eval_cli.py`: cross-embodiment transfer evaluation and ranking.
 - `src/ai_embedded_dynamic_diversity/train/cross_report_cli.py`: delta/summary report generation for cross-eval outputs.
 - `src/ai_embedded_dynamic_diversity/deploy/cli.py`: TorchScript and ONNX export path.
 - `src/ai_embedded_dynamic_diversity/sim/viz_cli.py`: remap adaptation visualization (GIF/MP4 output).
+- `src/ai_embedded_dynamic_diversity/sim/prelife_cli.py`: pre-life emergence run/report commands and metrics.
 - `src/ai_embedded_dynamic_diversity/deploy/bench_cli.py`: inference latency benchmarking for edge validation.
 - `src/ai_embedded_dynamic_diversity/deploy/hil_cli.py`: UDP hardware-in-the-loop adapter.
 - `skills/dynamic-diversity-research/SKILL.md`: workflow for future AI agents continuing research.

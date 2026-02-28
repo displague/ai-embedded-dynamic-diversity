@@ -16,6 +16,10 @@
 - Added side-by-side checkpoint comparison visualization under the same remap/environment schedule.
 - Added dynamic quantized TorchScript export path.
 - Added Pi-focused benchmark CLI.
+- Added standardized latency matrix mode in `add-bench` (`add-bench matrix`) with:
+  - per-target status (`ok`, `skipped`, `hardware_pending`)
+  - multi-batch P50/P95 benchmarking in one JSON artifact
+  - target-to-device mapping support (for example `pi5=cpu` when run on Pi5 host)
 - Added UDP hardware-in-the-loop adapter CLI.
 - Added configurable memory gating research modes:
   - `sigmoid` baseline
@@ -159,6 +163,35 @@
   - `--noise-strength-end`
   - training/eval fitness now supports deterministic noise injection with clean-observation transfer targets.
 - Added noise training tests in `tests/test_train_transfer.py`; suite now passing (`30 passed`).
+- Added universal-constructor style architecture scaffolding:
+  - external constructor tape schema (`ConstructorTape`) with parse/serialize support
+  - tape-to-model-config instantiation path (`UniversalConstructor`)
+  - description copier primitive (`DescriptionCopier`) with copy-fidelity output under noise profiles
+  - `add-train` support for `--constructor-tape-path` and checkpoint persistence of optional `constructor_tape` metadata
+  - `add-sim profiler` support for `--constructor-tape-path` (mutually exclusive with `--weights`)
+- Added pre-life emergence CLI (`add-prelife`) with:
+  - substrate modes (`bytecode_dense`, `bytecode_sparse`, `resource_limited`, `sublike_control`)
+  - replication/self-modification/symbiogenesis simulation metrics
+  - report generation to Markdown/CSV
+- Extended `add-train-parallel` with constructor-architecture forwarding:
+  - `--constructor-tape-path`
+  - `--constructor-tape-cycle`
+  - per-variant constructor metadata in parallel `summary.json`
+- Extended `add-cross-eval` with pre-life convergence scoring:
+  - `--prelife-profile` (`none`, `dense-vs-control-v1`)
+  - `--prelife-score-weight`
+  - `--prelife-steps`
+  - `--prelife-seeds`
+  - ranking decomposition fields (`transfer`, `capability`, `prelife` components)
+- Extended `add-cross-report` with convergence decomposition and pre-life tables:
+  - transfer/capability/prelife ranking components for top checkpoints
+  - pre-life dense-vs-control summary for promotion decisions
+- Added tests for constructor-tape and pre-life tracks:
+  - `tests/test_constructor_tape.py`
+  - `tests/test_prelife.py`
+  - constructor-tape config resolution coverage in `tests/test_train_transfer.py`
+  - pre-life score normalization and profile resolution coverage in `tests/test_cross_eval.py`
+  - constructor-tape forwarding coverage in `tests/test_parallel_cli.py`
 - Ran noisy-curriculum warm-start sweep `artifacts/parallel-cuda-noisecurr-v01` and promoted `variant-01` as new champion alias `artifacts/model-core-champion-v04.pt` with manifest `artifacts/model-core-champion-v04.metrics.json`:
   - hardy poly4 clean r6 (`th=0.95`): `0.45131` vs prior `0.44531`
   - hardy poly4 noisy-v2 r6 (`th=0.95`): `0.45133` vs prior `0.44526`
