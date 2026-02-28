@@ -30,21 +30,21 @@
 - [x] Add CI check for agent continuity assets drift (`AGENTS.md`, `.agents/subagent-*`, skill indexes, mirror adapters).
 - [x] Add lightweight script to diff canonical role contracts vs `.claude/.opencode` mirrors and flag divergence.
 - [x] Add compact "reference subset generator" for handoff packets based on scenario tags and current task.
-- [x] Add policy-level task objectives on top of adaptation (navigation, stability, manipulation).
+- [x] Add policy-level task objectives on top of adaptation (navigation, stability, evasion, manipulation).
 - [x] Add dynamic embodiment discovery at runtime (auto-infer I/O schema + safe default remap groups) without recompilation.
 - [x] Add constructor-tape architecture path (external parametric description) for universal-constructor style model instantiation and checkpoint metadata persistence.
 - [x] Add online remap learning within episode (learned remap policy vs static periodic remaps).
 - [x] Add few-shot embodiment adaptation protocol (`<10` gradient steps) and measure adaptation slope vs zero-shot.
 - [ ] Add a learned (non-hardcoded) mimicry training track: environmental mimicry, peer mimicry, and threat mimicry from anonymous signals, optimized for transfer fitness rather than explicit imitation labels.
 - [ ] Add emergent signaling track (no explicit channel labels): produce robust internal/external signals under noisy/remapped embodiment conditions.
-- [ ] Add signal-detection track: distinguish peer/environment/threat signal patterns from anonymous streams with remap-robust decoding accuracy and low false positives.
-- [ ] Add evasion track: learn adaptive evasive behavior under hostile force/crosswind/threat-agent perturbations while preserving vitality and transfer.
+- [x] Add signal-detection track: distinguish peer/environment/threat signal patterns from anonymous streams with remap-robust decoding accuracy and low false positives.
+- [x] Add evasion track: learn adaptive evasive behavior under hostile force/crosswind/threat-agent perturbations while preserving vitality and transfer.
 - [x] Add signaling+detection+evasion evaluation harness (`cross-eval` capability profile + tests) with reproducible scenario seeds and success metrics.
 - [ ] Extend capability harness with explicit mimicry and conjoining proxies (peer/environment/threat imitation quality + cooperative gain metrics).
 - [ ] Add genetic+memory survival curriculum: multi-generation selection with memory persistence objectives focused on hardy-line recovery and long-horizon stability.
 - [ ] Add conjoining research track: environment/tool-use coupling, genetic bonding proxies, and multi-agent organism-formation objectives under anonymous I/O.
 - [x] Add pre-life/self-modification emergence simulation track with replication, novelty, and symbiogenesis detection metrics + report artifacts.
-- [ ] Add multi-scale gating (global policy gate + local edge response gate) and compare against current single-scale gating family.
+- [x] Add multi-scale gating (global policy gate + local edge response gate) and compare against current single-scale gating family.
 - [ ] Add genetic memory bank for warm-start retrieval across morphology families.
 - [ ] Implement quantization-aware training and compare against dynamic quantization export.
 - [ ] Integrate ONNX Runtime benchmark path for Pi 5.

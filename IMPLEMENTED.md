@@ -264,10 +264,20 @@
   - `NavigationObjective` (target distance rewards)
   - `StabilityObjective` (world stress reduction rewards)
   - `CombinedObjective` (weighted multi-task blending)
+  - `EvasionObjective` (maximize distance from dynamic threat agents)
 - Added dynamic runtime embodiment discovery and registration (`sim/embodiments.py`) with:
   - `register_embodiment` for on-the-fly additions.
   - `discover_from_spec` for inferred I/O schemas from JSON/dict.
   - auto-indexed control/sensor naming for rapid prototyping.
+- Added multi-scale gating architecture in `ModelCore`:
+  - Global policy gate (scalar sample-level computation control).
+  - Local edge response gate (per-node activation fine-grained control).
+  - Configurable via `--enable-multi-scale-gating` flag.
+- Added `SignalingWorld` (`sim/signaling.py`) for active behavioral research:
+  - Anonymous signal injection (peer, environment, threat patterns).
+  - Dynamic threat agent simulation with pursuit logic and stress-proximity coupling.
+  - Mixed observation encoding for concurrent sensing and signal detection tasks.
+- Added signal detection head (`ModelCore.signal_decoder`) and `detection_loss` (CrossEntropy) to optimize signal categorization from anonymous streams.
 - Added learned online remapping within episode (`ModelCore.remap_predictor`) with:
   - latent-to-remap projection head.
   - `remap_loss` (MSE) to train the predictor against environmental ground truth.

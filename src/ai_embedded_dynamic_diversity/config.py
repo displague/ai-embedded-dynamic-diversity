@@ -14,6 +14,7 @@ class ModelConfig:
     topk_gating: int = 0
     enable_dmd_gating: bool = False
     enable_phase_gating: bool = False
+    enable_multi_scale_gating: bool = False
 
 
 @dataclass

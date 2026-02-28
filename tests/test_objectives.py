@@ -1,7 +1,7 @@
 import torch
 import pytest
 from ai_embedded_dynamic_diversity.sim.world import DynamicDiversityWorld, WorldState
-from ai_embedded_dynamic_diversity.sim.objectives import NavigationObjective, StabilityObjective, CombinedObjective
+from ai_embedded_dynamic_diversity.sim.objectives import NavigationObjective, StabilityObjective, CombinedObjective, EvasionObjective
 
 def test_navigation_objective_reward_increases_as_distance_decreases():
     # Setup world and objective
@@ -65,3 +65,21 @@ def test_combined_objective_blends_correctly():
     r_combined = combined.compute_reward(state)
     
     assert torch.allclose(r_combined, 0.5 * r_nav + 0.5 * r_stab)
+
+def test_evasion_objective_reward_increases_with_distance():
+    objective = EvasionObjective(safe_distance=1.0)
+    
+    # State: object at origin
+    state = WorldState(torch.zeros(1,1,1,1,1), torch.zeros(1,4,1,1,1), torch.zeros(1,1,1,1,1), 
+                       torch.tensor([[0.0, 0.0, 0.0]]), torch.zeros(1,3))
+    
+    # Threat near
+    threat_near = torch.tensor([[0.1, 0.0, 0.0]])
+    reward_near = objective.compute_reward(state, threat_pos=threat_near)
+    
+    # Threat far
+    threat_far = torch.tensor([[0.8, 0.0, 0.0]])
+    reward_far = objective.compute_reward(state, threat_pos=threat_far)
+    
+    assert reward_far > reward_near
+    assert reward_far <= 1.0
