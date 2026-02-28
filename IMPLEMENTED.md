@@ -361,6 +361,10 @@
 - Captured visual evidence of `v08` improvements:
   - `artifacts/v08-vs-v04-car-robustness.gif`: shows reduced control mismatch (0.137 vs 0.208) under high wind stress.
   - `artifacts/v08-vs-v04-poly120-robustness.gif`: demonstrates stable adaptation on complex 120-DOF morphology.
+- Enhanced Visualization CLI (`add-viz`):
+  - Added `batch-force` command to automate rendering across all supported stress modes (poke, press, push, etc.).
+  - Integrated metric export (JSON/CSV) for all simulation runs via `--metrics-out`.
+  - Added 2D object trajectory (X-Y) overlays to visualization plots for better path analysis.
 - Added I2C hardware-in-the-loop (HIL) abstraction (`deploy/io_adapter.py`) with:
   - `I2CTransport` stub for low-level bus communication.
   - `I2CAdapter` for bridging `ModelCore` with physical I2C sensors and actuators.

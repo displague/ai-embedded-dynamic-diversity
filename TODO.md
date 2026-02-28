@@ -72,6 +72,6 @@
 
 ## Visualization & Analysis
 
-- [ ] Add metric export (`csv/json`) from visualization runs.
-- [ ] Add batch rendering scripts for multiple force modes (`poke`, `press`, `push`, `continuous-blow`, `thrust`, `move`).
-- [ ] Add object trajectory overlays to comparison visualizations.
+- [x] Add metric export (`csv/json`) from visualization runs (integrated in `viz_cli.py`).
+- [x] Add batch rendering scripts for multiple force modes (`poke`, `press`, `push`, `continuous-blow`, `thrust`, `move`) via `add-viz batch-force`.
+- [x] Add object trajectory overlays to comparison visualizations.
