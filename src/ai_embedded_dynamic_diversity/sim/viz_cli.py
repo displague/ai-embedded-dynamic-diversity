@@ -783,6 +783,66 @@ def compare(
 
 
 @app.command()
+def batch_force(
+    weights: str = "artifacts/model-core-champion-v08.pt",
+    profile: str = "pi5",
+    embodiment: str = "car",
+    output_dir: str = "artifacts/viz-batch-force",
+    steps: int = 160,
+    device: str = "cpu",
+    seed: int = 7,
+) -> None:
+    """Generates visualizations for all supported force modes."""
+    modes = ["poke", "press", "push", "continuous-blow", "thrust", "move"]
+    out_path = Path(output_dir)
+    out_path.mkdir(parents=True, exist_ok=True)
+    
+    dev = torch.device(device)
+    model, cfg = _load_model(weights, profile, dev)
+    
+    world = DynamicDiversityWorld(20, 20, 10, 5, decay=0.03, device=str(dev))
+    initial_state = world.init(batch_size=1)
+    control_dim = len(get_embodiment(embodiment).controls)
+    projection = torch.randn(cfg.signal_dim, control_dim, device=dev) * 0.3
+
+    print({"info": f"Starting batch force visualization for {embodiment} in {output_dir}"})
+    
+    for mode in modes:
+        params = VizParams(
+            steps=steps,
+            remap_every=20,
+            force_mode=mode,
+            force_start=20,
+            force_duration=30,
+            force_sustain=0.8,
+            force_x=0.8,
+            force_y=0.0,
+            force_z=0.0,
+            wind_x=0.2,
+            wind_y=0.0,
+            wind_z=0.0,
+            wind_variation=0.1,
+            light_x=-0.3,
+            light_y=0.0,
+            light_z=0.2,
+            light_intensity=0.75,
+            light_drift_x=0.002,
+            light_drift_y=0.0,
+            light_drift_z=0.0,
+        )
+        
+        result = _simulate(model, cfg, world, initial_state, params, embodiment, projection, dev, seed_offset=seed)
+        
+        gif_name = f"{embodiment}-force-{mode}.gif"
+        metrics_name = f"{embodiment}-force-{mode}-metrics.json"
+        
+        _save_single(str(out_path / gif_name), result, title=f"Force Mode: {mode}")
+        _save_metrics(str(out_path / metrics_name), result)
+        
+    print({"batch_complete": str(out_path), "modes": len(modes)})
+
+
+@app.command()
 def storyboard(
     cross_eval_json: str = "artifacts/cross-eval-summary.json",
     top_k: int = 2,
