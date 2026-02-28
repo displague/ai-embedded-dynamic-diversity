@@ -44,12 +44,19 @@ Stretch targets:
 - `artifacts/cross-eval-*.md` and `.csv` from `add-cross-report`.
 - Fastest way to compare top checkpoints and quantify deltas vs the best.
 
+3b. Convergence ratchet traces
+- `artifacts/convergence-ratchet-summary.json` and `cross-eval-*-cycleN.json`.
+- Use these to confirm threshold progression (`symbio`, `autopoiesis`) and where promotion eligibility is lost/regained.
+
 4. Visual artifacts
 - `artifacts/*compare*.gif`, `artifacts/*adaptation*.gif`
 - Read these for temporal behavior:
   - remap shock amplitude,
   - recovery speed,
   - life-field stability under force/wind/light disturbances.
+- Storyboard package from `add-viz storyboard`:
+  - `artifacts/viz-storyboard/*.gif` and `artifacts/viz-storyboard/manifest.json`
+  - includes per-embodiment evolution GIFs, top-1 vs top-2 compare GIFs, and montage convergence view.
 
 5. Primitive principle verification
 - `tests/test_principles.py` verifies:
@@ -181,6 +188,12 @@ Behavior we want to overcome:
 
 ```bash
 ~/.local/bin/uv run add-viz compare artifacts/top-1.pt artifacts/top-2.pt --profile pi5 --embodiment car --steps 160 --remap-every 20 --force-mode thrust --wind-x 0.4 --output artifacts/top1-vs-top2-car.gif
+```
+
+11. Build an embodied convergence storyboard from cross-eval ranking:
+
+```bash
+~/.local/bin/uv run add-viz storyboard --cross-eval-json artifacts/cross-eval-hardy.json --top-k 2 --scenario-profile hardy --output-dir artifacts/viz-storyboard --manifest-output artifacts/viz-storyboard/manifest.json
 ```
 
 ## Decision Rules After Each Experiment

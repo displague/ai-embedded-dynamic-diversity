@@ -35,6 +35,15 @@ def run(
     prelife_score_weight = float(cfg.get("prelife_score_weight", 0.0))
     autopoiesis_score_weight = float(cfg.get("autopoiesis_score_weight", 0.0))
     noise_profile = str(cfg.get("noise_profile", "none")).strip().lower()
+    ratchet = payload.get("ratchet", {}) if isinstance(payload.get("ratchet", {}), dict) else {}
+    ratchet_cycles = ratchet.get("cycles", []) if isinstance(ratchet.get("cycles", []), list) else []
+    storyboard_manifest_path = str(payload.get("storyboard_manifest", "")).strip()
+    storyboard_manifest = {}
+    if storyboard_manifest_path and Path(storyboard_manifest_path).exists():
+        try:
+            storyboard_manifest = json.loads(Path(storyboard_manifest_path).read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            storyboard_manifest = {}
 
     rows = []
     for idx, item in enumerate(ranked, start=1):
@@ -132,6 +141,13 @@ def run(
         md_lines.append("")
     md_lines.append(f"Autopoiesis score weight: `{autopoiesis_score_weight}`")
     md_lines.append("")
+    if ratchet.get("enabled", False):
+        md_lines.append("Convergence ratchet: `enabled`")
+        md_lines.append(f"Ratchet stop reason: `{ratchet.get('stop_reason', 'unknown')}`")
+        md_lines.append(f"Selected cycle index: `{ratchet.get('selected_cycle_index', 1)}`")
+        if ratchet.get("summary_output"):
+            md_lines.append(f"Ratchet summary: `{ratchet.get('summary_output')}`")
+        md_lines.append("")
     md_lines.append("## Top 5")
     md_lines.append("")
     if capability_enabled or prelife_enabled:
@@ -212,6 +228,40 @@ def run(
             "| "
             + f"{row['rank']} | `{row['checkpoint']}` | {row['symbio_gate_pass']} | {row['autopoiesis_gate_pass']} | {row['convergence_gate_pass']} | {row['promotion_eligible']} |"
         )
+
+    if ratchet_cycles:
+        md_lines.append("")
+        md_lines.append("## Ratchet Cycles")
+        md_lines.append("")
+        md_lines.append("| Cycle | Output | Symbio Threshold | Autopoiesis Threshold | Best Checkpoint | Best Score | Best Symbio | Best Autopoiesis | Eligible Count |")
+        md_lines.append("|---:|---|---:|---:|---|---:|---:|---:|---:|")
+        for cycle in ratchet_cycles:
+            thresholds = cycle.get("thresholds", {})
+            md_lines.append(
+                "| "
+                + f"{cycle.get('cycle_index', 0)} | `{cycle.get('output', '')}` | {_fmt(float(thresholds.get('symbio_min_threshold', 0.0)))} | {_fmt(float(thresholds.get('autopoiesis_min_threshold', 0.0)))} | `{cycle.get('best_checkpoint', '')}` | {_fmt(float(cycle.get('best_score', 0.0)))} | {_fmt(float(cycle.get('best_symbio_contrast', 0.0)))} | {_fmt(float(cycle.get('best_autopoiesis_score', 0.0)))} | {int(cycle.get('eligible_count', 0))} |"
+            )
+
+    if storyboard_manifest:
+        md_lines.append("")
+        md_lines.append("## Storyboard Artifacts")
+        md_lines.append("")
+        md_lines.append(f"Storyboard manifest: `{storyboard_manifest_path}`")
+        montage_path = str(storyboard_manifest.get("montage_gif", "")).strip()
+        if montage_path:
+            md_lines.append(f"Montage GIF: `{montage_path}`")
+        artifact_rows = storyboard_manifest.get("artifacts", [])
+        if isinstance(artifact_rows, list) and artifact_rows:
+            md_lines.append("")
+            md_lines.append("| Scenario | Embodiment | Evolution GIF | Compare GIF |")
+            md_lines.append("|---|---|---|---|")
+            for item in artifact_rows[:12]:
+                evo = str(item.get("evolution_gif", ""))
+                cmp_path = str(item.get("compare_gif", ""))
+                md_lines.append(
+                    "| "
+                    + f"{item.get('scenario', '')} | {item.get('embodiment', '')} | `{evo}` | `{cmp_path}` |"
+                )
 
     md_lines.append("")
     md_lines.append("## Per-Embodiment Deltas vs Best")

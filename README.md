@@ -184,6 +184,18 @@ Visualization is independent of training loop execution and can use any checkpoi
 
 `force-mode` options: `none`, `poke`, `press`, `push`, `continuous-blow`, `thrust`, `move`.
 
+Convergence storyboard GIF package (top-k checkpoints from cross-eval):
+
+```bash
+~/.local/bin/uv run add-viz storyboard --cross-eval-json artifacts/cross-eval-convergence-ratchet.json --top-k 2 --scenario-profile hardy --steps 170 --remap-every 18 --output-dir artifacts/viz-storyboard --manifest-output artifacts/viz-storyboard/manifest.json --include-montage
+```
+
+`add-viz storyboard` emits:
+- per-embodiment evolution GIFs (`*-evolution.gif`)
+- per-embodiment top-1 vs top-2 compare GIFs
+- a montage GIF (`convergence-storyboard.gif`)
+- a manifest JSON linking GIFs and final mismatch/vitality metrics
+
 Memory gating benchmark:
 
 ```bash
@@ -231,6 +243,13 @@ Convergence gates + autopoiesis-weighted ranking:
 ```
 
 `add-cross-eval` now emits progressive gate-ratcheting guidance to `artifacts/convergence-thresholds.json`.
+
+Balanced threshold-ratchet cycles (multi-cycle convergence run):
+
+```bash
+~/.local/bin/uv run add-cross-eval --checkpoints-list "artifacts/model-core-champion-v04.pt,artifacts/parallel-cuda-noisecurr-v01/variant-00.pt,artifacts/parallel-cuda-noisecurr-v01/variant-01.pt" --profile pi5 --embodiments "hexapod,car,drone,polymorph120" --scenario-profile hardy --runs-per-combo 2 --steps 90 --remap-every 12 --capability-profile bio-tech-v1 --capability-score-weight 0.20 --prelife-profile dense-vs-control-v1 --prelife-score-weight 0.25 --autopoiesis-score-weight 0.15 --enable-convergence-gates --symbio-min-threshold 0.47 --autopoiesis-min-threshold 0.38 --enable-threshold-ratchet --ratchet-max-cycles 4 --ratchet-symbio-step 0.02 --ratchet-autopoiesis-step 0.03 --ratchet-summary-output artifacts/convergence-ratchet-summary.json --output artifacts/cross-eval-convergence-ratchet.json
+~/.local/bin/uv run add-cross-report --input-path artifacts/cross-eval-convergence-ratchet.json --markdown-out artifacts/cross-eval-convergence-ratchet.md --csv-out artifacts/cross-eval-convergence-ratchet.csv
+```
 
 Checkmate + transfer matrix harness (example zero-shot split):
 
