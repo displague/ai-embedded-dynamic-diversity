@@ -324,6 +324,30 @@ When running on a specific device host, remap target labels to local runtime dev
 - `skills/dynamic-diversity-research/SKILL.md`: workflow for future AI agents continuing research.
 - `docs/ARTIFACTS.md`: artifact interpretation guide (goals, success criteria, expected behavior, failure patterns).
 
+## Agent Operating Model
+
+Canonical policy and handoff surfaces:
+
+- `AGENTS.md`: repository-level invariants, lifecycle states, and packet requirements.
+- `.agents/README.md`: compatibility and startup ordering for successor agents.
+- `.agents/subagent-*.md`: role contracts (`orchestrator`, `convergence-operator`, `viz-storyboard-operator`, `evaluation-auditor`, `docs-handoff-curator`).
+- `.agents/handoff-*.md` + `.agents/return-protocol.md`: strict handoff/return lifecycle and packet template.
+- `skills/dynamic-diversity-research/SKILL.md`: thin reusable skill definition.
+- `skills/dynamic-diversity-research/references/*`: deep references loaded on demand.
+- `skills/_index/*`: catalog/taxonomy/scenario maps for low-context retrieval.
+
+Cross-platform compatibility mirrors:
+
+- `.claude/agents/*.md`
+- `.opencode/agents/*.md`
+
+Successor startup order:
+
+1. `AGENTS.md`
+2. Assigned subagent role contract in `.agents/subagent-*.md`
+3. Relevant `skills/*/SKILL.md`
+4. Only `reference_subset_recommended` listed in latest handoff packet
+
 ## Immediate next experiments
 
 1. Add real sensor/actuator drivers behind the UDP HIL adapter.

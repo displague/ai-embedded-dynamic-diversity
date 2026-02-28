@@ -258,4 +258,32 @@
 - Per-embodiment profiling quickly reveals expected channel bottlenecks (e.g., `io_channels << control_dof`) and should be run before long sweeps to set realistic mapping-coverage expectations.
 - A fixed `>=85%` checkmate threshold is useful as a floor gate, but current models already exceed it on the selected hardy split; tighter thresholds or harder heldout regimes are needed for discrimination.
 - Harder noise regimes + stricter checkmate thresholds (`0.95`) create meaningful separation where `0.85` did not.
+
+## Agent Continuity And Handoff Infrastructure
+
+- Added repository-level agent policy in `AGENTS.md` with:
+  - invariant precedence
+  - strict lifecycle states
+  - required handoff packet schema
+  - context-budget rules for low-overhead successor startup
+- Added canonical `.agents` continuity assets:
+  - role contracts (`subagent-*`)
+  - handoff/return protocol docs
+  - skill pointer for low-context loading
+- Added cross-platform role mirrors for agent ecosystems:
+  - `.claude/agents/*`
+  - `.opencode/agents/*`
+- Refactored `skills/dynamic-diversity-research/SKILL.md` into a thin reusable definition.
+- Split deep context into targeted references:
+  - `handoff-playbook.md`
+  - `session-lessons-latest.md`
+  - `lessons-common.md`
+  - `lessons-unique.md`
+- Added skill indexing layer for reuse and scenario-driven loading:
+  - `skills/_index/skills-catalog.md`
+  - `skills/_index/lessons-taxonomy.md`
+  - `skills/_index/scenario-to-skill-map.md`
+- Added reusable handoff support assets:
+  - packet validation script (`skills/dynamic-diversity-research/scripts/validate_handoff_packet.py`)
+  - packet example (`skills/dynamic-diversity-research/assets/handoff-packet-example.json`)
 - Injecting noisy observations while keeping transfer targets anchored to clean observations improves robustness without degrading clean transfer in this setup.

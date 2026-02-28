@@ -15,6 +15,8 @@
 13. Add threat-evasion benchmark suite (disturbance adversaries + threat agents) and track evasion-success vs vitality/transfer tradeoffs.
 14. Add multi-generation genetic-memory survival experiments with explicit long-horizon persistence metrics (recovery half-life, lineage survival score).
 15. Add conjoining studies: tool-use coupling, genetic bonding proxies, and organism-formation behavior in multi-agent embodied environments.
+16. Add continuity drift checks so canonical role contracts stay synchronized with `.claude` and `.opencode` mirrors.
+17. Add automated handoff packet linting in CI for required fields and minimal reference subset quality.
 
 ## Prioritized Extension (2026-02-17)
 

@@ -159,3 +159,8 @@ Use compact entries:
   - promoted alias: `artifacts/model-core-champion-v04.pt`
   - visual comparisons: `artifacts/noisecurr-v01-v04-vs-v03-car-crosswind-thrust.gif`, `artifacts/noisecurr-v01-v04-vs-v03-polymorph-storm.gif`
 - next action: run capability-weighted high-repeat validation for champion-v04 and decide whether to update blended-capability champion alias; then tune noisy curriculum schedule for lower variance.
+- date: 2026-02-28
+- hypothesis: Successive agent operations become more reliable when handoff contracts are strict and skill context is split into thin definition + on-demand references.
+- change: Added repository agent policy (`AGENTS.md`), canonical/mirrored subagent contracts (`.agents`, `.claude`, `.opencode`), strict handoff/return protocol docs, thin `SKILL.md`, lesson/reference split, and index maps for low-context retrieval.
+- result: Handoff is now packetized with explicit lifecycle and return protocol; successor startup path is deterministic and cross-platform compatible while minimizing context load.
+- next action: add drift-check automation for canonical vs mirror role definitions and validate multi-generation packet chains.
