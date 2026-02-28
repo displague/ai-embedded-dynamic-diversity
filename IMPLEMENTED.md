@@ -26,6 +26,10 @@
   - Added `onnx` and `onnxruntime` dependencies.
   - Added ONNX benchmarking support to `add-bench`.
   - Added legacy ONNX export support (`dynamo=False`) to `add-export` for broader compatibility.
+- Added hardware-agnostic runtime I/O abstraction (`deploy/io_adapter.py`) with:
+  - `IOAdapter` for normalizing arbitrary hardware inputs to [0, 1].
+  - Sample-wise min-max robust normalization preserving anonymous-channel semantics.
+  - Denormalization mapping for hardware-specific actuator ranges (e.g. PWM, velocity).
 - Added UDP hardware-in-the-loop adapter CLI.
 - Added configurable memory gating research modes:
   - `sigmoid` baseline

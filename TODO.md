@@ -48,7 +48,7 @@
 - [x] Add genetic memory bank for warm-start retrieval across morphology families.
 - [x] Implement quantization-aware training and compare against dynamic quantization export.
 - [x] Integrate ONNX Runtime benchmark path for Pi 5.
-- [ ] Add hardware-agnostic runtime I/O abstraction for single-checkpoint deployment across Pi5/phone/embedded Linux.
+- [x] Add hardware-agnostic runtime I/O abstraction for single-checkpoint deployment across Pi5/phone/embedded Linux.
 - [ ] Add adaptive batch/chunk streaming path for reduced peak memory during long rollouts.
 - [ ] Add runtime embodiment switching without model reload (stateless memory reset and/or memory handoff policies).
 - [ ] Add telemetry feedback loop from deployment inference to curriculum retraining datasets.
