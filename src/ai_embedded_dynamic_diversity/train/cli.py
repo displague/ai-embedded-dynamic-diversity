@@ -15,6 +15,7 @@ from torch import nn
 from ai_embedded_dynamic_diversity.config import TrainConfig, WorldConfig, model_config_for_profile
 from ai_embedded_dynamic_diversity.models import ModelCore, UniversalConstructor, load_constructor_tape
 from ai_embedded_dynamic_diversity.sim.embodiments import device_map_for_embodiment, get_embodiment
+from ai_embedded_dynamic_diversity.sim.autopoiesis import autopoietic_metrics
 from ai_embedded_dynamic_diversity.sim.world import DynamicDiversityWorld
 from ai_embedded_dynamic_diversity.train.losses import loss_fn
 
@@ -197,6 +198,30 @@ def _transfer_mismatch_loss(
     return mismatch, float(mismatch.detach().item()), remap_events
 
 
+def _autopoietic_step_score(
+    out: dict[str, torch.Tensor],
+    state,
+    self_repair_weight: float,
+    closure_weight: float,
+    resource_cycle_weight: float,
+) -> torch.Tensor:
+    readiness_mean = torch.mean(out["readiness"])
+    energy_mean = torch.mean(out["energy"])
+    stress_mean = torch.mean(state.stress)
+    resource_mean = torch.mean(state.resources[:, :1])
+    vitality_mean = torch.mean(state.life)
+
+    closure_signal = torch.sigmoid(readiness_mean - 0.6 * energy_mean)
+    self_repair_signal = torch.sigmoid(0.5 - stress_mean)
+    resource_cycle_signal = torch.sigmoid(0.8 * resource_mean + 0.4 * vitality_mean - 0.7 * energy_mean)
+    denom = max(1e-8, self_repair_weight + closure_weight + resource_cycle_weight)
+    return (
+        closure_weight * closure_signal
+        + self_repair_weight * self_repair_signal
+        + resource_cycle_weight * resource_cycle_signal
+    ) / denom
+
+
 def run_gradient_epoch(
     model: ModelCore,
     world: DynamicDiversityWorld,
@@ -216,7 +241,12 @@ def run_gradient_epoch(
     noise_seed: int = 0,
     use_amp: bool = False,
     scaler=None,
-) -> tuple[float, torch.Tensor, float, float]:
+    enable_autopoietic_objective: bool = False,
+    autopoietic_loss_weight: float = 0.10,
+    autopoietic_self_repair_weight: float = 0.35,
+    autopoietic_closure_weight: float = 0.45,
+    autopoietic_resource_cycle_weight: float = 0.20,
+) -> tuple[float, torch.Tensor, float, float, float, float]:
     state = world.init(tcfg.batch_size)
     if genetic_memory is None:
         memory = model.init_memory(tcfg.batch_size, mcfg.memory_slots, mcfg.memory_dim, dev)
@@ -225,6 +255,8 @@ def run_gradient_epoch(
     epoch_loss = 0.0
     step_times = []
     transfer_mismatch_total = 0.0
+    autopoietic_score_total = 0.0
+    autopoietic_loss_total = 0.0
     amp_enabled = use_amp and dev.type == "cuda"
     amp_dtype = torch.bfloat16 if dev.type == "cuda" and torch.cuda.is_bf16_supported() else torch.float16
     for step_index in range(tcfg.unroll_steps):
@@ -274,6 +306,18 @@ def run_gradient_epoch(
                     remap_probability=remap_probability,
                 )
             total_loss = base_loss + transfer_loss_weight * transfer_loss_tensor
+            if enable_autopoietic_objective and autopoietic_loss_weight > 0.0:
+                autopoietic_score_t = _autopoietic_step_score(
+                    out=out,
+                    state=state,
+                    self_repair_weight=autopoietic_self_repair_weight,
+                    closure_weight=autopoietic_closure_weight,
+                    resource_cycle_weight=autopoietic_resource_cycle_weight,
+                )
+                autopoietic_loss_t = 1.0 - autopoietic_score_t
+                total_loss = total_loss + autopoietic_loss_weight * autopoietic_loss_t
+                autopoietic_score_total += float(autopoietic_score_t.detach().item())
+                autopoietic_loss_total += float(autopoietic_loss_t.detach().item())
             transfer_mismatch_total += transfer_mismatch
 
         opt.zero_grad(set_to_none=True)
@@ -296,7 +340,16 @@ def run_gradient_epoch(
     final_memory = memory.mean(dim=0, keepdim=True).detach()
     mean_step_ms = sum(step_times) / max(1, len(step_times))
     mean_transfer_mismatch = transfer_mismatch_total / max(1, tcfg.unroll_steps)
-    return epoch_loss / max(1, tcfg.unroll_steps), final_memory, mean_step_ms, mean_transfer_mismatch
+    mean_autopoietic_score = autopoietic_score_total / max(1, tcfg.unroll_steps)
+    mean_autopoietic_loss = autopoietic_loss_total / max(1, tcfg.unroll_steps)
+    return (
+        epoch_loss / max(1, tcfg.unroll_steps),
+        final_memory,
+        mean_step_ms,
+        mean_transfer_mismatch,
+        mean_autopoietic_score,
+        mean_autopoietic_loss,
+    )
 
 
 @torch.no_grad()
@@ -315,6 +368,7 @@ def evaluate_fitness(
     noise_profile: str = "none",
     noise_strength: float = 0.0,
     noise_seed: int = 0,
+    autopoietic_fitness_weight: float = 0.0,
 ) -> float:
     model.eval()
     state = world.init(batch)
@@ -322,6 +376,12 @@ def evaluate_fitness(
     energy_total = 0.0
     remap_events = 0.0
     transfer_mismatch_total = 0.0
+    mismatch_values: list[float] = []
+    vitality_values: list[float] = []
+    stress_values: list[float] = []
+    energy_values: list[float] = []
+    remap_steps: list[int] = []
+    resource_values: list[float] = []
     for step_index in range(steps):
         clean_obs = world.encode_observation(state, signal_dim=mcfg.signal_dim)
         obs = _apply_observation_noise(
@@ -335,6 +395,7 @@ def evaluate_fitness(
         if random.random() < 0.3:
             remap[:, random.randrange(mcfg.max_remap_groups)] = 1.0
             remap_events += 1.0
+            remap_steps.append(step_index)
         out = model(obs, memory, remap)
         memory = out["memory"]
         if transfer_states and transfer_fitness_weight > 0.0:
@@ -351,14 +412,34 @@ def evaluate_fitness(
         action_field = out["io"].float().mean(dim=1, keepdim=True).repeat(1, wcfg.x * wcfg.y * wcfg.z)
         controls = world.random_controls(batch, env_volatility, step_index=step_index)
         state = world.step(state, action_field, controls=controls)
+        mismatch_values.append(float(torch.mean((out["io"] @ out["io"].new_ones(mcfg.io_channels, 1)) ** 2).item()))
+        vitality_values.append(float(state.life.mean().item()))
+        stress_values.append(float(state.stress.mean().item()))
+        energy_values.append(float(out["energy"].mean().item()))
+        resource_values.append(float(state.resources[:, :1].mean().item()))
         energy_total += float(out["energy"].mean().item())
     vitality = float(state.life.mean().item())
     stress = float(state.stress.mean().item())
     energy = energy_total / max(1, steps)
     remap_bonus = remap_events / max(1.0, steps)
     transfer_mismatch = transfer_mismatch_total / max(1.0, steps)
+    autopoietic_score = autopoietic_metrics(
+        mismatch_values=mismatch_values,
+        vitality_values=vitality_values,
+        stress_values=stress_values,
+        energy_values=energy_values,
+        remap_steps=remap_steps,
+        resource_values=resource_values,
+    )["autopoietic_score"]
     # Higher is better: survive under stress using less energy.
-    return vitality - 0.45 * stress - 0.1 * energy + 0.05 * remap_bonus - transfer_fitness_weight * transfer_mismatch
+    return (
+        vitality
+        - 0.45 * stress
+        - 0.1 * energy
+        + 0.05 * remap_bonus
+        - transfer_fitness_weight * transfer_mismatch
+        + autopoietic_fitness_weight * autopoietic_score
+    )
 
 
 def mutate_from_parent(parent: ModelCore, mutation_std: float) -> ModelCore:
@@ -418,6 +499,11 @@ def run(
     transfer_loss_weight: float = 0.35,
     transfer_samples_per_step: int = 2,
     transfer_fitness_weight: float = 0.08,
+    enable_autopoietic_objective: bool = False,
+    autopoietic_loss_weight: float = 0.10,
+    autopoietic_self_repair_weight: float = 0.35,
+    autopoietic_closure_weight: float = 0.45,
+    autopoietic_resource_cycle_weight: float = 0.20,
     noise_profile: str = "none",
     enable_noise_curriculum: bool = False,
     noise_strength_start: float = 0.2,
@@ -451,6 +537,8 @@ def run(
         raise typer.BadParameter(str(exc)) from exc
     if noise_strength_start < 0.0 or noise_strength_end < 0.0:
         raise typer.BadParameter("noise_strength_start and noise_strength_end must be >= 0.0")
+    if autopoietic_loss_weight < 0.0:
+        raise typer.BadParameter("autopoietic_loss_weight must be >= 0.0")
 
     dev = choose_device(tcfg.device, strict=strict_device)
     if dev.type == "cuda":
@@ -499,6 +587,11 @@ def run(
         "transfer_loss_weight": transfer_loss_weight,
         "transfer_samples_per_step": transfer_samples_per_step,
         "transfer_fitness_weight": transfer_fitness_weight,
+        "enable_autopoietic_objective": enable_autopoietic_objective,
+        "autopoietic_loss_weight": autopoietic_loss_weight,
+        "autopoietic_self_repair_weight": autopoietic_self_repair_weight,
+        "autopoietic_closure_weight": autopoietic_closure_weight,
+        "autopoietic_resource_cycle_weight": autopoietic_resource_cycle_weight,
         "noise_profile": noise_profile_resolved,
         "enable_noise_curriculum": enable_noise_curriculum,
         "noise_strength_start": noise_strength_start,
@@ -543,7 +636,14 @@ def run(
                 noise_strength = _lin_schedule(noise_strength_start, noise_strength_end, epoch)
             else:
                 noise_strength = noise_strength_end
-            mean_loss, memory_snapshot, mean_step_ms, mean_transfer_mismatch = run_gradient_epoch(
+            (
+                mean_loss,
+                memory_snapshot,
+                mean_step_ms,
+                mean_transfer_mismatch,
+                mean_autopoietic_score,
+                mean_autopoietic_loss,
+            ) = run_gradient_epoch(
                 model,
                 world,
                 mcfg,
@@ -562,6 +662,11 @@ def run(
                 noise_seed=seed + epoch * 1009,
                 use_amp=amp_enabled,
                 scaler=scaler if amp_enabled else None,
+                enable_autopoietic_objective=enable_autopoietic_objective,
+                autopoietic_loss_weight=autopoietic_loss_weight,
+                autopoietic_self_repair_weight=autopoietic_self_repair_weight,
+                autopoietic_closure_weight=autopoietic_closure_weight,
+                autopoietic_resource_cycle_weight=autopoietic_resource_cycle_weight,
             )
             if genetic_memory is not None:
                 genetic_memory = genetic_memory_decay * genetic_memory + (1.0 - genetic_memory_decay) * memory_snapshot
@@ -580,6 +685,7 @@ def run(
                 noise_profile=noise_profile_resolved,
                 noise_strength=noise_strength,
                 noise_seed=seed + epoch * 3001,
+                autopoietic_fitness_weight=0.15 * autopoietic_loss_weight if enable_autopoietic_objective else 0.0,
             )
             metrics_records.append(
                 {
@@ -588,6 +694,8 @@ def run(
                     "fitness": fitness,
                     "mean_step_ms": mean_step_ms,
                     "mean_transfer_mismatch": mean_transfer_mismatch,
+                    "mean_autopoietic_score": mean_autopoietic_score,
+                    "autopoietic_loss_component": mean_autopoietic_loss,
                     "remap_probability": remap_probability,
                     "env_volatility": env_volatility,
                     "noise_strength": noise_strength,
@@ -600,6 +708,8 @@ def run(
                     "fitness": fitness,
                     "mean_step_ms": mean_step_ms,
                     "mean_transfer_mismatch": mean_transfer_mismatch,
+                    "mean_autopoietic_score": mean_autopoietic_score,
+                    "autopoietic_loss_component": mean_autopoietic_loss,
                     "device": str(dev),
                     "profile": profile,
                     "remap_probability": remap_probability,
@@ -664,7 +774,14 @@ def run(
         mean_transfer_mismatch_acc = 0.0
         for idx, model in enumerate(pop):
             model.train()
-            warmup_loss, _, step_ms, mean_transfer_mismatch = run_gradient_epoch(
+            (
+                warmup_loss,
+                _,
+                step_ms,
+                mean_transfer_mismatch,
+                mean_autopoietic_score,
+                mean_autopoietic_loss,
+            ) = run_gradient_epoch(
                 model,
                 world,
                 mcfg,
@@ -682,6 +799,11 @@ def run(
                 noise_seed=seed + generation * 1009 + idx * 37,
                 use_amp=amp_enabled,
                 scaler=scalers[idx],
+                enable_autopoietic_objective=enable_autopoietic_objective,
+                autopoietic_loss_weight=autopoietic_loss_weight,
+                autopoietic_self_repair_weight=autopoietic_self_repair_weight,
+                autopoietic_closure_weight=autopoietic_closure_weight,
+                autopoietic_resource_cycle_weight=autopoietic_resource_cycle_weight,
             )
             mean_step_acc += step_ms
             mean_transfer_mismatch_acc += mean_transfer_mismatch
@@ -691,6 +813,8 @@ def run(
                     "agent": idx,
                     "warmup_loss": warmup_loss,
                     "mean_transfer_mismatch": mean_transfer_mismatch,
+                    "mean_autopoietic_score": mean_autopoietic_score,
+                    "autopoietic_loss_component": mean_autopoietic_loss,
                     "remap_probability": remap_probability,
                     "env_volatility": env_volatility,
                     "noise_strength": noise_strength,
@@ -713,6 +837,7 @@ def run(
                 noise_profile=noise_profile_resolved,
                 noise_strength=noise_strength,
                 noise_seed=seed + generation * 3001 + idx * 53,
+                autopoietic_fitness_weight=0.15 * autopoietic_loss_weight if enable_autopoietic_objective else 0.0,
             )
             for idx, model in enumerate(pop)
         ]
@@ -763,6 +888,7 @@ def run(
             noise_profile=noise_profile_resolved,
             noise_strength=noise_strength_end if noise_profile_resolved != "none" else 0.0,
             noise_seed=seed + 99991 + idx * 97,
+            autopoietic_fitness_weight=0.15 * autopoietic_loss_weight if enable_autopoietic_objective else 0.0,
         )
         for idx, model in enumerate(pop)
     ]

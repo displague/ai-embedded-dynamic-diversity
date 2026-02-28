@@ -34,6 +34,12 @@ def run(
     transfer_loss_weight: float = 0.35,
     transfer_fitness_weight: float = 0.08,
     transfer_samples_per_step: int = 3,
+    enable_autopoietic_objective: bool = False,
+    autopoietic_loss_weight: float = 0.10,
+    autopoietic_self_repair_weight: float = 0.35,
+    autopoietic_closure_weight: float = 0.45,
+    autopoietic_resource_cycle_weight: float = 0.20,
+    autopoietic_loss_weight_cycle: str = "",
     noise_profile: str = "none",
     noise_profile_cycle: str = "",
     enable_noise_curriculum: bool = False,
@@ -61,6 +67,7 @@ def run(
     phase_flags = [False, True]
     noise_profiles = [x.strip().lower() for x in noise_profile_cycle.replace(";", ",").split(",") if x.strip()]
     constructor_tapes = [x.strip() for x in constructor_tape_cycle.replace(";", ",").split(",") if x.strip()]
+    autopoietic_loss_weights = [float(x.strip()) for x in autopoietic_loss_weight_cycle.replace(";", ",").split(",") if x.strip()]
 
     jobs: list[tuple[int, list[str], str, str]] = []
     for i in range(variants):
@@ -77,6 +84,11 @@ def run(
         variant_transfer_fitness_weight = transfer_fitness_weight * (0.9 + 0.1 * ((i + 1) % 3))
         variant_noise_profile = noise_profiles[i % len(noise_profiles)] if noise_profiles else noise_profile
         variant_constructor_tape = constructor_tapes[i % len(constructor_tapes)] if constructor_tapes else constructor_tape_path
+        variant_autopoietic_loss_weight = (
+            autopoietic_loss_weights[i % len(autopoietic_loss_weights)]
+            if autopoietic_loss_weights
+            else autopoietic_loss_weight
+        )
 
         cmd = [
             sys.executable,
@@ -104,6 +116,14 @@ def run(
             str(variant_transfer_fitness_weight),
             "--transfer-samples-per-step",
             str(transfer_samples_per_step),
+            "--autopoietic-loss-weight",
+            str(variant_autopoietic_loss_weight),
+            "--autopoietic-self-repair-weight",
+            str(autopoietic_self_repair_weight),
+            "--autopoietic-closure-weight",
+            str(autopoietic_closure_weight),
+            "--autopoietic-resource-cycle-weight",
+            str(autopoietic_resource_cycle_weight),
             "--noise-profile",
             variant_noise_profile,
             "--seed",
@@ -119,6 +139,8 @@ def run(
         cmd += ["--strict-device"] if strict_device else ["--no-strict-device"]
         if enable_embodiment_transfer_loss:
             cmd += ["--enable-embodiment-transfer-loss"]
+        if enable_autopoietic_objective:
+            cmd += ["--enable-autopoietic-objective"]
         if init_weights:
             cmd += ["--init-weights", init_weights]
         if variant_constructor_tape:

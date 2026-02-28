@@ -9,6 +9,7 @@ import pytest
 
 from ai_embedded_dynamic_diversity.config import model_config_for_profile
 from ai_embedded_dynamic_diversity.train.cli import (
+    _autopoietic_step_score,
     _apply_observation_noise,
     _build_transfer_states,
     _resolve_embodiments,
@@ -99,3 +100,26 @@ def test_resolve_model_config_from_constructor_tape() -> None:
     assert cfg.memory_slots == 10
     assert cfg.memory_dim == 12
     assert cfg.io_channels == 6
+
+
+def test_autopoietic_step_score_in_range() -> None:
+    out = {
+        "readiness": torch.rand(2, 8),
+        "energy": torch.rand(2, 1),
+    }
+
+    class _State:
+        def __init__(self):
+            self.stress = torch.rand(2, 1, 2, 2, 2)
+            self.resources = torch.rand(2, 3, 2, 2, 2)
+            self.life = torch.rand(2, 1, 2, 2, 2)
+
+    score = _autopoietic_step_score(
+        out=out,
+        state=_State(),
+        self_repair_weight=0.35,
+        closure_weight=0.45,
+        resource_cycle_weight=0.20,
+    )
+    assert score.ndim == 0
+    assert 0.0 <= float(score.item()) <= 1.0
