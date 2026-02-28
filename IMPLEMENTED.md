@@ -43,6 +43,11 @@
   - `TelemetryCollector` for logging per-step inference signals, outputs, and metadata.
   - Support for aggregating collected logs into curriculum retraining datasets.
   - Robust timestamped file storage with collision-prevention counters.
+- Added lightweight inference service wrapper (`deploy/service.py`) with:
+  - `FastAPI`-based HTTP API for model interaction.
+  - `/infer` endpoint supporting raw signal input and metadata.
+  - Automatic integration with `TelemetryCollector` for live data capture.
+  - Health check endpoint for deployment monitoring.
 - Added UDP hardware-in-the-loop adapter CLI.
 - Added configurable memory gating research modes:
   - `sigmoid` baseline
