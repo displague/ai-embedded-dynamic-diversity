@@ -43,6 +43,8 @@ class CapabilityProxySignals:
     tech_telemetry: float
     tech_bus_load: float
     target_signal: float
+    mimicry_target: float
+    conjoining_target: float
     threat_active: bool
 
 
@@ -567,6 +569,13 @@ def _capability_proxy_signals(
         + 0.12 * tech_telemetry
         + 0.12 * tech_bus_load
     )
+    
+    # Mimicry target: environmental harmonic oscillation (e.g. tracking light/wind phase)
+    mimicry_target = 0.5 + 0.5 * math.sin(step / 3.0 + light_intensity * 2.0 + wind_mag)
+    
+    # Conjoining target: coupling between resource abundance and vitality maintenance
+    conjoining_target = math.tanh(resource_mean * 1.5 + life_mean * 0.5)
+
     threat_active = (
         force_active > 0.5
         or tech_rf_noise > 0.95
@@ -581,6 +590,8 @@ def _capability_proxy_signals(
         tech_telemetry=tech_telemetry,
         tech_bus_load=tech_bus_load,
         target_signal=target_signal,
+        mimicry_target=mimicry_target,
+        conjoining_target=conjoining_target,
         threat_active=threat_active,
     )
 
@@ -592,7 +603,7 @@ def _load_model(weights: str, profile: str, device: torch.device) -> tuple[Model
     else:
         cfg = model_config_for_profile(profile)
     model = ModelCore(**cfg.__dict__).to(device)
-    model.load_state_dict(ckpt["model"])
+    model.load_state_dict(ckpt["model"], strict=False)
     model.eval()
     return model, cfg, ckpt
 
@@ -670,6 +681,8 @@ def rollout_metrics(
     resource_values: list[float] = []
     remap_steps: list[int] = []
     signal_target_values: list[float] = []
+    mimicry_target_values: list[float] = []
+    conjoining_target_values: list[float] = []
     signal_emit_values: list[float] = []
     detection_score_values: list[float] = []
     threat_labels: list[int] = []
@@ -746,6 +759,8 @@ def rollout_metrics(
                 threat = 1 if proxy.threat_active else 0
                 threat_labels.append(threat)
                 signal_target_values.append(proxy.target_signal)
+                mimicry_target_values.append(proxy.mimicry_target)
+                conjoining_target_values.append(proxy.conjoining_target)
                 signal_emit_values.append(signal_emit)
                 detection_score_values.append(detection_score)
                 if threat:
@@ -791,14 +806,32 @@ def rollout_metrics(
     if capability_profile != "none":
         signal_corr_raw = _safe_corr(signal_emit_values, signal_target_values)
         signal_reliability = abs(signal_corr_raw)
+        
+        mimicry_corr_raw = _safe_corr(signal_emit_values, mimicry_target_values)
+        mimicry_reliability = abs(mimicry_corr_raw)
+        
+        conjoining_corr_raw = _safe_corr(signal_emit_values, conjoining_target_values)
+        conjoining_gain = abs(conjoining_corr_raw)
+        
         signal_detection_auc_raw = _binary_auc(detection_score_values, threat_labels)
         signal_detection_auc = max(signal_detection_auc_raw, 1.0 - signal_detection_auc_raw)
         evasion_success = float(evasion_success_steps / max(1, threat_steps))
-        capability_score = 0.40 * signal_reliability + 0.30 * signal_detection_auc + 0.30 * evasion_success
+        
+        # Capability score blends all proxies
+        capability_score = (
+            0.20 * signal_reliability 
+            + 0.20 * mimicry_reliability 
+            + 0.20 * conjoining_gain 
+            + 0.20 * signal_detection_auc 
+            + 0.20 * evasion_success
+        )
+        
         metrics.update(
             {
                 "signal_corr_raw": signal_corr_raw,
                 "signal_reliability": signal_reliability,
+                "mimicry_reliability": mimicry_reliability,
+                "conjoining_gain": conjoining_gain,
                 "signal_detection_auc_raw": signal_detection_auc_raw,
                 "signal_detection_auc": signal_detection_auc,
                 "evasion_success": evasion_success,
@@ -889,6 +922,8 @@ def _evaluate_ranked_checkpoints(
                 by_embodiment[emb_name].update(
                     {
                         "signal_reliability": float(sum(float(x["signal_reliability"]) for x in subset) / max(1, len(subset))),
+                        "mimicry_reliability": float(sum(float(x["mimicry_reliability"]) for x in subset) / max(1, len(subset))),
+                        "conjoining_gain": float(sum(float(x["conjoining_gain"]) for x in subset) / max(1, len(subset))),
                         "signal_detection_auc": float(sum(float(x["signal_detection_auc"]) for x in subset) / max(1, len(subset))),
                         "evasion_success": float(sum(float(x["evasion_success"]) for x in subset) / max(1, len(subset))),
                         "capability_score": float(sum(float(x["capability_score"]) for x in subset) / max(1, len(subset))),
@@ -916,6 +951,7 @@ def _evaluate_ranked_checkpoints(
         )
         overall_capability_score = 0.0
         if capability_profile_resolved != "none":
+            # Blended mean across all capability proxies
             overall_capability_score = float(sum(float(row["capability_score"]) for row in run_rows) / max(1, len(run_rows)))
         overall_autopoiesis_score = float(sum(float(row["autopoiesis_score"]) for row in run_rows) / max(1, len(run_rows)))
         ranking_score = (

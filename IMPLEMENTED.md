@@ -135,9 +135,11 @@
   - prior champions (`model-core-champion-v03`, `variant-06`, `model-core-champion-v02`) failed `checkmate_pass_all`.
 - Added capability-proxy harness in `add-cross-eval` (`--capability-profile bio-tech-v1`) with environment-tied biological/technological signal proxies and metrics:
   - `signal_reliability` (with raw correlation tracked as `signal_corr_raw`)
+  - `mimicry_reliability`: correlation with environmental harmonic oscillations (light/wind phase tracking).
+  - `conjoining_gain`: coupling efficiency between resource abundance and vitality maintenance.
   - `signal_detection_auc` (with raw tracked as `signal_detection_auc_raw`)
   - `evasion_success`
-  - blended `capability_score`
+  - blended `capability_score` (blends all 5 proxies)
 - Added optional blended ranking in cross-eval:
   - `overall_transfer_score = weighted_transfer + capability_score_weight * capability_score`
   - preserves transfer-only outputs alongside blended score.
