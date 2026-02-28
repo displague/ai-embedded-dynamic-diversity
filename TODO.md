@@ -31,7 +31,7 @@
 - [x] Add lightweight script to diff canonical role contracts vs `.claude/.opencode` mirrors and flag divergence.
 - [x] Add compact "reference subset generator" for handoff packets based on scenario tags and current task.
 - [x] Add policy-level task objectives on top of adaptation (navigation, stability, manipulation).
-- [ ] Add dynamic embodiment discovery at runtime (auto-infer I/O schema + safe default remap groups) without recompilation.
+- [x] Add dynamic embodiment discovery at runtime (auto-infer I/O schema + safe default remap groups) without recompilation.
 - [x] Add constructor-tape architecture path (external parametric description) for universal-constructor style model instantiation and checkpoint metadata persistence.
 - [ ] Add online remap learning within episode (learned remap policy vs static periodic remaps).
 - [ ] Add few-shot embodiment adaptation protocol (`<10` gradient steps) and measure adaptation slope vs zero-shot.

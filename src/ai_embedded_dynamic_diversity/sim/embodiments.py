@@ -66,6 +66,30 @@ def get_embodiment(name: str) -> Embodiment:
     return EMBODIMENTS[key]
 
 
+def register_embodiment(embodiment: Embodiment) -> None:
+    """Register a new embodiment at runtime."""
+    EMBODIMENTS[embodiment.name.lower()] = embodiment
+
+
+def discover_from_spec(spec: dict[str, object]) -> Embodiment:
+    """Create an Embodiment from a dictionary specification."""
+    name = str(spec.get("name", "unknown"))
+    
+    controls = spec.get("controls")
+    if controls is None:
+        count = int(spec.get("control_count", 0))
+        controls = _indexed("control", count)
+    
+    sensors = spec.get("sensors")
+    if sensors is None:
+        count = int(spec.get("sensor_count", 0))
+        sensors = _indexed("sensor", count)
+        
+    emb = Embodiment(name=name, controls=tuple(controls), sensors=tuple(sensors))
+    register_embodiment(emb)
+    return emb
+
+
 def embodiment_dof_table() -> list[dict[str, int | str]]:
     rows = []
     for key in sorted(EMBODIMENTS):

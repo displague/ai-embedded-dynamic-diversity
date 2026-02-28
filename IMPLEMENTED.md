@@ -264,6 +264,10 @@
   - `NavigationObjective` (target distance rewards)
   - `StabilityObjective` (world stress reduction rewards)
   - `CombinedObjective` (weighted multi-task blending)
+- Added dynamic runtime embodiment discovery and registration (`sim/embodiments.py`) with:
+  - `register_embodiment` for on-the-fly additions.
+  - `discover_from_spec` for inferred I/O schemas from JSON/dict.
+  - auto-indexed control/sensor naming for rapid prototyping.
 
 ## Agent Continuity And Handoff Infrastructure
 
