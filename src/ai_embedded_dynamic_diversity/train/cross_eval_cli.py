@@ -11,6 +11,7 @@ import typer
 
 from ai_embedded_dynamic_diversity.config import ModelConfig, model_config_for_profile
 from ai_embedded_dynamic_diversity.models import ModelCore
+from ai_embedded_dynamic_diversity.sim.autopoiesis import autopoietic_metrics
 from ai_embedded_dynamic_diversity.sim.embodiments import device_map_for_embodiment, get_embodiment
 from ai_embedded_dynamic_diversity.sim.prelife_cli import run_prelife_simulation
 from ai_embedded_dynamic_diversity.sim.world import DynamicDiversityWorld
@@ -370,9 +371,62 @@ def _prelife_metrics_for_checkpoint(
         "dense_novelty_growth_slope": _avg(dense_runs, "novelty_growth_slope"),
         "dense_description_copy_fidelity": _avg(dense_runs, "description_copy_fidelity"),
         "dense_symbiogenesis_event_count": _avg(dense_runs, "symbiogenesis_event_count"),
+        "control_symbiogenesis_event_count": _avg(ctrl_runs, "symbiogenesis_event_count"),
     }
+    symbio_contrast = max(0.0, raw["dense_symbiogenesis_event_count"] - raw["control_symbiogenesis_event_count"])
+    raw["symbio_event_rate_contrast"] = symbio_contrast
+    raw["symbio_stability_proxy"] = max(
+        0.0,
+        min(
+            1.0,
+            0.65 * raw["dense_description_copy_fidelity"]
+            + 0.35 * (symbio_contrast / (1.0 + symbio_contrast)),
+        ),
+    )
+    raw["symbio_contribution_to_novelty"] = max(
+        0.0,
+        min(1.0, raw["dense_symbiogenesis_event_count"] / (1.0 + abs(raw["dense_novelty_growth_slope"]))),
+    )
     score = _normalize_prelife_score(raw)
     return raw, score
+
+
+def _build_convergence_threshold_payload(
+    path: str,
+    symbio_min_threshold: float,
+    autopoiesis_min_threshold: float,
+    best_symbio_contrast: float,
+    best_autopoiesis_score: float,
+) -> dict:
+    p = Path(path)
+    previous = {}
+    if p.exists():
+        try:
+            previous = json.loads(p.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            previous = {}
+    cycle_index = int(previous.get("cycle_index", -1)) + 1
+    next_symbio = symbio_min_threshold
+    next_auto = autopoiesis_min_threshold
+    if best_symbio_contrast >= symbio_min_threshold:
+        next_symbio = min(0.65, symbio_min_threshold + 0.02)
+    if best_autopoiesis_score >= autopoiesis_min_threshold:
+        next_auto = min(0.75, autopoiesis_min_threshold + 0.03)
+    return {
+        "cycle_index": cycle_index,
+        "current_thresholds": {
+            "symbio_min_threshold": symbio_min_threshold,
+            "autopoiesis_min_threshold": autopoiesis_min_threshold,
+        },
+        "best_observed": {
+            "symbio_event_rate_contrast": best_symbio_contrast,
+            "autopoiesis_score": best_autopoiesis_score,
+        },
+        "next_recommended_thresholds": {
+            "symbio_min_threshold": next_symbio,
+            "autopoiesis_min_threshold": next_auto,
+        },
+    }
 
 
 def _resolve_noise_profile(profile: str) -> str:
@@ -608,6 +662,8 @@ def rollout_metrics(
     mismatch_values: list[float] = []
     vitality_values: list[float] = []
     stress_values: list[float] = []
+    energy_values: list[float] = []
+    resource_values: list[float] = []
     remap_steps: list[int] = []
     signal_target_values: list[float] = []
     signal_emit_values: list[float] = []
@@ -671,6 +727,8 @@ def rollout_metrics(
             state = world.step(state, action, controls=controls)
             vitality_values.append(float(state.life.mean().item()))
             stress_values.append(float(state.stress.mean().item()))
+            energy_values.append(float(out["energy"].mean().item()))
+            resource_values.append(float(state.resources[:, :1].mean().item()))
 
             if capability_profile != "none":
                 proxy = _capability_proxy_signals(
@@ -697,6 +755,14 @@ def rollout_metrics(
     mean_mismatch = sum(mismatch_values) / max(1, len(mismatch_values))
     mean_vitality = sum(vitality_values) / max(1, len(vitality_values))
     recovery = compute_recovery_score(mismatch_values, remap_steps)
+    auto = autopoietic_metrics(
+        mismatch_values=mismatch_values,
+        vitality_values=vitality_values,
+        stress_values=stress_values,
+        energy_values=energy_values,
+        remap_steps=remap_steps,
+        resource_values=resource_values,
+    )
 
     transfer_score = (
         0.55 * (1.0 / (1.0 + mean_mismatch))
@@ -712,6 +778,11 @@ def rollout_metrics(
         "recovery": recovery,
         "transfer_score": transfer_score,
         "remap_events": len(remap_steps),
+        "closure_resilience": auto["closure_resilience"],
+        "organizational_persistence": auto["organizational_persistence"],
+        "self_repair_response": auto["self_repair_response"],
+        "resource_cycle_efficiency": auto["resource_cycle_efficiency"],
+        "autopoiesis_score": auto["autopoietic_score"],
     }
     if capability_profile != "none":
         signal_corr_raw = _safe_corr(signal_emit_values, signal_target_values)
@@ -755,6 +826,11 @@ def run(
     prelife_score_weight: float = 0.0,
     prelife_steps: int = 120,
     prelife_seeds: str = "2",
+    autopoiesis_score_weight: float = 0.15,
+    enable_convergence_gates: bool = True,
+    symbio_min_threshold: float = 0.45,
+    autopoiesis_min_threshold: float = 0.55,
+    convergence_thresholds_output: str = "artifacts/convergence-thresholds.json",
     noise_profile: str = "none",
     world_x: int = 20,
     world_y: int = 20,
@@ -813,8 +889,14 @@ def run(
         raise typer.BadParameter("capability_score_weight must be >= 0.0")
     if prelife_score_weight < 0.0:
         raise typer.BadParameter("prelife_score_weight must be >= 0.0")
+    if autopoiesis_score_weight < 0.0:
+        raise typer.BadParameter("autopoiesis_score_weight must be >= 0.0")
     if prelife_steps <= 0:
         raise typer.BadParameter("prelife_steps must be > 0")
+    if symbio_min_threshold < 0.0:
+        raise typer.BadParameter("symbio_min_threshold must be >= 0.0")
+    if autopoiesis_min_threshold < 0.0:
+        raise typer.BadParameter("autopoiesis_min_threshold must be >= 0.0")
 
     dev = torch.device(device)
     world_dims = (world_x, world_y, world_z, resource_channels)
@@ -876,6 +958,15 @@ def run(
                         "capability_score": float(sum(float(x["capability_score"]) for x in subset) / max(1, len(subset))),
                     }
                 )
+            by_embodiment[emb_name].update(
+                {
+                    "autopoiesis_score": float(sum(float(x["autopoiesis_score"]) for x in subset) / max(1, len(subset))),
+                    "closure_resilience": float(sum(float(x["closure_resilience"]) for x in subset) / max(1, len(subset))),
+                    "organizational_persistence": float(sum(float(x["organizational_persistence"]) for x in subset) / max(1, len(subset))),
+                    "self_repair_response": float(sum(float(x["self_repair_response"]) for x in subset) / max(1, len(subset))),
+                    "resource_cycle_efficiency": float(sum(float(x["resource_cycle_efficiency"]) for x in subset) / max(1, len(subset))),
+                }
+            )
 
         base_transfer_weighted = _weighted_transfer_score(
             by_embodiment=by_embodiment,
@@ -892,10 +983,14 @@ def run(
             overall_capability_score = float(
                 sum(float(row["capability_score"]) for row in run_rows) / max(1, len(run_rows))
             )
+        overall_autopoiesis_score = float(
+            sum(float(row["autopoiesis_score"]) for row in run_rows) / max(1, len(run_rows))
+        )
         ranking_score = (
             base_transfer_weighted
             + capability_score_weight * overall_capability_score
             + prelife_score_weight * overall_prelife_score
+            + autopoiesis_score_weight * overall_autopoiesis_score
         )
         transfer_ratio_matrix = _transfer_ratio_matrix(
             by_embodiment=by_embodiment,
@@ -908,6 +1003,12 @@ def run(
             train_embodiments=train_embodiments_resolved,
             threshold=checkmate_threshold,
         )
+        symbio_contrast = float(prelife_metrics.get("symbio_event_rate_contrast", 0.0))
+        symbio_gate_pass = bool(symbio_contrast >= symbio_min_threshold) if prelife_profile_resolved != "none" else True
+        autopoiesis_gate_pass = bool(overall_autopoiesis_score >= autopoiesis_min_threshold)
+        convergence_gate_pass = bool(checkmate["checkmate_pass_all"]) and symbio_gate_pass and autopoiesis_gate_pass
+        if not enable_convergence_gates:
+            convergence_gate_pass = True
 
         ranked.append(
             {
@@ -921,13 +1022,24 @@ def run(
                 "overall_recovery": _avg("recovery"),
                 "overall_capability_score": overall_capability_score,
                 "overall_prelife_score": overall_prelife_score,
+                "overall_autopoiesis_score": overall_autopoiesis_score,
                 "ranking_component_transfer": base_transfer_weighted,
                 "ranking_component_capability": capability_score_weight * overall_capability_score,
                 "ranking_component_prelife": prelife_score_weight * overall_prelife_score,
+                "ranking_component_autopoiesis": autopoiesis_score_weight * overall_autopoiesis_score,
                 "train_embodiments": train_embodiments_resolved,
                 "heldout_embodiments": heldout_embodiments,
                 "transfer_ratio_matrix": transfer_ratio_matrix,
                 "prelife_metrics": prelife_metrics,
+                "symbio_metrics": {
+                    "symbio_event_rate_contrast": symbio_contrast,
+                    "symbio_stability_proxy": float(prelife_metrics.get("symbio_stability_proxy", 0.0)),
+                    "symbio_contribution_to_novelty": float(prelife_metrics.get("symbio_contribution_to_novelty", 0.0)),
+                },
+                "symbio_gate_pass": symbio_gate_pass,
+                "autopoiesis_gate_pass": autopoiesis_gate_pass,
+                "convergence_gate_pass": convergence_gate_pass,
+                "promotion_eligible": convergence_gate_pass,
                 **checkmate,
                 "by_embodiment": by_embodiment,
                 "runs": run_rows,
@@ -956,11 +1068,26 @@ def run(
             "prelife_score_weight": prelife_score_weight,
             "prelife_steps": prelife_steps,
             "prelife_seeds": prelife_seed_list,
+            "autopoiesis_score_weight": autopoiesis_score_weight,
+            "enable_convergence_gates": enable_convergence_gates,
+            "symbio_min_threshold": symbio_min_threshold,
+            "autopoiesis_min_threshold": autopoiesis_min_threshold,
             "noise_profile": noise_profile_resolved,
             "world": {"x": world_x, "y": world_y, "z": world_z, "resource_channels": resource_channels},
         },
         "ranked": ranked,
     }
+
+    best = ranked[0]
+    threshold_payload = _build_convergence_threshold_payload(
+        path=convergence_thresholds_output,
+        symbio_min_threshold=symbio_min_threshold,
+        autopoiesis_min_threshold=autopoiesis_min_threshold,
+        best_symbio_contrast=float(best.get("symbio_metrics", {}).get("symbio_event_rate_contrast", 0.0)),
+        best_autopoiesis_score=float(best.get("overall_autopoiesis_score", 0.0)),
+    )
+    Path(convergence_thresholds_output).parent.mkdir(parents=True, exist_ok=True)
+    Path(convergence_thresholds_output).write_text(json.dumps(threshold_payload, indent=2), encoding="utf-8")
 
     Path(output).parent.mkdir(parents=True, exist_ok=True)
     Path(output).write_text(json.dumps(payload, indent=2), encoding="utf-8")
@@ -970,6 +1097,7 @@ def run(
         "checkpoints": len(ranked),
         "best_checkpoint": ranked[0]["checkpoint"],
         "best_score": ranked[0]["overall_transfer_score"],
+        "thresholds": convergence_thresholds_output,
     })
 
 

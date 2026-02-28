@@ -11,6 +11,7 @@ from ai_embedded_dynamic_diversity.train.cross_eval_cli import (
     _binary_auc,
     _checkmate_metrics,
     _parse_embodiment_weights,
+    _build_convergence_threshold_payload,
     _prelife_metrics_for_checkpoint,
     _resolve_prelife_profile,
     _resolve_prelife_seeds,
@@ -73,6 +74,8 @@ def test_rollout_metrics_returns_transfer_keys() -> None:
     assert "mean_mismatch" in metrics
     assert "mean_vitality" in metrics
     assert metrics["remap_events"] >= 1
+    assert "autopoiesis_score" in metrics
+    assert 0.0 <= float(metrics["autopoiesis_score"]) <= 1.0
 
 
 def test_hardy_profile_resolves_multiple_scenarios() -> None:
@@ -279,3 +282,17 @@ def test_prelife_metrics_for_checkpoint_returns_score() -> None:
     assert "dense_replication_rate" in raw
     assert "control_replication_rate" in raw
     assert 0.0 <= score <= 1.0
+
+
+def test_build_convergence_threshold_payload_progression() -> None:
+    payload = _build_convergence_threshold_payload(
+        path="artifacts/test-thresholds.json",
+        symbio_min_threshold=0.45,
+        autopoiesis_min_threshold=0.55,
+        best_symbio_contrast=0.50,
+        best_autopoiesis_score=0.60,
+    )
+    assert payload["cycle_index"] >= 0
+    next_thresholds = payload["next_recommended_thresholds"]
+    assert float(next_thresholds["symbio_min_threshold"]) >= 0.45
+    assert float(next_thresholds["autopoiesis_min_threshold"]) >= 0.55

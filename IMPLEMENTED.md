@@ -186,12 +186,43 @@
 - Extended `add-cross-report` with convergence decomposition and pre-life tables:
   - transfer/capability/prelife ranking components for top checkpoints
   - pre-life dense-vs-control summary for promotion decisions
+- Added embodied autopoietic metric helper (`sim/autopoiesis.py`) and integrated it into:
+  - `add-sim profiler` (`closure_resilience`, `organizational_persistence`, `self_repair_response`, `resource_cycle_efficiency`, `autopoietic_score`)
+  - `add-cross-eval` rollout scoring (`autopoiesis_score` + per-embodiment autopoietic aggregates)
+- Added optional autopoietic objective coupling in training:
+  - `add-train` flags:
+    - `--enable-autopoietic-objective`
+    - `--autopoietic-loss-weight`
+    - `--autopoietic-self-repair-weight`
+    - `--autopoietic-closure-weight`
+    - `--autopoietic-resource-cycle-weight`
+  - per-epoch/generation metrics:
+    - `mean_autopoietic_score`
+    - `autopoietic_loss_component`
+  - autopoietic objective forwarding in `add-train-parallel` with optional cycle:
+    - `--autopoietic-loss-weight-cycle`
+- Extended convergence ranking in `add-cross-eval` with:
+  - `--autopoiesis-score-weight`
+  - dual-role gates (`symbio_gate_pass`, `autopoiesis_gate_pass`, `convergence_gate_pass`, `promotion_eligible`)
+  - progressive threshold artifact output (`artifacts/convergence-thresholds.json`) via:
+    - `--enable-convergence-gates`
+    - `--symbio-min-threshold`
+    - `--autopoiesis-min-threshold`
+    - `--convergence-thresholds-output`
+- Extended `add-cross-report` with:
+  - autopoiesis ranking component columns
+  - convergence gate table for top checkpoints
+  - promotion eligibility visibility
 - Added tests for constructor-tape and pre-life tracks:
   - `tests/test_constructor_tape.py`
   - `tests/test_prelife.py`
   - constructor-tape config resolution coverage in `tests/test_train_transfer.py`
   - pre-life score normalization and profile resolution coverage in `tests/test_cross_eval.py`
   - constructor-tape forwarding coverage in `tests/test_parallel_cli.py`
+  - autopoietic score/range coverage in:
+    - `tests/test_sim_profiler.py`
+    - `tests/test_train_transfer.py`
+    - `tests/test_cross_eval.py`
 - Ran noisy-curriculum warm-start sweep `artifacts/parallel-cuda-noisecurr-v01` and promoted `variant-01` as new champion alias `artifacts/model-core-champion-v04.pt` with manifest `artifacts/model-core-champion-v04.metrics.json`:
   - hardy poly4 clean r6 (`th=0.95`): `0.45131` vs prior `0.44531`
   - hardy poly4 noisy-v2 r6 (`th=0.95`): `0.45133` vs prior `0.44526`

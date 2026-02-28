@@ -57,6 +57,7 @@
 - [ ] Promote next champion after high-repeat validation (`runs_per_combo >= 6`) on both transfer-only and capability-weighted hardy profiles.
 - [ ] Run capability-weighted (`bio-tech-v1`) high-repeat validation for `model-core-champion-v04` and decide blended-capability champion promotion.
 - [x] Integrate pre-life convergence term into `cross-eval`/`cross-report` ranking so transfer/hardiness/capability/replication are evaluated in a unified promotion pipeline.
+- [x] Add embodied autopoietic closure metrics and convergence gates (symbiogenesis + autopoiesis dual-role) to promotion pipeline with progressive threshold artifact.
 
 ## Hardware-In-The-Loop
 

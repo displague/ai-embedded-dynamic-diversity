@@ -90,6 +90,12 @@ Constructor-aware parallel sweep (mixed architecture tapes):
 ~/.local/bin/uv run add-train-parallel --variants 6 --max-workers 3 --profile pi5 --epochs 20 --device cuda --constructor-tape-cycle "artifacts/tape-a.json,artifacts/tape-b.json" --out-dir artifacts/parallel-constructor
 ```
 
+Autopoietic-aware parallel sweep (objective on + weight cycling):
+
+```bash
+~/.local/bin/uv run add-train-parallel --variants 6 --max-workers 3 --profile pi5 --epochs 20 --device cuda --enable-autopoietic-objective --autopoietic-loss-weight-cycle "0.08,0.12,0.16" --out-dir artifacts/parallel-autopoiesis
+```
+
 Long CUDA-heavy warm-start sweep (recommended to run via project venv Python to avoid lockfile resync):
 
 ```powershell
@@ -123,6 +129,14 @@ Curriculum + latent genetic memory:
 Experimental flags are optional and combinable: `--gating-mode symplectic`, `--topk-gating 4`, `--enable-dmd-gating`, `--enable-phase-gating`, `--enable-curriculum`, `--enable-genetic-memory`.
 Each run stores flags+performance+fitness in `*.metrics.json` (or set `--metrics-path`).
 Use `--strict-device` (default) to prevent accidental CPU fallback when CUDA was requested.
+
+Autopoietic objective coupling (optional, default off):
+
+- `--enable-autopoietic-objective`
+- `--autopoietic-loss-weight 0.10`
+- `--autopoietic-self-repair-weight 0.35`
+- `--autopoietic-closure-weight 0.45`
+- `--autopoietic-resource-cycle-weight 0.20`
 
 Constructor-tape driven architecture (optional):
 
@@ -158,6 +172,7 @@ Noisy-signal curriculum training (optional):
 - runtime latencies (`step_latency_ms_p50`, `step_latency_ms_p95`)
 - runtime memory (`state_mb`, `memory_tensor_mb`, `peak_gpu_alloc_mb`)
 - effectiveness/dynamism proxies (`mean_mismatch`, `channel_firing_fraction`, `readiness_sparsity`, `memory_weight_entropy`)
+- autopoietic closure metrics (`closure_resilience`, `organizational_persistence`, `self_repair_response`, `resource_cycle_efficiency`, `autopoietic_score`)
 - low/high usage control-channel indices for embodiment bottleneck analysis.
 
 Visualization is independent of training loop execution and can use any checkpoint:
@@ -207,6 +222,15 @@ Convergence ranking with pre-life weighted term:
 ~/.local/bin/uv run add-cross-eval --checkpoints-list "artifacts/model-core-champion-v04.pt,artifacts/parallel-cuda-noisecurr-v01/variant-00.pt,artifacts/parallel-cuda-noisecurr-v01/variant-01.pt" --profile pi5 --embodiments "hexapod,car,drone,polymorph120" --scenario-profile hardy --runs-per-combo 4 --steps 110 --remap-every 12 --capability-profile bio-tech-v1 --capability-score-weight 0.20 --prelife-profile dense-vs-control-v1 --prelife-score-weight 0.25 --prelife-steps 120 --prelife-seeds 3 --output artifacts/cross-eval-convergence-v1.json
 ~/.local/bin/uv run add-cross-report --input-path artifacts/cross-eval-convergence-v1.json --markdown-out artifacts/cross-eval-convergence-v1.md --csv-out artifacts/cross-eval-convergence-v1.csv
 ```
+
+Convergence gates + autopoiesis-weighted ranking:
+
+```bash
+~/.local/bin/uv run add-cross-eval --checkpoints-list "artifacts/model-core-champion-v04.pt,artifacts/parallel-cuda-noisecurr-v01/variant-00.pt,artifacts/parallel-cuda-noisecurr-v01/variant-01.pt" --profile pi5 --embodiments "hexapod,car,drone,polymorph120" --scenario-profile hardy --runs-per-combo 4 --steps 110 --remap-every 12 --capability-profile bio-tech-v1 --capability-score-weight 0.20 --prelife-profile dense-vs-control-v1 --prelife-score-weight 0.25 --autopoiesis-score-weight 0.15 --enable-convergence-gates --symbio-min-threshold 0.45 --autopoiesis-min-threshold 0.55 --convergence-thresholds-output artifacts/convergence-thresholds.json --output artifacts/cross-eval-convergence-v2.json
+~/.local/bin/uv run add-cross-report --input-path artifacts/cross-eval-convergence-v2.json --markdown-out artifacts/cross-eval-convergence-v2.md --csv-out artifacts/cross-eval-convergence-v2.csv
+```
+
+`add-cross-eval` now emits progressive gate-ratcheting guidance to `artifacts/convergence-thresholds.json`.
 
 Checkmate + transfer matrix harness (example zero-shot split):
 
