@@ -298,6 +298,10 @@
   - `convert_qat_model` for producing truly quantized weights.
   - Training CLI support via `--enable-qat` flag.
   - Deployment CLI support via `add-deploy quantized-qat-torchscript` command.
+- Added Genetic Memory Bank (`models/memory_bank.py`) with:
+  - Morphology-family keyed memory storage and retrieval.
+  - Training CLI integration via `--memory-bank-path` flag.
+  - Support for warm-start memory retrieval and multi-generation persistence.
 
 ## Agent Continuity And Handoff Infrastructure
 

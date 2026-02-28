@@ -20,6 +20,7 @@ from ai_embedded_dynamic_diversity.sim.world import DynamicDiversityWorld
 from ai_embedded_dynamic_diversity.sim.signaling import SignalingWorld
 from ai_embedded_dynamic_diversity.train.losses import loss_fn
 from ai_embedded_dynamic_diversity.train.quantization import prepare_qat_model
+from ai_embedded_dynamic_diversity.models.memory_bank import GeneticMemoryBank
 
 app = typer.Typer(add_completion=False)
 
@@ -543,6 +544,7 @@ def run(
     strict_device: bool = True,
     constructor_tape_path: str = "",
     init_weights: str = "",
+    memory_bank_path: str = "",
     seed: int = 7,
     metrics_path: str = "",
     save_path: str = "artifacts/model-core.pt",
@@ -592,7 +594,25 @@ def run(
         compile_model = False
 
     world = SignalingWorld(wcfg.x, wcfg.y, wcfg.z, wcfg.resource_channels, wcfg.decay, device=str(dev))
-    genetic_memory = torch.zeros(1, mcfg.memory_slots, mcfg.memory_dim, device=dev) if enable_genetic_memory else None
+    
+    bank = None
+    if memory_bank_path:
+        bank = GeneticMemoryBank()
+        bank.load(memory_bank_path)
+        print({"info": f"Loaded memory bank from {memory_bank_path}"})
+
+    genetic_memory = None
+    if enable_genetic_memory:
+        if bank:
+            genetic_memory = bank.retrieve(profile)
+            if genetic_memory is not None:
+                genetic_memory = genetic_memory.to(dev)
+                print({"info": f"Retrieved genetic memory for profile '{profile}' from bank"})
+        
+        if genetic_memory is None:
+            genetic_memory = torch.zeros(1, mcfg.memory_slots, mcfg.memory_dim, device=dev)
+            print({"info": "Initialized new genetic memory (zeros)"})
+
     amp_enabled = use_amp and dev.type == "cuda"
 
     def _lin_schedule(start: float, end: float, epoch_idx: int) -> float:
@@ -637,6 +657,7 @@ def run(
         "compile_model": compile_model,
         "strict_device": strict_device,
         "init_weights": init_weights,
+        "memory_bank_path": memory_bank_path,
         "constructor_tape_path": constructor_tape_path,
         "constructor_tape_version": None if constructor_tape is None else constructor_tape.version,
     }
@@ -768,6 +789,12 @@ def run(
                     "noise_strength": noise_strength,
                 }
             )
+        
+        if bank:
+            bank.store(profile, genetic_memory)
+            bank.save(memory_bank_path)
+            print({"info": f"Saved updated memory bank to {memory_bank_path}"})
+
         model_for_save = model._orig_mod if hasattr(model, "_orig_mod") else model
         Path(save_path).parent.mkdir(parents=True, exist_ok=True)
         torch.save(
