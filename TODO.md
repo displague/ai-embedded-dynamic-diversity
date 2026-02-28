@@ -34,7 +34,7 @@
 - [x] Add dynamic embodiment discovery at runtime (auto-infer I/O schema + safe default remap groups) without recompilation.
 - [x] Add constructor-tape architecture path (external parametric description) for universal-constructor style model instantiation and checkpoint metadata persistence.
 - [x] Add online remap learning within episode (learned remap policy vs static periodic remaps).
-- [ ] Add few-shot embodiment adaptation protocol (`<10` gradient steps) and measure adaptation slope vs zero-shot.
+- [x] Add few-shot embodiment adaptation protocol (`<10` gradient steps) and measure adaptation slope vs zero-shot.
 - [ ] Add a learned (non-hardcoded) mimicry training track: environmental mimicry, peer mimicry, and threat mimicry from anonymous signals, optimized for transfer fitness rather than explicit imitation labels.
 - [ ] Add emergent signaling track (no explicit channel labels): produce robust internal/external signals under noisy/remapped embodiment conditions.
 - [ ] Add signal-detection track: distinguish peer/environment/threat signal patterns from anonymous streams with remap-robust decoding accuracy and low false positives.

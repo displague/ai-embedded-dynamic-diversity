@@ -273,6 +273,10 @@
   - `remap_loss` (MSE) to train the predictor against environmental ground truth.
   - CLI support (`--remap-loss-weight`) for both standard and coevolution training modes.
   - Support for zero-shot remap inference when `remap_code` is not provided.
+- Added few-shot embodiment adaptation protocol (`train/adaptation.py`) and tests with:
+  - `FewShotAdaptor` for rapid fine-tuning (N < 10 gradient steps) on small calibration sets.
+  - Support for full-model or head-only adaptation tracks.
+  - Verified reduction in reconstruction loss on target embodiments vs zero-shot transfer.
 
 ## Agent Continuity And Handoff Infrastructure
 
