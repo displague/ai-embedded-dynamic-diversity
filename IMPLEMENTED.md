@@ -288,6 +288,11 @@
   - Variance-based optimization (`emergent_signal_loss`) to reward signal diversity and avoid zero/constant collapse.
   - Training CLI support via `--emergent-signal-loss-weight` flag.
   - Integration with standard and coevolution training cycles.
+- Added conjoining research track (`sim/conjoining.py`) with:
+  - `ConjoiningWorld` for tool-use and organism-formation simulation.
+  - Attachment logic based on proximity between object and tool agents.
+  - Co-movement physics for attached agents.
+  - Extended observation encoding with tool position and coupling status.
 - Added learned online remapping within episode (`ModelCore.remap_predictor`) with:
   - latent-to-remap projection head.
   - `remap_loss` (MSE) to train the predictor against environmental ground truth.
