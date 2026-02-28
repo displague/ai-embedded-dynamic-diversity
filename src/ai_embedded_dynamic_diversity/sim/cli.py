@@ -8,7 +8,7 @@ import torch
 import typer
 
 from ai_embedded_dynamic_diversity.config import ModelConfig, WorldConfig, model_config_for_profile
-from ai_embedded_dynamic_diversity.models import ModelCore
+from ai_embedded_dynamic_diversity.models import ModelCore, UniversalConstructor, load_constructor_tape
 from ai_embedded_dynamic_diversity.sim.embodiments import embodiment_dof_table, device_map_for_embodiment, get_embodiment
 from ai_embedded_dynamic_diversity.sim.world import DynamicDiversityWorld
 
@@ -26,8 +26,15 @@ def _percentile(values: list[float], pct: float) -> float:
     return (1.0 - alpha) * ordered[lo] + alpha * ordered[hi]
 
 
-def _load_model(weights: str, profile: str, device: torch.device) -> tuple[ModelCore, ModelConfig, dict]:
+def _load_model(
+    weights: str,
+    profile: str,
+    device: torch.device,
+    constructor_tape_path: str = "",
+) -> tuple[ModelCore, ModelConfig, dict]:
     ckpt_meta: dict = {}
+    if weights and constructor_tape_path:
+        raise ValueError("Provide either weights or constructor_tape_path, not both.")
     if weights:
         raw = torch.load(weights, map_location=device)
         if "model_config" in raw:
@@ -40,6 +47,17 @@ def _load_model(weights: str, profile: str, device: torch.device) -> tuple[Model
             "weights": weights,
             "profile": raw.get("profile", profile),
             "run_flags": raw.get("run_flags", {}),
+        }
+    elif constructor_tape_path:
+        tape = load_constructor_tape(constructor_tape_path)
+        constructed = UniversalConstructor(base_profile=profile).build(tape, seed_state=0)
+        cfg = constructed.config
+        model = constructed.model.to(device)
+        ckpt_meta = {
+            "weights": "",
+            "profile": profile,
+            "run_flags": {},
+            "constructor_tape": tape.to_payload(),
         }
     else:
         cfg = model_config_for_profile(profile)
@@ -69,6 +87,7 @@ def profile_embodiment_metrics(
     readiness_active_threshold: float,
     device: str,
     seed: int,
+    constructor_tape_path: str = "",
 ) -> dict:
     if steps <= 0:
         raise ValueError("steps must be > 0")
@@ -82,7 +101,7 @@ def profile_embodiment_metrics(
     torch.manual_seed(seed)
     dev = torch.device(device)
     emb = get_embodiment(embodiment)
-    model, cfg, ckpt_meta = _load_model(weights, profile, dev)
+    model, cfg, ckpt_meta = _load_model(weights, profile, dev, constructor_tape_path=constructor_tape_path)
 
     world = DynamicDiversityWorld(world_x, world_y, world_z, resource_channels, decay=0.03, device=str(dev))
     state = world.init(batch_size=batch_size)
@@ -250,6 +269,7 @@ def profiler(
     readiness_active_threshold: float = 0.20,
     device: str = "cpu",
     seed: int = 13,
+    constructor_tape_path: str = "",
     output: str = "artifacts/embodiment-profile.json",
 ) -> None:
     try:
@@ -269,6 +289,7 @@ def profiler(
             readiness_active_threshold=readiness_active_threshold,
             device=device,
             seed=seed,
+            constructor_tape_path=constructor_tape_path,
         )
     except ValueError as exc:
         raise typer.BadParameter(str(exc)) from exc

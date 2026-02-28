@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import torch
 import typer
 import pytest
@@ -9,6 +12,7 @@ from ai_embedded_dynamic_diversity.train.cli import (
     _apply_observation_noise,
     _build_transfer_states,
     _resolve_embodiments,
+    _resolve_model_config,
     _resolve_noise_profile,
     _transfer_mismatch_loss,
     choose_device,
@@ -74,3 +78,24 @@ def test_apply_observation_noise_strength_controls_effect() -> None:
     out_noise = _apply_observation_noise(obs, profile="dropout-quant-v1", seed=9, step=3, strength=1.0)
     assert torch.allclose(out_none, obs)
     assert not torch.allclose(out_noise, obs)
+
+
+def test_resolve_model_config_from_constructor_tape() -> None:
+    tape_path = Path("artifacts/test-constructor-tape.json")
+    tape_path.parent.mkdir(parents=True, exist_ok=True)
+    tape_path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "tokens": ["signal_dim=24", "hidden_dim=40", "memory_slots=10", "memory_dim=12", "io_channels=6"],
+            }
+        ),
+        encoding="utf-8",
+    )
+    cfg, tape = _resolve_model_config(profile="base", constructor_tape_path=str(tape_path))
+    assert tape is not None
+    assert cfg.signal_dim == 24
+    assert cfg.hidden_dim == 40
+    assert cfg.memory_slots == 10
+    assert cfg.memory_dim == 12
+    assert cfg.io_channels == 6

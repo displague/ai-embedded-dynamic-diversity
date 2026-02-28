@@ -24,6 +24,7 @@ add-export = "ai_embedded_dynamic_diversity.deploy.cli:app"
 add-viz = "ai_embedded_dynamic_diversity.sim.viz_cli:app"
 add-bench = "ai_embedded_dynamic_diversity.deploy.bench_cli:app"
 add-hil = "ai_embedded_dynamic_diversity.deploy.hil_cli:app"
+add-prelife = "ai_embedded_dynamic_diversity.sim.prelife_cli:app"
 
 [build-system]
 requires = ["setuptools>=68", "wheel"]

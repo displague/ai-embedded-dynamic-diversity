@@ -13,7 +13,7 @@ from rich import print
 from torch import nn
 
 from ai_embedded_dynamic_diversity.config import TrainConfig, WorldConfig, model_config_for_profile
-from ai_embedded_dynamic_diversity.models import ModelCore
+from ai_embedded_dynamic_diversity.models import ModelCore, UniversalConstructor, load_constructor_tape
 from ai_embedded_dynamic_diversity.sim.embodiments import device_map_for_embodiment, get_embodiment
 from ai_embedded_dynamic_diversity.sim.world import DynamicDiversityWorld
 from ai_embedded_dynamic_diversity.train.losses import loss_fn
@@ -379,6 +379,17 @@ def _load_checkpoint_weights(model: ModelCore, init_weights: str, dev: torch.dev
     return ckpt
 
 
+def _resolve_model_config(
+    profile: str,
+    constructor_tape_path: str,
+) -> tuple:
+    if constructor_tape_path:
+        tape = load_constructor_tape(constructor_tape_path)
+        constructed = UniversalConstructor(base_profile=profile).build(tape, seed_state=0)
+        return constructed.config, tape
+    return model_config_for_profile(profile), None
+
+
 @app.command()
 def run(
     epochs: int = 20,
@@ -415,6 +426,7 @@ def run(
     allow_tf32: bool = True,
     compile_model: bool = False,
     strict_device: bool = True,
+    constructor_tape_path: str = "",
     init_weights: str = "",
     seed: int = 7,
     metrics_path: str = "",
@@ -422,11 +434,15 @@ def run(
 ) -> None:
     random.seed(seed)
     torch.manual_seed(seed)
-    mcfg = model_config_for_profile(profile)
-    mcfg.gating_mode = gating_mode
-    mcfg.topk_gating = topk_gating
-    mcfg.enable_dmd_gating = enable_dmd_gating
-    mcfg.enable_phase_gating = enable_phase_gating
+    try:
+        mcfg, constructor_tape = _resolve_model_config(profile, constructor_tape_path)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    if not constructor_tape_path:
+        mcfg.gating_mode = gating_mode
+        mcfg.topk_gating = topk_gating
+        mcfg.enable_dmd_gating = enable_dmd_gating
+        mcfg.enable_phase_gating = enable_phase_gating
     wcfg = WorldConfig()
     tcfg = TrainConfig(epochs=epochs, batch_size=batch_size, unroll_steps=unroll_steps, lr=lr, device=device)
     try:
@@ -470,10 +486,10 @@ def run(
     metrics_records: list[dict] = []
     run_flags = {
         "profile": profile,
-        "gating_mode": gating_mode,
-        "topk_gating": topk_gating,
-        "enable_dmd_gating": enable_dmd_gating,
-        "enable_phase_gating": enable_phase_gating,
+        "gating_mode": mcfg.gating_mode,
+        "topk_gating": mcfg.topk_gating,
+        "enable_dmd_gating": mcfg.enable_dmd_gating,
+        "enable_phase_gating": mcfg.enable_phase_gating,
         "coevolution": coevolution,
         "enable_curriculum": enable_curriculum,
         "enable_genetic_memory": enable_genetic_memory,
@@ -492,13 +508,17 @@ def run(
         "compile_model": compile_model,
         "strict_device": strict_device,
         "init_weights": init_weights,
+        "constructor_tape_path": constructor_tape_path,
+        "constructor_tape_version": None if constructor_tape is None else constructor_tape.version,
     }
 
     if not coevolution:
         model = ModelCore(**asdict(mcfg)).to(dev)
+        inherited_tape_payload = None
         if init_weights:
             try:
-                _load_checkpoint_weights(model, init_weights, dev)
+                ckpt = _load_checkpoint_weights(model, init_weights, dev)
+                inherited_tape_payload = ckpt.get("constructor_tape")
             except (ValueError, RuntimeError) as exc:
                 raise typer.BadParameter(str(exc)) from exc
         if compile_model and hasattr(torch, "compile"):
@@ -597,6 +617,7 @@ def run(
                 "profile": profile,
                 "genetic_memory": None if genetic_memory is None else genetic_memory.cpu(),
                 "run_flags": run_flags,
+                "constructor_tape": constructor_tape.to_payload() if constructor_tape is not None else inherited_tape_payload,
             },
             save_path,
         )
@@ -607,8 +628,10 @@ def run(
 
     if init_weights:
         seed_model = ModelCore(**asdict(mcfg)).to(dev)
+        inherited_tape_payload = None
         try:
-            _load_checkpoint_weights(seed_model, init_weights, dev)
+            ckpt = _load_checkpoint_weights(seed_model, init_weights, dev)
+            inherited_tape_payload = ckpt.get("constructor_tape")
         except (ValueError, RuntimeError) as exc:
             raise typer.BadParameter(str(exc)) from exc
         pop = [copy.deepcopy(seed_model).to(dev) for _ in range(population_size)]
@@ -755,6 +778,7 @@ def run(
             "population_size": population_size,
             "fitness": final_scores[best_idx],
             "run_flags": run_flags,
+            "constructor_tape": constructor_tape.to_payload() if constructor_tape is not None else inherited_tape_payload if init_weights else None,
         },
         save_path,
     )
