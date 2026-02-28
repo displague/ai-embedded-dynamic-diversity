@@ -109,12 +109,12 @@ class AnonymousEdgeRouter(nn.Module):
 class ModelCore(nn.Module):
     def __init__(
         self,
-        signal_dim: int,
-        hidden_dim: int,
         edge_nodes: int,
+        io_channels: int,
+        hidden_dim: int,
+        signal_dim: int,
         memory_slots: int,
         memory_dim: int,
-        io_channels: int,
         max_remap_groups: int,
         gating_mode: str = "sigmoid",
         topk_gating: int = 0,
@@ -124,7 +124,16 @@ class ModelCore(nn.Module):
         emergent_signal_dim: int = 8,
     ):
         super().__init__()
+        self.edge_nodes = edge_nodes
+        self.io_channels = io_channels
+        self.hidden_dim = hidden_dim
+        self.signal_dim = signal_dim
+        self.memory_slots = memory_slots
+        self.memory_dim = memory_dim
+        self.max_remap_groups = max_remap_groups
+
         self.enable_multi_scale_gating = enable_multi_scale_gating
+
         self.passive = PassiveTensorField(signal_dim, hidden_dim, edge_nodes)
         self.active = ActiveMemoryTensor(
             hidden_dim,
@@ -189,6 +198,9 @@ class ModelCore(nn.Module):
 
         # Use provided remap_code if available, otherwise use predicted
         current_remap = remap_code if remap_code is not None else predicted_remap
+
+        # Predict signal type (detection task)
+        predicted_signal_type = self.signal_decoder(latent)
 
         # Emergent signal generation (track without explicit labels)
         emergent_signal = self.emergent_signal_head(latent)

@@ -30,6 +30,10 @@
   - `IOAdapter` for normalizing arbitrary hardware inputs to [0, 1].
   - Sample-wise min-max robust normalization preserving anonymous-channel semantics.
   - Denormalization mapping for hardware-specific actuator ranges (e.g. PWM, velocity).
+- Added adaptive batch/chunk streaming (`deploy/streamer.py`) with:
+  - `AdaptiveStreamer` for memory-efficient processing of long signal sequences.
+  - Sequential memory-persistence logic across chunk boundaries.
+  - Generator-based rollout processing for low peak-memory overhead.
 - Added UDP hardware-in-the-loop adapter CLI.
 - Added configurable memory gating research modes:
   - `sigmoid` baseline
