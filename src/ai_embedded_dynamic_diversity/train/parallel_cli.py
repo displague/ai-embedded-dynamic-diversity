@@ -53,6 +53,7 @@ def run(
     enable_multi_scale_gating: bool = True,
     enable_qat: bool = False,
     curriculum_power: float = 1.0,
+    curriculum_power_cycle: str = "",
     enable_curriculum: bool = False,
     enable_genetic_memory: bool = False,
     memory_bank_path: str = "",
@@ -81,6 +82,7 @@ def run(
     noise_profiles = [x.strip().lower() for x in noise_profile_cycle.replace(";", ",").split(",") if x.strip()]
     constructor_tapes = [x.strip() for x in constructor_tape_cycle.replace(";", ",").split(",") if x.strip()]
     autopoietic_loss_weights = [float(x.strip()) for x in autopoietic_loss_weight_cycle.replace(";", ",").split(",") if x.strip()]
+    curriculum_powers = [float(x.strip()) for x in curriculum_power_cycle.replace(";", ",").split(",") if x.strip()]
 
     jobs: list[tuple[int, list[str], str, str]] = []
     for i in range(variants):
@@ -101,6 +103,11 @@ def run(
             autopoietic_loss_weights[i % len(autopoietic_loss_weights)]
             if autopoietic_loss_weights
             else autopoietic_loss_weight
+        )
+        variant_curriculum_power = (
+            curriculum_powers[i % len(curriculum_powers)]
+            if curriculum_powers
+            else curriculum_power
         )
 
         cmd = [
@@ -148,7 +155,7 @@ def run(
             "--paging-loss-weight",
             str(paging_loss_weight),
             "--curriculum-power",
-            str(curriculum_power),
+            str(variant_curriculum_power),
             "--noise-profile",
             variant_noise_profile,
             "--seed",
