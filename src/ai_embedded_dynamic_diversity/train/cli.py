@@ -562,6 +562,7 @@ def run(
     remap_loss_weight: float = 0.1,
     detection_loss_weight: float = 0.1,
     emergent_signal_loss_weight: float = 0.05,
+    memory_persistence_loss_weight: float = 0.05,
     genetic_memory_persistence_weight: float = 0.05,
     paging_loss_weight: float = 0.01,
     noise_profile: str = "none",

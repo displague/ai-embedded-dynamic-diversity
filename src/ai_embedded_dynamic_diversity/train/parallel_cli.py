@@ -53,6 +53,8 @@ def run(
     enable_multi_scale_gating: bool = True,
     enable_qat: bool = False,
     curriculum_power: float = 1.0,
+    enable_curriculum: bool = False,
+    enable_genetic_memory: bool = False,
     memory_bank_path: str = "",
     use_amp: bool = True,
     allow_tf32: bool = True,
