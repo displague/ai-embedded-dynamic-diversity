@@ -30,6 +30,9 @@ def run(
     capability_profile = str(cfg.get("capability_profile", "none")).strip().lower()
     capability_enabled = capability_profile != "none"
     capability_score_weight = float(cfg.get("capability_score_weight", 0.0))
+    prelife_profile = str(cfg.get("prelife_profile", "none")).strip().lower()
+    prelife_enabled = prelife_profile != "none"
+    prelife_score_weight = float(cfg.get("prelife_score_weight", 0.0))
     noise_profile = str(cfg.get("noise_profile", "none")).strip().lower()
 
     rows = []
@@ -47,10 +50,14 @@ def run(
             "overall_transfer_score_weighted": transfer_weighted,
             "overall_transfer_score_unweighted": transfer_unweighted,
             "overall_capability_score": overall_capability_score,
+            "overall_prelife_score": float(item.get("overall_prelife_score", 0.0)),
             "overall_mean_mismatch": item["overall_mean_mismatch"],
             "overall_mean_vitality": item["overall_mean_vitality"],
             "overall_recovery": item["overall_recovery"],
             "delta_vs_best": item["overall_transfer_score"] - best["overall_transfer_score"],
+            "ranking_component_transfer": float(item.get("ranking_component_transfer", transfer_weighted)),
+            "ranking_component_capability": float(item.get("ranking_component_capability", capability_score_weight * overall_capability_score)),
+            "ranking_component_prelife": float(item.get("ranking_component_prelife", prelife_score_weight * float(item.get("overall_prelife_score", 0.0)))),
             "checkmate_pass_all": bool(item.get("checkmate_pass_all", False)),
             "checkmate_pass_heldout": bool(item.get("checkmate_pass_heldout", False)),
             "checkmate_min_effectiveness": float(item.get("checkmate_min_effectiveness", 0.0)),
@@ -112,15 +119,19 @@ def run(
         md_lines.append(f"Capability profile: `{capability_profile}`")
         md_lines.append(f"Capability score weight: `{capability_score_weight}`")
         md_lines.append("")
+    if prelife_enabled:
+        md_lines.append(f"Prelife profile: `{prelife_profile}`")
+        md_lines.append(f"Prelife score weight: `{prelife_score_weight}`")
+        md_lines.append("")
     md_lines.append("## Top 5")
     md_lines.append("")
-    if capability_enabled:
-        md_lines.append("| Rank | Checkpoint | Ranking Score | Transfer (Weighted) | Transfer (Unweighted) | Capability | Delta vs Best | Mismatch | Vitality | Recovery |")
-        md_lines.append("|---|---|---:|---:|---:|---:|---:|---:|---:|---:|")
+    if capability_enabled or prelife_enabled:
+        md_lines.append("| Rank | Checkpoint | Ranking Score | Transfer (Weighted) | Capability Score | Prelife Score | C.Transfer | C.Capability | C.Prelife | Delta vs Best | Mismatch | Vitality | Recovery |")
+        md_lines.append("|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|")
         for row in rows[:5]:
             md_lines.append(
                 "| "
-                + f"{row['rank']} | `{row['checkpoint']}` | {_fmt(row['overall_ranking_score'])} | {_fmt(row['overall_transfer_score_weighted'])} | {_fmt(row['overall_transfer_score_unweighted'])} | {_fmt(row['overall_capability_score'])} | {_fmt(row['delta_vs_best'])} | {_fmt(row['overall_mean_mismatch'])} | {_fmt(row['overall_mean_vitality'])} | {_fmt(row['overall_recovery'])} |"
+                + f"{row['rank']} | `{row['checkpoint']}` | {_fmt(row['overall_ranking_score'])} | {_fmt(row['overall_transfer_score_weighted'])} | {_fmt(row['overall_capability_score'])} | {_fmt(row['overall_prelife_score'])} | {_fmt(row['ranking_component_transfer'])} | {_fmt(row['ranking_component_capability'])} | {_fmt(row['ranking_component_prelife'])} | {_fmt(row['delta_vs_best'])} | {_fmt(row['overall_mean_mismatch'])} | {_fmt(row['overall_mean_vitality'])} | {_fmt(row['overall_recovery'])} |"
             )
     else:
         md_lines.append("| Rank | Checkpoint | Transfer (Ranking) | Transfer (Unweighted) | Delta vs Best | Mismatch | Vitality | Recovery |")
@@ -167,6 +178,19 @@ def run(
             md_lines.append(
                 "| "
                 + f"{row['rank']} | `{row['checkpoint']}` | {_fmt(row['overall_capability_score'])} | {_fmt(row.get('overall_signal_reliability', 0.0))} | {_fmt(row.get('overall_signal_detection_auc', 0.0))} | {_fmt(row.get('overall_evasion_success', 0.0))} |"
+            )
+
+    if prelife_enabled:
+        md_lines.append("")
+        md_lines.append("## Prelife Convergence (Top 5)")
+        md_lines.append("")
+        md_lines.append("| Rank | Checkpoint | Prelife Score | Dense Replication | Control Replication | Dense Self-Mod | Novelty Slope | Copy Fidelity | Symbiogenesis |")
+        md_lines.append("|---|---|---:|---:|---:|---:|---:|---:|---:|")
+        for idx, item in enumerate(ranked[:5], start=1):
+            pm = item.get("prelife_metrics", {})
+            md_lines.append(
+                "| "
+                + f"{idx} | `{item['checkpoint']}` | {_fmt(float(item.get('overall_prelife_score', 0.0)))} | {_fmt(float(pm.get('dense_replication_rate', 0.0)))} | {_fmt(float(pm.get('control_replication_rate', 0.0)))} | {_fmt(float(pm.get('dense_self_modification_rate', 0.0)))} | {_fmt(float(pm.get('dense_novelty_growth_slope', 0.0)))} | {_fmt(float(pm.get('dense_description_copy_fidelity', 0.0)))} | {_fmt(float(pm.get('dense_symbiogenesis_event_count', 0.0)))} |"
             )
 
     md_lines.append("")
