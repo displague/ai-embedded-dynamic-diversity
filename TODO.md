@@ -41,7 +41,7 @@
 - [x] Add evasion track: learn adaptive evasive behavior under hostile force/crosswind/threat-agent perturbations while preserving vitality and transfer.
 - [x] Add signaling+detection+evasion evaluation harness (`cross-eval` capability profile + tests) with reproducible scenario seeds and success metrics.
 - [x] Extend capability harness with explicit mimicry and conjoining proxies (peer/environment/threat imitation quality + cooperative gain metrics).
-- [ ] Add genetic+memory survival curriculum: multi-generation selection with memory persistence objectives focused on hardy-line recovery and long-horizon stability.
+- [x] Add genetic+memory survival curriculum: multi-generation selection with memory persistence objectives focused on hardy-line recovery and long-horizon stability.
 - [x] Add conjoining research track: environment/tool-use coupling, genetic bonding proxies, and multi-agent organism-formation objectives under anonymous I/O.
 - [x] Add pre-life/self-modification emergence simulation track with replication, novelty, and symbiogenesis detection metrics + report artifacts.
 - [x] Add multi-scale gating (global policy gate + local edge response gate) and compare against current single-scale gating family.

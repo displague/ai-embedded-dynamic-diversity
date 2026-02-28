@@ -155,6 +155,11 @@
   - `_binary_auc` behavior
   - capability-profile rollout on `polymorph120`
   - range checks for raw + normalized capability metrics.
+- Added genetic survival curriculum with:
+  - Multi-generation selection based on memory persistence objectives.
+  - `memory_persistence_loss` (MSE) to optimize stability vs initial genetic prior.
+  - Training CLI support via `--genetic-memory-persistence-weight` flag.
+  - Verified stability gains in long-horizon rollouts.
 - Restored CUDA runtime in project venv (`torch==2.10.0+cu130`) and verified RTX 5080 visibility.
 - Ran capability-focused warm-start sweep `artifacts/parallel-cuda-capability-v01` (6 variants, 40 epochs, coevolution, transfer-aware, `hexapod/car/drone/polymorph120`) initialized from `artifacts/parallel-cuda-converge-v03/variant-06.pt`.
 - New best checkpoints from this sweep:

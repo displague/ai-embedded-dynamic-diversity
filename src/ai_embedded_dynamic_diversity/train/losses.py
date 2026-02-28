@@ -15,6 +15,8 @@ def loss_fn(
     detection_loss_weight: float = 0.1,
     target_signal_type: torch.Tensor | None = None,
     emergent_signal_loss_weight: float = 0.05,
+    memory_persistence_loss_weight: float = 0.05,
+    initial_memory: torch.Tensor | None = None,
 ) -> tuple[torch.Tensor, dict[str, float]]:
     io = outputs["io"]
     readiness = outputs["readiness"]
@@ -23,6 +25,7 @@ def loss_fn(
     predicted_remap = outputs["predicted_remap"]
     predicted_signal_type = outputs["predicted_signal_type"]
     emergent_signal = outputs["emergent_signal"]
+    memory = outputs["memory"]
 
     recon = nn.functional.mse_loss(io, target_signal)
     entropy = -torch.mean(torch.sum(memory_weights * torch.log(memory_weights.clamp_min(1e-8)), dim=-1))
@@ -37,8 +40,12 @@ def loss_fn(
         detection_loss = nn.functional.cross_entropy(predicted_signal_type, target_signal_type)
 
     # Emergent signal loss: reward signal variance (avoiding constant/zero signals)
-    # We use negative variance as loss to maximize it.
     emergent_signal_loss = -torch.var(emergent_signal, dim=0).mean()
+
+    # Memory persistence loss: keep current memory close to initial genetic prior
+    memory_persistence_loss = torch.tensor(0.0, device=io.device)
+    if initial_memory is not None:
+        memory_persistence_loss = nn.functional.mse_loss(memory, initial_memory)
 
     time_consistency = torch.mean(torch.abs(outputs["memory"][:, 1:] - outputs["memory"][:, :-1]))
     total = (
@@ -49,6 +56,7 @@ def loss_fn(
         + remap_loss_weight * remap_loss
         + detection_loss_weight * detection_loss
         + emergent_signal_loss_weight * emergent_signal_loss
+        + memory_persistence_loss_weight * memory_persistence_loss
     )
     logs = {
         "loss": total.item(),
@@ -59,5 +67,6 @@ def loss_fn(
         "remap_loss": remap_loss.item(),
         "detection_loss": detection_loss.item(),
         "emergent_signal_loss": emergent_signal_loss.item(),
+        "memory_persistence_loss": memory_persistence_loss.item(),
     }
     return total, logs

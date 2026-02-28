@@ -252,18 +252,21 @@ def run_gradient_epoch(
     autopoietic_resource_cycle_weight: float = 0.20,
     detection_loss_weight: float = 0.1,
     emergent_signal_loss_weight: float = 0.05,
-) -> tuple[float, torch.Tensor, float, float, float, float, float, float, float]:
+    memory_persistence_loss_weight: float = 0.05,
+) -> tuple[float, torch.Tensor, float, float, float, float, float, float, float, float]:
     state = world.init(tcfg.batch_size)
     if genetic_memory is None:
         memory = model.init_memory(tcfg.batch_size, mcfg.memory_slots, mcfg.memory_dim, dev)
     else:
         memory = genetic_memory.repeat(tcfg.batch_size, 1, 1).detach()
+    initial_memory_prior = memory.clone()
     epoch_loss = 0.0
     step_times = []
     transfer_mismatch_total = 0.0
     remap_loss_total = 0.0
     detection_loss_total = 0.0
     emergent_signal_loss_total = 0.0
+    memory_persistence_loss_total = 0.0
     autopoietic_score_total = 0.0
     autopoietic_loss_total = 0.0
     amp_enabled = use_amp and dev.type == "cuda"
@@ -315,10 +318,13 @@ def run_gradient_epoch(
                 detection_loss_weight=detection_loss_weight,
                 target_signal_type=target_signal_type,
                 emergent_signal_loss_weight=emergent_signal_loss_weight,
+                memory_persistence_loss_weight=memory_persistence_loss_weight,
+                initial_memory=initial_memory_prior,
             )
             remap_loss_total += logs["remap_loss"]
             detection_loss_total += logs["detection_loss"]
             emergent_signal_loss_total += logs["emergent_signal_loss"]
+            memory_persistence_loss_total += logs["memory_persistence_loss"]
             transfer_mismatch = 0.0
             transfer_loss_tensor = out["io"].new_zeros(())
             if transfer_states and transfer_loss_weight > 0.0:
@@ -369,6 +375,7 @@ def run_gradient_epoch(
     mean_remap_loss = remap_loss_total / max(1, tcfg.unroll_steps)
     mean_detection_loss = detection_loss_total / max(1, tcfg.unroll_steps)
     mean_emergent_signal_loss = emergent_signal_loss_total / max(1, tcfg.unroll_steps)
+    mean_memory_persistence_loss = memory_persistence_loss_total / max(1, tcfg.unroll_steps)
     mean_autopoietic_score = autopoietic_score_total / max(1, tcfg.unroll_steps)
     mean_autopoietic_loss = autopoietic_loss_total / max(1, tcfg.unroll_steps)
     return (
@@ -379,6 +386,7 @@ def run_gradient_epoch(
         mean_remap_loss,
         mean_detection_loss,
         mean_emergent_signal_loss,
+        mean_memory_persistence_loss,
         mean_autopoietic_score,
         mean_autopoietic_loss,
     )
@@ -401,10 +409,12 @@ def evaluate_fitness(
     noise_strength: float = 0.0,
     noise_seed: int = 0,
     autopoietic_fitness_weight: float = 0.0,
+    genetic_memory_persistence_weight: float = 0.0,
 ) -> float:
     model.eval()
     state = world.init(batch)
     memory = model.init_memory(batch, mcfg.memory_slots, mcfg.memory_dim, dev)
+    initial_memory = memory.clone()
     energy_total = 0.0
     remap_events = 0.0
     transfer_mismatch_total = 0.0
@@ -450,6 +460,11 @@ def evaluate_fitness(
         energy_values.append(float(out["energy"].mean().item()))
         resource_values.append(float(state.resources[:, :1].mean().item()))
         energy_total += float(out["energy"].mean().item())
+    
+    # Memory persistence: how well did the model preserve its state vs its initial genetic prior
+    # Higher similarity (lower distance) is better if weight is positive.
+    memory_persistence = 1.0 / (1.0 + torch.norm(memory - initial_memory))
+    
     vitality = float(state.life.mean().item())
     stress = float(state.stress.mean().item())
     energy = energy_total / max(1, steps)
@@ -471,6 +486,7 @@ def evaluate_fitness(
         + 0.05 * remap_bonus
         - transfer_fitness_weight * transfer_mismatch
         + autopoietic_fitness_weight * autopoietic_score
+        + genetic_memory_persistence_weight * float(memory_persistence.item())
     )
 
 
@@ -541,6 +557,7 @@ def run(
     remap_loss_weight: float = 0.1,
     detection_loss_weight: float = 0.1,
     emergent_signal_loss_weight: float = 0.05,
+    genetic_memory_persistence_weight: float = 0.05,
     noise_profile: str = "none",
     enable_noise_curriculum: bool = False,
     noise_strength_start: float = 0.2,
@@ -656,6 +673,7 @@ def run(
         "remap_loss_weight": remap_loss_weight,
         "detection_loss_weight": detection_loss_weight,
         "emergent_signal_loss_weight": emergent_signal_loss_weight,
+        "genetic_memory_persistence_weight": genetic_memory_persistence_weight,
         "noise_profile": noise_profile_resolved,
         "enable_noise_curriculum": enable_noise_curriculum,
         "noise_strength_start": noise_strength_start,
@@ -761,6 +779,7 @@ def run(
                 noise_strength=noise_strength,
                 noise_seed=seed + epoch * 3001,
                 autopoietic_fitness_weight=0.15 * autopoietic_loss_weight if enable_autopoietic_objective else 0.0,
+                genetic_memory_persistence_weight=genetic_memory_persistence_weight,
             )
             metrics_records.append(
                 {
@@ -772,6 +791,7 @@ def run(
                     "mean_remap_loss": mean_remap_loss,
                     "mean_detection_loss": mean_detection_loss,
                     "mean_emergent_signal_loss": mean_emergent_signal_loss,
+                    "mean_memory_persistence_loss": mean_memory_persistence_loss,
                     "mean_autopoietic_score": mean_autopoietic_score,
                     "autopoietic_loss_component": mean_autopoietic_loss,
                     "remap_probability": remap_probability,
@@ -789,6 +809,7 @@ def run(
                     "mean_remap_loss": mean_remap_loss,
                     "mean_detection_loss": mean_detection_loss,
                     "mean_emergent_signal_loss": mean_emergent_signal_loss,
+                    "mean_memory_persistence_loss": mean_memory_persistence_loss,
                     "mean_autopoietic_score": mean_autopoietic_score,
                     "autopoietic_loss_component": mean_autopoietic_loss,
                     "device": str(dev),
@@ -907,6 +928,7 @@ def run(
                     "mean_remap_loss": mean_remap_loss,
                     "mean_detection_loss": mean_detection_loss,
                     "mean_emergent_signal_loss": mean_emergent_signal_loss,
+                    "mean_memory_persistence_loss": mean_memory_persistence_loss,
                     "mean_autopoietic_score": mean_autopoietic_score,
                     "autopoietic_loss_component": mean_autopoietic_loss,
                     "remap_probability": remap_probability,
