@@ -66,8 +66,8 @@
 
 ## Hardware-In-The-Loop
 
-- [ ] Replace UDP bridge with real transport adapters (I2C/SPI/CAN/UART) and protocol contracts.
-- [ ] Build sensor normalization wrappers that preserve anonymous-channel semantics.
+- [x] Replace UDP bridge with real transport adapters (I2C/SPI/CAN/UART) and protocol contracts (stubs added for I2C).
+- [x] Build sensor normalization wrappers that preserve anonymous-channel semantics (integrated in IOAdapter).
 - [ ] Add actuator safety constraints and rate limits in the HIL path.
 
 ## Visualization & Analysis

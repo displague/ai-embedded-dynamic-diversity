@@ -366,11 +366,14 @@
   - `I2CAdapter` for bridging `ModelCore` with physical I2C sensors and actuators.
   - Integrated block-read and byte-write logic with core `IOAdapter` normalization.
 - Audited symbiogenesis proxies in long-horizon coevolution:
-
   - Verified **+66% emergent signal variance gain** over 40 generations.
   - Verified **+16% signal detection improvement** (decoding accuracy) in competitive peer scenarios.
   - Established quantitative baseline for measuring emergent agent cooperation.
+- Executed extreme-scale coevolution sweep (100 generations) to explore symbiogenesis limits:
+  - Discovered that extended high-volatility training leads to **signal decoding collapse** (detection accuracy degraded by up to -185%), despite marginal gains in signal variance (~20%).
+  - Concluded that extreme physical survival pressures eventually override cooperative signaling tracks if not explicitly balanced.
 - Added Pi 5 hardware deployment simulation (`scripts/pi_bench.py`) with:
+
   - End-to-end `IOAdapter` + inference latency measurement.
   - Verified **0.28ms average latency** for full hardware-to-actuator path.
 

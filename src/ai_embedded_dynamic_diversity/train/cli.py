@@ -269,7 +269,7 @@ def run_gradient_epoch(
         memory = model.init_memory(tcfg.batch_size, mcfg.memory_slots, mcfg.memory_dim, dev)
     else:
         memory = genetic_memory.repeat(tcfg.batch_size, 1, 1).detach()
-    initial_memory_prior = memory.clone()
+    initial_memory_prior = memory.detach().clone()
     epoch_loss = 0.0
     step_times = []
     transfer_mismatch_total = 0.0
@@ -284,6 +284,7 @@ def run_gradient_epoch(
     amp_dtype = torch.bfloat16 if dev.type == "cuda" and torch.cuda.is_bf16_supported() else torch.float16
     for step_index in range(tcfg.unroll_steps):
         t0 = time.perf_counter()
+        opt.zero_grad(set_to_none=True)
         with torch.autocast(device_type=dev.type, dtype=amp_dtype, enabled=amp_enabled):
             # Inject signals
             target_signal_type = torch.zeros(tcfg.batch_size, dtype=torch.long, device=dev)
@@ -309,7 +310,6 @@ def run_gradient_epoch(
                 remap_code[:, group] = 1.0
 
             out = model(obs, memory, remap_code)
-            memory = out["memory"].detach()
 
             target = torch.cat(
                 [
@@ -365,7 +365,11 @@ def run_gradient_epoch(
                 autopoietic_loss_total += float(autopoietic_loss_t.detach().item())
             transfer_mismatch_total += transfer_mismatch
 
-        opt.zero_grad(set_to_none=True)
+            # Apply actions to world
+            action_field = out["io"].detach().float().mean(dim=1, keepdim=True).repeat(1, world.x * world.y * world.z)
+            controls = world.random_controls(tcfg.batch_size, volatility=env_volatility, step_index=step_index)
+            state = world.step(state, action_field, controls)
+
         if scaler is not None:
             scaler.scale(total_loss).backward()
             scaler.unscale_(opt)
@@ -376,13 +380,12 @@ def run_gradient_epoch(
             total_loss.backward()
             nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             opt.step()
-        epoch_loss += float(total_loss.detach().item())
 
-        action_field = out["io"].detach().float().mean(dim=1, keepdim=True).repeat(1, wcfg.x * wcfg.y * wcfg.z)
-        controls = world.random_controls(tcfg.batch_size, env_volatility, step_index=step_index)
-        state = world.step(state, action_field, controls=controls)
+        epoch_loss += float(total_loss.detach().item())
+        memory = out["memory"].detach()
         step_times.append((time.perf_counter() - t0) * 1000.0)
-    final_memory = memory.mean(dim=0, keepdim=True).detach()
+
+
     mean_step_ms = sum(step_times) / max(1, len(step_times))
     mean_transfer_mismatch = transfer_mismatch_total / max(1, tcfg.unroll_steps)
     mean_remap_loss = remap_loss_total / max(1, tcfg.unroll_steps)
@@ -392,6 +395,7 @@ def run_gradient_epoch(
     mean_paging_loss = paging_loss_total / max(1, tcfg.unroll_steps)
     mean_autopoietic_score = autopoietic_score_total / max(1, tcfg.unroll_steps)
     mean_autopoietic_loss = autopoietic_loss_total / max(1, tcfg.unroll_steps)
+    final_memory = memory.mean(dim=0, keepdim=True).detach()
     return (
         epoch_loss / max(1, tcfg.unroll_steps),
         final_memory,

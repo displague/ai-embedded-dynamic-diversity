@@ -66,3 +66,30 @@ class I2CAdapter(IOAdapter):
         raw_output = self.denormalize(model_output, target_range=(0, 255))
         data = raw_output.byte().tolist()
         self.transport.write_block(device_address, data)
+
+class SMBus2I2CTransport(I2CTransport):
+    """Concrete I2C transport using smbus2 for Raspberry Pi / Linux."""
+    def __init__(self, bus_id: int = 1):
+        super().__init__(bus_id)
+        try:
+            import smbus2
+            self.bus = smbus2.SMBus(self.bus_id)
+        except ImportError:
+            # Fallback for environments without smbus2 (e.g. Windows dev machines)
+            self.bus = None
+
+    def read_block(self, address: int, length: int) -> list[int]:
+        if self.bus:
+            from smbus2 import i2c_msg
+            msg = i2c_msg.read(address, length)
+            self.bus.i2c_rdwr(msg)
+            return list(msg)
+        return super().read_block(address, length)
+
+    def write_block(self, address: int, data: list[int]) -> None:
+        if self.bus:
+            from smbus2 import i2c_msg
+            msg = i2c_msg.write(address, data)
+            self.bus.i2c_rdwr(msg)
+        else:
+            super().write_block(address, data)
