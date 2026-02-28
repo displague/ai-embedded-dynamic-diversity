@@ -38,6 +38,11 @@ def test_profile_embodiment_metrics_polymorph_has_expected_sections() -> None:
     assert 0.0 <= float(metrics["readiness_saturation_high"]) <= 1.0
     assert 0.0 <= float(metrics["memory_weight_entropy"]) <= 1.0
     assert float(metrics["mean_mismatch"]) >= 0.0
+    assert 0.0 <= float(metrics["closure_resilience"]) <= 1.0
+    assert 0.0 <= float(metrics["organizational_persistence"]) <= 1.0
+    assert 0.0 <= float(metrics["self_repair_response"]) <= 1.0
+    assert 0.0 <= float(metrics["resource_cycle_efficiency"]) <= 1.0
+    assert 0.0 <= float(metrics["autopoietic_score"]) <= 1.0
 
 
 def test_profile_embodiment_metrics_rejects_invalid_steps() -> None:

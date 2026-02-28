@@ -9,6 +9,7 @@ import typer
 
 from ai_embedded_dynamic_diversity.config import ModelConfig, WorldConfig, model_config_for_profile
 from ai_embedded_dynamic_diversity.models import ModelCore, UniversalConstructor, load_constructor_tape
+from ai_embedded_dynamic_diversity.sim.autopoiesis import autopoietic_metrics
 from ai_embedded_dynamic_diversity.sim.embodiments import embodiment_dof_table, device_map_for_embodiment, get_embodiment
 from ai_embedded_dynamic_diversity.sim.world import DynamicDiversityWorld
 
@@ -124,7 +125,9 @@ def profile_embodiment_metrics(
     channel_firing_values: list[float] = []
     memory_entropy_values: list[float] = []
     remap_events = 0
+    remap_steps: list[int] = []
     channel_usage_acc = torch.zeros(control_dim, device=dev)
+    resource_values: list[float] = []
 
     if dev.type == "cuda":
         torch.cuda.reset_peak_memory_stats(dev)
@@ -134,6 +137,7 @@ def profile_embodiment_metrics(
         remap_code = torch.zeros(batch_size, cfg.max_remap_groups, device=dev)
         if remap_every > 0 and step_index > 0 and step_index % remap_every == 0:
             remap_events += 1
+            remap_steps.append(step_index)
             mapping_seed += 97
             mapping = device_map_for_embodiment(cfg.io_channels, emb, device=dev, permutation_seed=mapping_seed)
             remap_code[:, step_index % cfg.max_remap_groups] = 1.0
@@ -154,6 +158,7 @@ def profile_embodiment_metrics(
             vitality_values.append(float(state.life.mean().item()))
             stress_values.append(float(state.stress.mean().item()))
             energy_values.append(float(out["energy"].mean().item()))
+            resource_values.append(float(state.resources[:, :1].mean().item()))
 
             readiness = out["readiness"]
             readiness_sparsity_values.append(float((readiness < readiness_active_threshold).float().mean().item()))
@@ -189,6 +194,14 @@ def profile_embodiment_metrics(
     )
     memory_bytes = memory.numel() * memory.element_size()
     peak_gpu_bytes = int(torch.cuda.max_memory_allocated(dev)) if dev.type == "cuda" else 0
+    auto_metrics = autopoietic_metrics(
+        mismatch_values=mismatch_values,
+        vitality_values=vitality_values,
+        stress_values=stress_values,
+        energy_values=energy_values,
+        remap_steps=remap_steps,
+        resource_values=resource_values,
+    )
 
     return {
         "embodiment": {
@@ -226,6 +239,7 @@ def profile_embodiment_metrics(
             "readiness_saturation_high": sum(readiness_sat_high_values) / max(1, len(readiness_sat_high_values)),
             "memory_weight_entropy": sum(memory_entropy_values) / max(1, len(memory_entropy_values)),
             "mapping_coverage": mapping_coverage,
+            **auto_metrics,
         },
         "io_profile": {
             "low_usage_channels": [{"index": int(i), "usage": float(channel_usage[i])} for i in low_usage_indices],
