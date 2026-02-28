@@ -1,0 +1,53 @@
+[
+  {
+    "session_id": "20260228-1000-orchestrator-gen1",
+    "parent_session_id": "INITIAL",
+    "agent_role": "orchestrator",
+    "timestamp_utc": "2026-02-28T10:00:00Z",
+    "state": "HANDOFF_READY",
+    "goal": "Initialize convergence baseline and identify primary stressors.",
+    "next_actions": [
+      "Run cross-eval on standard profiles.",
+      "Identify embodiments with highest mismatch variance."
+    ],
+    "return_trigger": "Baseline artifacts collected and stressors ranked.",
+    "return_trigger_status": "met",
+    "lesson_tags": ["convergence", "discovery"],
+    "scenario_class": "common",
+    "reference_subset_recommended": ["AGENTS.md", "skills/ai-convergence-research/SKILL.md"]
+  },
+  {
+    "session_id": "20260228-1100-convergence-operator-gen2",
+    "parent_session_id": "20260228-1000-orchestrator-gen1",
+    "agent_role": "convergence-operator",
+    "timestamp_utc": "2026-02-28T11:00:00Z",
+    "state": "HANDOFF_READY",
+    "goal": "Harden checkpoint against identified stressors (storm, crosswind).",
+    "next_actions": [
+      "Execute warm-start fine-tuning with noisy curriculum.",
+      "Verify hardy-line transfer gains."
+    ],
+    "return_trigger": "Hardy mismatch reduced by >=15% vs baseline.",
+    "return_trigger_status": "met",
+    "lesson_tags": ["hardiness", "noise-curriculum"],
+    "scenario_class": "common",
+    "reference_subset_recommended": ["skills/ai-convergence-research/references/session-lessons-latest.md"]
+  },
+  {
+    "session_id": "20260228-1400-viz-storyboard-operator-gen3",
+    "parent_session_id": "20260228-1100-convergence-operator-gen2",
+    "agent_role": "viz-storyboard-operator",
+    "timestamp_utc": "2026-02-28T14:00:00Z",
+    "state": "HANDOFF_READY",
+    "goal": "Generate visual evidence of hardy-line adaptation improvements.",
+    "next_actions": [
+      "Render side-by-side comparison GIFs for storm/crosswind scenarios.",
+      "Update storyboard manifest with new artifacts."
+    ],
+    "return_trigger": "Visual artifacts demonstrate reduced jitter and improved stability.",
+    "return_trigger_status": "pending",
+    "lesson_tags": ["viz", "storyboard"],
+    "scenario_class": "common",
+    "reference_subset_recommended": ["skills/dynamic-diversity-research/references/lessons-common.md"]
+  }
+]

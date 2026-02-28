@@ -20,6 +20,8 @@
   - per-target status (`ok`, `skipped`, `hardware_pending`)
   - multi-batch P50/P95 benchmarking in one JSON artifact
   - target-to-device mapping support (for example `pi5=cpu` when run on Pi5 host)
+- Added TorchScript (`.ts`) support to `add-bench` for benchmarking quantized/traced models.
+- Captured baseline latency matrix for `model-core-pi5-int8.ts` in `artifacts/latency-matrix-pi5-int8.json`.
 - Added UDP hardware-in-the-loop adapter CLI.
 - Added configurable memory gating research modes:
   - `sigmoid` baseline
@@ -268,7 +270,8 @@
 - Relocated handoff-related scripts to `skills/agent-management/scripts/`:
   - `check_agent_drift.py`
   - `gen_reference_subset.py`
-  - `validate_handoff_packet.py`
+  - `validate_handoff_packet.py` (extended with multi-generation chain support)
+- Added multi-generation handoff chain example (`skills/agent-management/assets/handoff-chain-example.json`) for `N>=3` successor validation.
 - Added repository-level agent policy in `AGENTS.md` with:
   - invariant precedence
   - strict lifecycle states

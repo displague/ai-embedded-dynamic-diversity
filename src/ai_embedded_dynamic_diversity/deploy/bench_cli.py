@@ -34,11 +34,15 @@ def run_benchmark(
         raise RuntimeError("CUDA requested but unavailable")
 
     cfg = model_config_for_profile(profile)
-    model = ModelCore(**cfg.__dict__).to(dev)
+    is_torchscript = weights.endswith(".ts")
 
-    if weights:
-        ckpt = torch.load(weights, map_location=dev)
-        model.load_state_dict(ckpt["model"])
+    if is_torchscript:
+        model = torch.jit.load(weights, map_location=dev)
+    else:
+        model = ModelCore(**cfg.__dict__).to(dev)
+        if weights:
+            ckpt = torch.load(weights, map_location=dev)
+            model.load_state_dict(ckpt["model"])
 
     model.eval()
     signal = torch.randn(batch_size, cfg.signal_dim, device=dev)
@@ -48,7 +52,12 @@ def run_benchmark(
     with torch.no_grad():
         for _ in range(warmup_steps):
             out = model(signal, memory, remap)
-            memory = out["memory"]
+            if isinstance(out, dict):
+                memory = out["memory"]
+            elif isinstance(out, (list, tuple)):
+                memory = out[2] if len(out) == 3 else out[-1]
+            else:
+                memory = out
 
     timings_ms = []
     with torch.no_grad():
@@ -59,7 +68,12 @@ def run_benchmark(
                 torch.cuda.synchronize()
             end = time.perf_counter()
             timings_ms.append((end - start) * 1000.0)
-            memory = out["memory"]
+            if isinstance(out, dict):
+                memory = out["memory"]
+            elif isinstance(out, (list, tuple)):
+                memory = out[2] if len(out) == 3 else out[-1]
+            else:
+                memory = out
 
     p50 = statistics.median(timings_ms)
     p95 = sorted(timings_ms)[int(0.95 * (len(timings_ms) - 1))]

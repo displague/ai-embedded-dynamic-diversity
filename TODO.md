@@ -16,7 +16,7 @@
 - [x] Push hardy-line `car` mismatch toward `< 0.50` while improving car transfer variance under `storm/crosswind` (now `~0.3833` with `artifacts/model-core-champion-v04.pt` in noisy-v2 hardy poly4 r6).
 - [x] Run car-priority hardy ranking using `--embodiment-weights` and compare top-1 stability vs unweighted champion.
 - [x] Run focused warm-start fine-tune with embodiment-transfer loss and verify hardy transfer/mismatch impact.
-- [ ] Measure Raspberry Pi 5 latency and memory for `model-core-pi5-int8.ts` with `add-bench` on-device.
+- [x] Measure Raspberry Pi 5 latency and memory for `model-core-pi5-int8.ts` with `add-bench` on-device.
 - [x] Add embodiment profiling CLI (`add-sim profiler`) for bottleneck I/O channels, readiness/gating stats, and runtime memory/latency metrics.
 - [x] Add cross-embodiment "checkmate" suite: verify `>=85%` transfer effectiveness across 4 embodiments with high-repeat confidence intervals.
 - [x] Add transfer-matrix harness: train on subset `{hexapod,car}` evaluate zero-shot on `{drone,polymorph120}` with pairwise matrix export.
@@ -26,7 +26,7 @@
 
 ## Medium Priority
 
-- [ ] Add packetized handoff examples for multi-generation successor chains (`N>=3`) and validate return-trigger clarity.
+- [x] Add packetized handoff examples for multi-generation successor chains (`N>=3`) and validate return-trigger clarity.
 - [x] Add CI check for agent continuity assets drift (`AGENTS.md`, `.agents/subagent-*`, skill indexes, mirror adapters).
 - [x] Add lightweight script to diff canonical role contracts vs `.claude/.opencode` mirrors and flag divergence.
 - [x] Add compact "reference subset generator" for handoff packets based on scenario tags and current task.
