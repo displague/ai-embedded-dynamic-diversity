@@ -10,6 +10,7 @@ from ai_embedded_dynamic_diversity.train.cross_eval_cli import (
     _apply_observation_noise,
     _binary_auc,
     _checkmate_metrics,
+    _cycle_output_path,
     _parse_embodiment_weights,
     _build_convergence_threshold_payload,
     _prelife_metrics_for_checkpoint,
@@ -296,3 +297,22 @@ def test_build_convergence_threshold_payload_progression() -> None:
     next_thresholds = payload["next_recommended_thresholds"]
     assert float(next_thresholds["symbio_min_threshold"]) >= 0.45
     assert float(next_thresholds["autopoiesis_min_threshold"]) >= 0.55
+
+
+def test_build_convergence_threshold_payload_custom_ratchet_steps() -> None:
+    payload = _build_convergence_threshold_payload(
+        path="artifacts/test-thresholds-custom.json",
+        symbio_min_threshold=0.47,
+        autopoiesis_min_threshold=0.38,
+        best_symbio_contrast=0.60,
+        best_autopoiesis_score=0.50,
+        symbio_step=0.01,
+        autopoiesis_step=0.02,
+    )
+    next_thresholds = payload["next_recommended_thresholds"]
+    assert float(next_thresholds["symbio_min_threshold"]) == pytest.approx(0.48)
+    assert float(next_thresholds["autopoiesis_min_threshold"]) == pytest.approx(0.40)
+
+
+def test_cycle_output_path_suffixes_cycle_index() -> None:
+    assert _cycle_output_path("artifacts/cross-eval.json", 3).endswith("cross-eval-cycle3.json")

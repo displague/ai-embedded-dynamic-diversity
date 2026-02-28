@@ -397,6 +397,10 @@ def _build_convergence_threshold_payload(
     autopoiesis_min_threshold: float,
     best_symbio_contrast: float,
     best_autopoiesis_score: float,
+    symbio_step: float = 0.02,
+    autopoiesis_step: float = 0.03,
+    symbio_cap: float = 0.65,
+    autopoiesis_cap: float = 0.75,
 ) -> dict:
     p = Path(path)
     previous = {}
@@ -409,9 +413,9 @@ def _build_convergence_threshold_payload(
     next_symbio = symbio_min_threshold
     next_auto = autopoiesis_min_threshold
     if best_symbio_contrast >= symbio_min_threshold:
-        next_symbio = min(0.65, symbio_min_threshold + 0.02)
+        next_symbio = min(symbio_cap, symbio_min_threshold + symbio_step)
     if best_autopoiesis_score >= autopoiesis_min_threshold:
-        next_auto = min(0.75, autopoiesis_min_threshold + 0.03)
+        next_auto = min(autopoiesis_cap, autopoiesis_min_threshold + autopoiesis_step)
     return {
         "cycle_index": cycle_index,
         "current_thresholds": {
@@ -805,6 +809,185 @@ def rollout_metrics(
     return metrics
 
 
+def _evaluate_ranked_checkpoints(
+    ckpts: list[str],
+    profile: str,
+    embodiment_list: list[str],
+    scenario_specs: list[ScenarioSpec],
+    runs_per_combo: int,
+    steps: int,
+    remap_every: int,
+    train_subset_from_cli: list[str],
+    checkmate_threshold: float,
+    capability_profile_resolved: str,
+    capability_score_weight: float,
+    prelife_profile_resolved: str,
+    prelife_score_weight: float,
+    prelife_steps: int,
+    prelife_seed_list: list[int],
+    autopoiesis_score_weight: float,
+    enable_convergence_gates: bool,
+    symbio_min_threshold: float,
+    autopoiesis_min_threshold: float,
+    noise_profile_resolved: str,
+    world_dims: tuple[int, int, int, int],
+    dev: torch.device,
+    seed: int,
+    embodiment_weight_map: dict[str, float],
+) -> list[dict]:
+    ranked: list[dict] = []
+    for ckpt_path in ckpts:
+        model, cfg, raw_ckpt = _load_model(ckpt_path, profile, dev)
+        train_embodiments_resolved = (
+            list(train_subset_from_cli)
+            if train_subset_from_cli
+            else _resolve_train_embodiments("", embodiment_list, raw_ckpt.get("run_flags", {}))
+        )
+        heldout_embodiments = [emb for emb in embodiment_list if emb not in train_embodiments_resolved]
+
+        run_rows: list[dict] = []
+        for emb_idx, emb_name in enumerate(embodiment_list):
+            get_embodiment(emb_name)
+            for scen_idx, scen in enumerate(scenario_specs):
+                for rep in range(runs_per_combo):
+                    combo_seed = seed + emb_idx * 1000 + scen_idx * 100 + rep
+                    metrics = rollout_metrics(
+                        model=model,
+                        cfg=cfg,
+                        embodiment_name=emb_name,
+                        scenario=scen,
+                        steps=steps,
+                        remap_every=remap_every,
+                        seed=combo_seed,
+                        world_dims=world_dims,
+                        device=dev,
+                        capability_profile=capability_profile_resolved,
+                        noise_profile=noise_profile_resolved,
+                    )
+                    run_rows.append(
+                        {
+                            "embodiment": emb_name,
+                            "scenario": scen.name,
+                            "rep": rep,
+                            **metrics,
+                        }
+                    )
+
+        def _avg(key: str) -> float:
+            return float(sum(float(row[key]) for row in run_rows) / max(1, len(run_rows)))
+
+        by_embodiment = {}
+        for emb_name in embodiment_list:
+            subset = [row for row in run_rows if row["embodiment"] == emb_name]
+            by_embodiment[emb_name] = {
+                "transfer_score": float(sum(float(x["transfer_score"]) for x in subset) / max(1, len(subset))),
+                "mean_mismatch": float(sum(float(x["mean_mismatch"]) for x in subset) / max(1, len(subset))),
+                "mean_vitality": float(sum(float(x["mean_vitality"]) for x in subset) / max(1, len(subset))),
+                "recovery": float(sum(float(x["recovery"]) for x in subset) / max(1, len(subset))),
+            }
+            if capability_profile_resolved != "none":
+                by_embodiment[emb_name].update(
+                    {
+                        "signal_reliability": float(sum(float(x["signal_reliability"]) for x in subset) / max(1, len(subset))),
+                        "signal_detection_auc": float(sum(float(x["signal_detection_auc"]) for x in subset) / max(1, len(subset))),
+                        "evasion_success": float(sum(float(x["evasion_success"]) for x in subset) / max(1, len(subset))),
+                        "capability_score": float(sum(float(x["capability_score"]) for x in subset) / max(1, len(subset))),
+                    }
+                )
+            by_embodiment[emb_name].update(
+                {
+                    "autopoiesis_score": float(sum(float(x["autopoiesis_score"]) for x in subset) / max(1, len(subset))),
+                    "closure_resilience": float(sum(float(x["closure_resilience"]) for x in subset) / max(1, len(subset))),
+                    "organizational_persistence": float(sum(float(x["organizational_persistence"]) for x in subset) / max(1, len(subset))),
+                    "self_repair_response": float(sum(float(x["self_repair_response"]) for x in subset) / max(1, len(subset))),
+                    "resource_cycle_efficiency": float(sum(float(x["resource_cycle_efficiency"]) for x in subset) / max(1, len(subset))),
+                }
+            )
+
+        base_transfer_weighted = _weighted_transfer_score(
+            by_embodiment=by_embodiment,
+            embodiments=embodiment_list,
+            embodiment_weights=embodiment_weight_map,
+        )
+        prelife_metrics, overall_prelife_score = _prelife_metrics_for_checkpoint(
+            profile=prelife_profile_resolved,
+            prelife_steps=prelife_steps,
+            prelife_seeds=prelife_seed_list,
+        )
+        overall_capability_score = 0.0
+        if capability_profile_resolved != "none":
+            overall_capability_score = float(sum(float(row["capability_score"]) for row in run_rows) / max(1, len(run_rows)))
+        overall_autopoiesis_score = float(sum(float(row["autopoiesis_score"]) for row in run_rows) / max(1, len(run_rows)))
+        ranking_score = (
+            base_transfer_weighted
+            + capability_score_weight * overall_capability_score
+            + prelife_score_weight * overall_prelife_score
+            + autopoiesis_score_weight * overall_autopoiesis_score
+        )
+        transfer_ratio_matrix = _transfer_ratio_matrix(
+            by_embodiment=by_embodiment,
+            source_embodiments=train_embodiments_resolved,
+            target_embodiments=embodiment_list,
+        )
+        checkmate = _checkmate_metrics(
+            by_embodiment=by_embodiment,
+            all_embodiments=embodiment_list,
+            train_embodiments=train_embodiments_resolved,
+            threshold=checkmate_threshold,
+        )
+        symbio_contrast = float(prelife_metrics.get("symbio_event_rate_contrast", 0.0))
+        symbio_gate_pass = bool(symbio_contrast >= symbio_min_threshold) if prelife_profile_resolved != "none" else True
+        autopoiesis_gate_pass = bool(overall_autopoiesis_score >= autopoiesis_min_threshold)
+        convergence_gate_pass = bool(checkmate["checkmate_pass_all"]) and symbio_gate_pass and autopoiesis_gate_pass
+        if not enable_convergence_gates:
+            convergence_gate_pass = True
+
+        ranked.append(
+            {
+                "checkpoint": ckpt_path,
+                "flags": raw_ckpt.get("run_flags", {}),
+                "overall_transfer_score": ranking_score,
+                "overall_transfer_score_unweighted": _avg("transfer_score"),
+                "overall_transfer_score_weighted": base_transfer_weighted,
+                "overall_mean_mismatch": _avg("mean_mismatch"),
+                "overall_mean_vitality": _avg("mean_vitality"),
+                "overall_recovery": _avg("recovery"),
+                "overall_capability_score": overall_capability_score,
+                "overall_prelife_score": overall_prelife_score,
+                "overall_autopoiesis_score": overall_autopoiesis_score,
+                "ranking_component_transfer": base_transfer_weighted,
+                "ranking_component_capability": capability_score_weight * overall_capability_score,
+                "ranking_component_prelife": prelife_score_weight * overall_prelife_score,
+                "ranking_component_autopoiesis": autopoiesis_score_weight * overall_autopoiesis_score,
+                "train_embodiments": train_embodiments_resolved,
+                "heldout_embodiments": heldout_embodiments,
+                "transfer_ratio_matrix": transfer_ratio_matrix,
+                "prelife_metrics": prelife_metrics,
+                "symbio_metrics": {
+                    "symbio_event_rate_contrast": symbio_contrast,
+                    "symbio_stability_proxy": float(prelife_metrics.get("symbio_stability_proxy", 0.0)),
+                    "symbio_contribution_to_novelty": float(prelife_metrics.get("symbio_contribution_to_novelty", 0.0)),
+                },
+                "symbio_gate_pass": symbio_gate_pass,
+                "autopoiesis_gate_pass": autopoiesis_gate_pass,
+                "convergence_gate_pass": convergence_gate_pass,
+                "promotion_eligible": convergence_gate_pass,
+                **checkmate,
+                "by_embodiment": by_embodiment,
+                "runs": run_rows,
+            }
+        )
+
+    ranked.sort(key=lambda x: x["overall_transfer_score"], reverse=True)
+    return ranked
+
+
+def _cycle_output_path(base_output: str, cycle_index: int) -> str:
+    p = Path(base_output)
+    suffix = p.suffix if p.suffix else ".json"
+    return str(p.with_name(f"{p.stem}-cycle{cycle_index}{suffix}"))
+
+
 @app.command()
 def run(
     checkpoints_glob: str = "artifacts/parallel-long/variant-*.pt",
@@ -830,6 +1013,12 @@ def run(
     enable_convergence_gates: bool = True,
     symbio_min_threshold: float = 0.45,
     autopoiesis_min_threshold: float = 0.55,
+    enable_threshold_ratchet: bool = False,
+    ratchet_max_cycles: int = 4,
+    ratchet_symbio_step: float = 0.02,
+    ratchet_autopoiesis_step: float = 0.03,
+    ratchet_stop_on_fail: bool = True,
+    ratchet_summary_output: str = "artifacts/convergence-ratchet-summary.json",
     convergence_thresholds_output: str = "artifacts/convergence-thresholds.json",
     noise_profile: str = "none",
     world_x: int = 20,
@@ -897,208 +1086,196 @@ def run(
         raise typer.BadParameter("symbio_min_threshold must be >= 0.0")
     if autopoiesis_min_threshold < 0.0:
         raise typer.BadParameter("autopoiesis_min_threshold must be >= 0.0")
+    if ratchet_max_cycles <= 0:
+        raise typer.BadParameter("ratchet_max_cycles must be > 0")
+    if ratchet_symbio_step <= 0.0:
+        raise typer.BadParameter("ratchet_symbio_step must be > 0.0")
+    if ratchet_autopoiesis_step <= 0.0:
+        raise typer.BadParameter("ratchet_autopoiesis_step must be > 0.0")
 
     dev = torch.device(device)
     world_dims = (world_x, world_y, world_z, resource_channels)
 
-    ranked: list[dict] = []
-    for ckpt_path in ckpts:
-        model, cfg, raw_ckpt = _load_model(ckpt_path, profile, dev)
-        train_embodiments_resolved = (
-            list(train_subset_from_cli)
-            if train_subset_from_cli
-            else _resolve_train_embodiments("", embodiment_list, raw_ckpt.get("run_flags", {}))
-        )
-        heldout_embodiments = [emb for emb in embodiment_list if emb not in train_embodiments_resolved]
+    current_symbio_threshold = symbio_min_threshold
+    current_autopoiesis_threshold = autopoiesis_min_threshold
+    cycle_records: list[dict] = []
+    cycle_payloads: list[dict] = []
+    stop_reason = "single_cycle"
+    planned_cycles = ratchet_max_cycles if enable_threshold_ratchet else 1
 
-        run_rows: list[dict] = []
-        for emb_idx, emb_name in enumerate(embodiment_list):
-            get_embodiment(emb_name)
-            for scen_idx, scen in enumerate(scenario_specs):
-                for rep in range(runs_per_combo):
-                    combo_seed = seed + emb_idx * 1000 + scen_idx * 100 + rep
-                    metrics = rollout_metrics(
-                        model=model,
-                        cfg=cfg,
-                        embodiment_name=emb_name,
-                        scenario=scen,
-                        steps=steps,
-                        remap_every=remap_every,
-                        seed=combo_seed,
-                        world_dims=world_dims,
-                        device=dev,
-                        capability_profile=capability_profile_resolved,
-                        noise_profile=noise_profile_resolved,
-                    )
-                    run_rows.append({
-                        "embodiment": emb_name,
-                        "scenario": scen.name,
-                        "rep": rep,
-                        **metrics,
-                    })
-
-        def _avg(key: str) -> float:
-            return float(sum(float(row[key]) for row in run_rows) / max(1, len(run_rows)))
-
-        by_embodiment = {}
-        for emb_name in embodiment_list:
-            subset = [row for row in run_rows if row["embodiment"] == emb_name]
-            by_embodiment[emb_name] = {
-                "transfer_score": float(sum(float(x["transfer_score"]) for x in subset) / max(1, len(subset))),
-                "mean_mismatch": float(sum(float(x["mean_mismatch"]) for x in subset) / max(1, len(subset))),
-                "mean_vitality": float(sum(float(x["mean_vitality"]) for x in subset) / max(1, len(subset))),
-                "recovery": float(sum(float(x["recovery"]) for x in subset) / max(1, len(subset))),
-            }
-            if capability_profile_resolved != "none":
-                by_embodiment[emb_name].update(
-                    {
-                        "signal_reliability": float(sum(float(x["signal_reliability"]) for x in subset) / max(1, len(subset))),
-                        "signal_detection_auc": float(sum(float(x["signal_detection_auc"]) for x in subset) / max(1, len(subset))),
-                        "evasion_success": float(sum(float(x["evasion_success"]) for x in subset) / max(1, len(subset))),
-                        "capability_score": float(sum(float(x["capability_score"]) for x in subset) / max(1, len(subset))),
-                    }
-                )
-            by_embodiment[emb_name].update(
-                {
-                    "autopoiesis_score": float(sum(float(x["autopoiesis_score"]) for x in subset) / max(1, len(subset))),
-                    "closure_resilience": float(sum(float(x["closure_resilience"]) for x in subset) / max(1, len(subset))),
-                    "organizational_persistence": float(sum(float(x["organizational_persistence"]) for x in subset) / max(1, len(subset))),
-                    "self_repair_response": float(sum(float(x["self_repair_response"]) for x in subset) / max(1, len(subset))),
-                    "resource_cycle_efficiency": float(sum(float(x["resource_cycle_efficiency"]) for x in subset) / max(1, len(subset))),
-                }
-            )
-
-        base_transfer_weighted = _weighted_transfer_score(
-            by_embodiment=by_embodiment,
-            embodiments=embodiment_list,
-            embodiment_weights=embodiment_weight_map,
-        )
-        prelife_metrics, overall_prelife_score = _prelife_metrics_for_checkpoint(
-            profile=prelife_profile_resolved,
+    for cycle_idx in range(1, planned_cycles + 1):
+        ranked = _evaluate_ranked_checkpoints(
+            ckpts=ckpts,
+            profile=profile,
+            embodiment_list=embodiment_list,
+            scenario_specs=scenario_specs,
+            runs_per_combo=runs_per_combo,
+            steps=steps,
+            remap_every=remap_every,
+            train_subset_from_cli=train_subset_from_cli,
+            checkmate_threshold=checkmate_threshold,
+            capability_profile_resolved=capability_profile_resolved,
+            capability_score_weight=capability_score_weight,
+            prelife_profile_resolved=prelife_profile_resolved,
+            prelife_score_weight=prelife_score_weight,
             prelife_steps=prelife_steps,
-            prelife_seeds=prelife_seed_list,
+            prelife_seed_list=prelife_seed_list,
+            autopoiesis_score_weight=autopoiesis_score_weight,
+            enable_convergence_gates=enable_convergence_gates,
+            symbio_min_threshold=current_symbio_threshold,
+            autopoiesis_min_threshold=current_autopoiesis_threshold,
+            noise_profile_resolved=noise_profile_resolved,
+            world_dims=world_dims,
+            dev=dev,
+            seed=seed,
+            embodiment_weight_map=embodiment_weight_map,
         )
-        overall_capability_score = 0.0
-        if capability_profile_resolved != "none":
-            overall_capability_score = float(
-                sum(float(row["capability_score"]) for row in run_rows) / max(1, len(run_rows))
-            )
-        overall_autopoiesis_score = float(
-            sum(float(row["autopoiesis_score"]) for row in run_rows) / max(1, len(run_rows))
-        )
-        ranking_score = (
-            base_transfer_weighted
-            + capability_score_weight * overall_capability_score
-            + prelife_score_weight * overall_prelife_score
-            + autopoiesis_score_weight * overall_autopoiesis_score
-        )
-        transfer_ratio_matrix = _transfer_ratio_matrix(
-            by_embodiment=by_embodiment,
-            source_embodiments=train_embodiments_resolved,
-            target_embodiments=embodiment_list,
-        )
-        checkmate = _checkmate_metrics(
-            by_embodiment=by_embodiment,
-            all_embodiments=embodiment_list,
-            train_embodiments=train_embodiments_resolved,
-            threshold=checkmate_threshold,
-        )
-        symbio_contrast = float(prelife_metrics.get("symbio_event_rate_contrast", 0.0))
-        symbio_gate_pass = bool(symbio_contrast >= symbio_min_threshold) if prelife_profile_resolved != "none" else True
-        autopoiesis_gate_pass = bool(overall_autopoiesis_score >= autopoiesis_min_threshold)
-        convergence_gate_pass = bool(checkmate["checkmate_pass_all"]) and symbio_gate_pass and autopoiesis_gate_pass
-        if not enable_convergence_gates:
-            convergence_gate_pass = True
+        if not ranked:
+            raise typer.BadParameter("No ranked results produced during evaluation")
 
-        ranked.append(
-            {
-                "checkpoint": ckpt_path,
-                "flags": raw_ckpt.get("run_flags", {}),
-                "overall_transfer_score": ranking_score,
-                "overall_transfer_score_unweighted": _avg("transfer_score"),
-                "overall_transfer_score_weighted": base_transfer_weighted,
-                "overall_mean_mismatch": _avg("mean_mismatch"),
-                "overall_mean_vitality": _avg("mean_vitality"),
-                "overall_recovery": _avg("recovery"),
-                "overall_capability_score": overall_capability_score,
-                "overall_prelife_score": overall_prelife_score,
-                "overall_autopoiesis_score": overall_autopoiesis_score,
-                "ranking_component_transfer": base_transfer_weighted,
-                "ranking_component_capability": capability_score_weight * overall_capability_score,
-                "ranking_component_prelife": prelife_score_weight * overall_prelife_score,
-                "ranking_component_autopoiesis": autopoiesis_score_weight * overall_autopoiesis_score,
-                "train_embodiments": train_embodiments_resolved,
-                "heldout_embodiments": heldout_embodiments,
-                "transfer_ratio_matrix": transfer_ratio_matrix,
-                "prelife_metrics": prelife_metrics,
-                "symbio_metrics": {
-                    "symbio_event_rate_contrast": symbio_contrast,
-                    "symbio_stability_proxy": float(prelife_metrics.get("symbio_stability_proxy", 0.0)),
-                    "symbio_contribution_to_novelty": float(prelife_metrics.get("symbio_contribution_to_novelty", 0.0)),
-                },
-                "symbio_gate_pass": symbio_gate_pass,
-                "autopoiesis_gate_pass": autopoiesis_gate_pass,
-                "convergence_gate_pass": convergence_gate_pass,
-                "promotion_eligible": convergence_gate_pass,
-                **checkmate,
-                "by_embodiment": by_embodiment,
-                "runs": run_rows,
-            }
-        )
+        cycle_payload = {
+            "config": {
+                "checkpoints_glob": checkpoints_glob,
+                "checkpoints_dir": checkpoints_dir,
+                "checkpoints_list": checkpoints_list,
+                "profile": profile,
+                "embodiments": embodiment_list,
+                "embodiment_weights": embodiment_weight_map,
+                "scenarios": [s.name for s in scenario_specs],
+                "scenario_profile": scenario_profile,
+                "runs_per_combo": runs_per_combo,
+                "steps": steps,
+                "remap_every": remap_every,
+                "train_embodiments": train_subset_from_cli,
+                "checkmate_threshold": checkmate_threshold,
+                "capability_profile": capability_profile_resolved,
+                "capability_score_weight": capability_score_weight,
+                "prelife_profile": prelife_profile_resolved,
+                "prelife_score_weight": prelife_score_weight,
+                "prelife_steps": prelife_steps,
+                "prelife_seeds": prelife_seed_list,
+                "autopoiesis_score_weight": autopoiesis_score_weight,
+                "enable_convergence_gates": enable_convergence_gates,
+                "symbio_min_threshold": current_symbio_threshold,
+                "autopoiesis_min_threshold": current_autopoiesis_threshold,
+                "noise_profile": noise_profile_resolved,
+                "enable_threshold_ratchet": enable_threshold_ratchet,
+                "ratchet_max_cycles": ratchet_max_cycles,
+                "ratchet_symbio_step": ratchet_symbio_step,
+                "ratchet_autopoiesis_step": ratchet_autopoiesis_step,
+                "ratchet_stop_on_fail": ratchet_stop_on_fail,
+                "world": {"x": world_x, "y": world_y, "z": world_z, "resource_channels": resource_channels},
+            },
+            "ranked": ranked,
+        }
+        cycle_payloads.append(cycle_payload)
 
-    ranked.sort(key=lambda x: x["overall_transfer_score"], reverse=True)
-    payload = {
-        "config": {
-            "checkpoints_glob": checkpoints_glob,
-            "checkpoints_dir": checkpoints_dir,
-            "checkpoints_list": checkpoints_list,
-            "profile": profile,
-            "embodiments": embodiment_list,
-            "embodiment_weights": embodiment_weight_map,
-            "scenarios": [s.name for s in scenario_specs],
-            "scenario_profile": scenario_profile,
-            "runs_per_combo": runs_per_combo,
-            "steps": steps,
-            "remap_every": remap_every,
-            "train_embodiments": train_subset_from_cli,
-            "checkmate_threshold": checkmate_threshold,
-            "capability_profile": capability_profile_resolved,
-            "capability_score_weight": capability_score_weight,
-            "prelife_profile": prelife_profile_resolved,
-            "prelife_score_weight": prelife_score_weight,
-            "prelife_steps": prelife_steps,
-            "prelife_seeds": prelife_seed_list,
-            "autopoiesis_score_weight": autopoiesis_score_weight,
-            "enable_convergence_gates": enable_convergence_gates,
-            "symbio_min_threshold": symbio_min_threshold,
-            "autopoiesis_min_threshold": autopoiesis_min_threshold,
-            "noise_profile": noise_profile_resolved,
-            "world": {"x": world_x, "y": world_y, "z": world_z, "resource_channels": resource_channels},
-        },
-        "ranked": ranked,
+        cycle_out = _cycle_output_path(output, cycle_idx) if enable_threshold_ratchet else output
+        Path(cycle_out).parent.mkdir(parents=True, exist_ok=True)
+        Path(cycle_out).write_text(json.dumps(cycle_payload, indent=2), encoding="utf-8")
+
+        best = ranked[0]
+        eligible_count = sum(1 for item in ranked if bool(item.get("promotion_eligible", False)))
+        has_eligible = eligible_count > 0
+        cycle_record = {
+            "cycle_index": cycle_idx,
+            "output": cycle_out,
+            "thresholds": {
+                "symbio_min_threshold": current_symbio_threshold,
+                "autopoiesis_min_threshold": current_autopoiesis_threshold,
+            },
+            "best_checkpoint": best["checkpoint"],
+            "best_score": float(best["overall_transfer_score"]),
+            "best_symbio_contrast": float(best.get("symbio_metrics", {}).get("symbio_event_rate_contrast", 0.0)),
+            "best_autopoiesis_score": float(best.get("overall_autopoiesis_score", 0.0)),
+            "eligible_count": eligible_count,
+            "has_eligible": has_eligible,
+        }
+        cycle_records.append(cycle_record)
+
+        if not enable_threshold_ratchet:
+            stop_reason = "single_cycle_complete"
+            break
+        if not has_eligible and ratchet_stop_on_fail:
+            stop_reason = "stop_on_fail_no_eligible"
+            break
+        if cycle_idx >= ratchet_max_cycles:
+            stop_reason = "reached_max_cycles"
+            break
+
+        threshold_preview = _build_convergence_threshold_payload(
+            path=convergence_thresholds_output,
+            symbio_min_threshold=current_symbio_threshold,
+            autopoiesis_min_threshold=current_autopoiesis_threshold,
+            best_symbio_contrast=cycle_record["best_symbio_contrast"],
+            best_autopoiesis_score=cycle_record["best_autopoiesis_score"],
+            symbio_step=ratchet_symbio_step,
+            autopoiesis_step=ratchet_autopoiesis_step,
+        )
+        next_thresholds = threshold_preview["next_recommended_thresholds"]
+        current_symbio_threshold = float(next_thresholds["symbio_min_threshold"])
+        current_autopoiesis_threshold = float(next_thresholds["autopoiesis_min_threshold"])
+        stop_reason = "continuing"
+
+    selected_cycle_idx = len(cycle_records)
+    if enable_threshold_ratchet:
+        eligible_cycles = [record for record in cycle_records if record["has_eligible"]]
+        if eligible_cycles:
+            selected_cycle_idx = int(eligible_cycles[-1]["cycle_index"])
+        else:
+            selected_cycle_idx = int(cycle_records[-1]["cycle_index"])
+
+    selected_payload = cycle_payloads[selected_cycle_idx - 1]
+    selected_record = cycle_records[selected_cycle_idx - 1]
+    selected_payload["ratchet"] = {
+        "enabled": enable_threshold_ratchet,
+        "stop_reason": stop_reason,
+        "selected_cycle_index": selected_cycle_idx,
+        "cycles": cycle_records,
     }
 
-    best = ranked[0]
+    best = selected_payload["ranked"][0]
     threshold_payload = _build_convergence_threshold_payload(
         path=convergence_thresholds_output,
-        symbio_min_threshold=symbio_min_threshold,
-        autopoiesis_min_threshold=autopoiesis_min_threshold,
+        symbio_min_threshold=float(selected_record["thresholds"]["symbio_min_threshold"]),
+        autopoiesis_min_threshold=float(selected_record["thresholds"]["autopoiesis_min_threshold"]),
         best_symbio_contrast=float(best.get("symbio_metrics", {}).get("symbio_event_rate_contrast", 0.0)),
         best_autopoiesis_score=float(best.get("overall_autopoiesis_score", 0.0)),
+        symbio_step=ratchet_symbio_step,
+        autopoiesis_step=ratchet_autopoiesis_step,
     )
     Path(convergence_thresholds_output).parent.mkdir(parents=True, exist_ok=True)
     Path(convergence_thresholds_output).write_text(json.dumps(threshold_payload, indent=2), encoding="utf-8")
 
-    Path(output).parent.mkdir(parents=True, exist_ok=True)
-    Path(output).write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    if enable_threshold_ratchet:
+        ratchet_summary = {
+            "generated_from": output,
+            "cycles": cycle_records,
+            "selected_cycle_index": selected_cycle_idx,
+            "selected_output": selected_record["output"],
+            "stop_reason": stop_reason,
+            "next_recommended_thresholds": threshold_payload.get("next_recommended_thresholds", {}),
+        }
+        Path(ratchet_summary_output).parent.mkdir(parents=True, exist_ok=True)
+        Path(ratchet_summary_output).write_text(json.dumps(ratchet_summary, indent=2), encoding="utf-8")
+        selected_payload["ratchet"]["summary_output"] = ratchet_summary_output
 
-    print({
-        "output": output,
-        "checkpoints": len(ranked),
-        "best_checkpoint": ranked[0]["checkpoint"],
-        "best_score": ranked[0]["overall_transfer_score"],
-        "thresholds": convergence_thresholds_output,
-    })
+    Path(output).parent.mkdir(parents=True, exist_ok=True)
+    Path(output).write_text(json.dumps(selected_payload, indent=2), encoding="utf-8")
+
+    print(
+        {
+            "output": output,
+            "checkpoints": len(selected_payload["ranked"]),
+            "best_checkpoint": selected_payload["ranked"][0]["checkpoint"],
+            "best_score": selected_payload["ranked"][0]["overall_transfer_score"],
+            "thresholds": convergence_thresholds_output,
+            "ratchet_enabled": enable_threshold_ratchet,
+            "ratchet_cycles_executed": len(cycle_records),
+            "selected_cycle_index": selected_cycle_idx,
+            "ratchet_summary": ratchet_summary_output if enable_threshold_ratchet else "",
+        }
+    )
 
 
 if __name__ == "__main__":
