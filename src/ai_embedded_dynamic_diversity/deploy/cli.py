@@ -38,7 +38,7 @@ def _load_model(weights: str, profile: str | None = None) -> tuple[ModelCore, Mo
     ckpt = torch.load(weights, map_location="cpu")
     cfg = ModelConfig(**ckpt["model_config"])
     model = ModelCore(**cfg.__dict__)
-    model.load_state_dict(ckpt["model"])
+    model.load_state_dict(ckpt["model"], strict=False)
     model.eval()
     return model, cfg
 
@@ -75,6 +75,8 @@ def onnx(weights: str = "artifacts/model-core.pt", output: str = "artifacts/mode
         output_names=["io"],
         opset_version=opset,
         dynamic_axes={"signal": {0: "batch"}, "memory": {0: "batch"}, "remap": {0: "batch"}},
+        do_constant_folding=True,
+        dynamo=False,
     )
     print({"onnx": output})
 

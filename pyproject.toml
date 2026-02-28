@@ -10,7 +10,9 @@ dependencies = [
   "typer>=0.12",
   "pydantic>=2.7",
   "rich>=13.7",
-  "matplotlib>=3.8"
+  "matplotlib>=3.8",
+  "onnxruntime>=1.17",
+  "onnx>=1.16"
 ]
 
 [project.scripts]

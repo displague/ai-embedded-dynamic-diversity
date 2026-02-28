@@ -22,6 +22,10 @@
   - target-to-device mapping support (for example `pi5=cpu` when run on Pi5 host)
 - Added TorchScript (`.ts`) support to `add-bench` for benchmarking quantized/traced models.
 - Captured baseline latency matrix for `model-core-pi5-int8.ts` in `artifacts/latency-matrix-pi5-int8.json`.
+- Integrated ONNX Runtime benchmarking path:
+  - Added `onnx` and `onnxruntime` dependencies.
+  - Added ONNX benchmarking support to `add-bench`.
+  - Added legacy ONNX export support (`dynamo=False`) to `add-export` for broader compatibility.
 - Added UDP hardware-in-the-loop adapter CLI.
 - Added configurable memory gating research modes:
   - `sigmoid` baseline

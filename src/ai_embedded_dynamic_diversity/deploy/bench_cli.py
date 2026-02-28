@@ -14,6 +14,60 @@ from ai_embedded_dynamic_diversity.models import ModelCore
 app = typer.Typer(add_completion=False)
 
 
+def run_onnx_benchmark(
+    weights: str,
+    profile: str = "pi5",
+    steps: int = 300,
+    warmup_steps: int = 30,
+    batch_size: int = 1,
+) -> dict[str, object]:
+    import onnxruntime as ort
+    import numpy as np
+
+    cfg = model_config_for_profile(profile)
+    # Use CPU provider for baseline, could be extended for GPU
+    session = ort.InferenceSession(weights, providers=["CPUExecutionProvider"])
+    
+    input_names = [i.name for i in session.get_inputs()]
+    
+    # Mock inputs
+    signal = np.random.randn(batch_size, cfg.signal_dim).astype(np.float32)
+    memory = np.zeros((batch_size, cfg.memory_slots, cfg.memory_dim), dtype=np.float32)
+    remap = np.zeros((batch_size, cfg.max_remap_groups), dtype=np.float32)
+    
+    input_dict = {
+        "signal": signal,
+        "memory": memory,
+        "remap": remap
+    }
+    # Filter inputs if ONNX export only used a subset
+    input_dict = {k: v for k, v in input_dict.items() if k in input_names}
+
+    # Warmup
+    for _ in range(warmup_steps):
+        _ = session.run(None, input_dict)
+
+    timings_ms = []
+    for _ in range(steps):
+        start = time.perf_counter()
+        _ = session.run(None, input_dict)
+        end = time.perf_counter()
+        timings_ms.append((end - start) * 1000.0)
+
+    p50 = statistics.median(timings_ms)
+    p95 = sorted(timings_ms)[int(0.95 * (len(timings_ms) - 1))]
+    return {
+        "device": "onnx-cpu",
+        "profile": profile,
+        "batch_size": batch_size,
+        "steps": steps,
+        "warmup_steps": warmup_steps,
+        "p50_ms": p50,
+        "p95_ms": p95,
+        "avg_ms": statistics.mean(timings_ms),
+    }
+
+
 def run_benchmark(
     weights: str = "",
     profile: str = "pi5",
@@ -28,6 +82,15 @@ def run_benchmark(
         raise ValueError("warmup_steps must be >= 0")
     if batch_size <= 0:
         raise ValueError("batch_size must be > 0")
+
+    if weights.endswith(".onnx"):
+        return run_onnx_benchmark(
+            weights=weights,
+            profile=profile,
+            steps=steps,
+            warmup_steps=warmup_steps,
+            batch_size=batch_size
+        )
 
     dev = torch.device(device)
     if dev.type == "cuda" and not torch.cuda.is_available():
