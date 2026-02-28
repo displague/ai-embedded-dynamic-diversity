@@ -19,6 +19,7 @@ from ai_embedded_dynamic_diversity.sim.autopoiesis import autopoietic_metrics
 from ai_embedded_dynamic_diversity.sim.world import DynamicDiversityWorld
 from ai_embedded_dynamic_diversity.sim.signaling import SignalingWorld
 from ai_embedded_dynamic_diversity.train.losses import loss_fn
+from ai_embedded_dynamic_diversity.train.quantization import prepare_qat_model
 
 app = typer.Typer(add_completion=False)
 
@@ -508,6 +509,7 @@ def run(
     enable_dmd_gating: bool = False,
     enable_phase_gating: bool = False,
     enable_multi_scale_gating: bool = False,
+    enable_qat: bool = False,
     coevolution: bool = False,
     population_size: int = 4,
     elite_fraction: float = 0.5,
@@ -608,6 +610,8 @@ def run(
         "topk_gating": mcfg.topk_gating,
         "enable_dmd_gating": mcfg.enable_dmd_gating,
         "enable_phase_gating": mcfg.enable_phase_gating,
+        "enable_multi_scale_gating": mcfg.enable_multi_scale_gating,
+        "enable_qat": enable_qat,
         "coevolution": coevolution,
         "enable_curriculum": enable_curriculum,
         "enable_genetic_memory": enable_genetic_memory,
@@ -646,6 +650,12 @@ def run(
                 inherited_tape_payload = ckpt.get("constructor_tape")
             except (ValueError, RuntimeError) as exc:
                 raise typer.BadParameter(str(exc)) from exc
+        
+        if enable_qat:
+            # QAT preparation must happen before optimizer creation
+            model = prepare_qat_model(model)
+            print({"info": "Quantization-Aware Training (QAT) enabled"})
+
         if compile_model and hasattr(torch, "compile"):
             model = torch.compile(model, mode="reduce-overhead")
         opt = torch.optim.AdamW(model.parameters(), lr=tcfg.lr)

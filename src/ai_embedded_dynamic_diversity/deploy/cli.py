@@ -8,6 +8,7 @@ from torch import nn
 
 from ai_embedded_dynamic_diversity.config import ModelConfig
 from ai_embedded_dynamic_diversity.models import ModelCore
+from ai_embedded_dynamic_diversity.train.quantization import convert_qat_model
 
 app = typer.Typer(add_completion=False)
 
@@ -92,6 +93,34 @@ def quantized_torchscript(weights: str = "artifacts/model-core.pt", output: str 
     Path(output).parent.mkdir(parents=True, exist_ok=True)
     traced.save(output)
     print({"quantized_torchscript": output})
+
+
+@app.command()
+def quantized_qat_torchscript(weights: str = "artifacts/model-core.pt", output: str = "artifacts/model-core-qat-int8.ts") -> None:
+    """Converts a model trained with QAT to a quantized TorchScript model."""
+    from ai_embedded_dynamic_diversity.train.quantization import prepare_qat_model, convert_qat_model
+    
+    ckpt = torch.load(weights, map_location="cpu")
+    cfg = ModelConfig(**ckpt["model_config"])
+    model = ModelCore(**cfg.__dict__)
+    
+    # We must prepare it exactly like it was during training
+    prepared = prepare_qat_model(model)
+    prepared.load_state_dict(ckpt["model"])
+    
+    # Then convert to truly quantized
+    quantized = convert_qat_model(prepared)
+    
+    wrapped = TorchScriptWrapper(quantized)
+    
+    signal = torch.randn(1, cfg.signal_dim)
+    memory = torch.zeros(1, cfg.memory_slots, cfg.memory_dim)
+    remap = torch.zeros(1, cfg.max_remap_groups)
+    traced = torch.jit.trace(wrapped, (signal, memory, remap))
+
+    Path(output).parent.mkdir(parents=True, exist_ok=True)
+    traced.save(output)
+    print({"quantized_qat_torchscript": output})
 
 
 if __name__ == "__main__":

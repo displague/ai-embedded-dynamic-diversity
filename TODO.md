@@ -46,7 +46,7 @@
 - [x] Add pre-life/self-modification emergence simulation track with replication, novelty, and symbiogenesis detection metrics + report artifacts.
 - [x] Add multi-scale gating (global policy gate + local edge response gate) and compare against current single-scale gating family.
 - [ ] Add genetic memory bank for warm-start retrieval across morphology families.
-- [ ] Implement quantization-aware training and compare against dynamic quantization export.
+- [x] Implement quantization-aware training and compare against dynamic quantization export.
 - [ ] Integrate ONNX Runtime benchmark path for Pi 5.
 - [ ] Add hardware-agnostic runtime I/O abstraction for single-checkpoint deployment across Pi5/phone/embedded Linux.
 - [ ] Add adaptive batch/chunk streaming path for reduced peak memory during long rollouts.

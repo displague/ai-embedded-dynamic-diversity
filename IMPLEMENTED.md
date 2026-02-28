@@ -289,6 +289,11 @@
   - `FewShotAdaptor` for rapid fine-tuning (N < 10 gradient steps) on small calibration sets.
   - Support for full-model or head-only adaptation tracks.
   - Verified reduction in reconstruction loss on target embodiments vs zero-shot transfer.
+- Added Quantization-Aware Training (QAT) scaffold (`train/quantization.py`) with:
+  - `prepare_qat_model` for observer and fake quant module insertion.
+  - `convert_qat_model` for producing truly quantized weights.
+  - Training CLI support via `--enable-qat` flag.
+  - Deployment CLI support via `add-deploy quantized-qat-torchscript` command.
 
 ## Agent Continuity And Handoff Infrastructure
 
