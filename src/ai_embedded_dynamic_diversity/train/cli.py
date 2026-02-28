@@ -740,10 +740,14 @@ def run(
                 mean_transfer_mismatch,
                 mean_remap_loss,
                 mean_detection_loss,
+                mean_emergent_signal_loss,
+                mean_memory_persistence_loss,
+                mean_paging_loss,
                 mean_autopoietic_score,
                 mean_autopoietic_loss,
             ) = run_gradient_epoch(
                 model,
+
                 world,
                 mcfg,
                 tcfg,
