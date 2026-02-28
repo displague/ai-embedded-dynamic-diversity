@@ -17,6 +17,7 @@ def loss_fn(
     emergent_signal_loss_weight: float = 0.05,
     memory_persistence_loss_weight: float = 0.05,
     initial_memory: torch.Tensor | None = None,
+    paging_loss_weight: float = 0.01,
 ) -> tuple[torch.Tensor, dict[str, float]]:
     io = outputs["io"]
     readiness = outputs["readiness"]
@@ -47,6 +48,9 @@ def loss_fn(
     if initial_memory is not None:
         memory_persistence_loss = nn.functional.mse_loss(memory, initial_memory)
 
+    # Paging loss: encourage using fewer memory slots per sample (L1 sparsity)
+    paging_loss = torch.mean(torch.sum(torch.abs(memory_weights), dim=-1))
+
     time_consistency = torch.mean(torch.abs(outputs["memory"][:, 1:] - outputs["memory"][:, :-1]))
     total = (
         recon
@@ -57,6 +61,7 @@ def loss_fn(
         + detection_loss_weight * detection_loss
         + emergent_signal_loss_weight * emergent_signal_loss
         + memory_persistence_loss_weight * memory_persistence_loss
+        + paging_loss_weight * paging_loss
     )
     logs = {
         "loss": total.item(),
@@ -68,5 +73,6 @@ def loss_fn(
         "detection_loss": detection_loss.item(),
         "emergent_signal_loss": emergent_signal_loss.item(),
         "memory_persistence_loss": memory_persistence_loss.item(),
+        "paging_loss": paging_loss.item(),
     }
-    return total, logs
+

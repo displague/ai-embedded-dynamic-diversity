@@ -253,7 +253,8 @@ def run_gradient_epoch(
     detection_loss_weight: float = 0.1,
     emergent_signal_loss_weight: float = 0.05,
     memory_persistence_loss_weight: float = 0.05,
-) -> tuple[float, torch.Tensor, float, float, float, float, float, float, float, float]:
+    paging_loss_weight: float = 0.01,
+) -> tuple[float, torch.Tensor, float, float, float, float, float, float, float, float, float]:
     state = world.init(tcfg.batch_size)
     if genetic_memory is None:
         memory = model.init_memory(tcfg.batch_size, mcfg.memory_slots, mcfg.memory_dim, dev)
@@ -267,6 +268,7 @@ def run_gradient_epoch(
     detection_loss_total = 0.0
     emergent_signal_loss_total = 0.0
     memory_persistence_loss_total = 0.0
+    paging_loss_total = 0.0
     autopoietic_score_total = 0.0
     autopoietic_loss_total = 0.0
     amp_enabled = use_amp and dev.type == "cuda"
@@ -320,11 +322,13 @@ def run_gradient_epoch(
                 emergent_signal_loss_weight=emergent_signal_loss_weight,
                 memory_persistence_loss_weight=memory_persistence_loss_weight,
                 initial_memory=initial_memory_prior,
+                paging_loss_weight=paging_loss_weight,
             )
             remap_loss_total += logs["remap_loss"]
             detection_loss_total += logs["detection_loss"]
             emergent_signal_loss_total += logs["emergent_signal_loss"]
             memory_persistence_loss_total += logs["memory_persistence_loss"]
+            paging_loss_total += logs["paging_loss"]
             transfer_mismatch = 0.0
             transfer_loss_tensor = out["io"].new_zeros(())
             if transfer_states and transfer_loss_weight > 0.0:
@@ -558,6 +562,7 @@ def run(
     detection_loss_weight: float = 0.1,
     emergent_signal_loss_weight: float = 0.05,
     genetic_memory_persistence_weight: float = 0.05,
+    paging_loss_weight: float = 0.01,
     noise_profile: str = "none",
     enable_noise_curriculum: bool = False,
     noise_strength_start: float = 0.2,
@@ -674,6 +679,7 @@ def run(
         "detection_loss_weight": detection_loss_weight,
         "emergent_signal_loss_weight": emergent_signal_loss_weight,
         "genetic_memory_persistence_weight": genetic_memory_persistence_weight,
+        "paging_loss_weight": paging_loss_weight,
         "noise_profile": noise_profile_resolved,
         "enable_noise_curriculum": enable_noise_curriculum,
         "noise_strength_start": noise_strength_start,
@@ -792,6 +798,7 @@ def run(
                     "mean_detection_loss": mean_detection_loss,
                     "mean_emergent_signal_loss": mean_emergent_signal_loss,
                     "mean_memory_persistence_loss": mean_memory_persistence_loss,
+                    "mean_paging_loss": mean_paging_loss,
                     "mean_autopoietic_score": mean_autopoietic_score,
                     "autopoietic_loss_component": mean_autopoietic_loss,
                     "remap_probability": remap_probability,
@@ -810,6 +817,7 @@ def run(
                     "mean_detection_loss": mean_detection_loss,
                     "mean_emergent_signal_loss": mean_emergent_signal_loss,
                     "mean_memory_persistence_loss": mean_memory_persistence_loss,
+                    "mean_paging_loss": mean_paging_loss,
                     "mean_autopoietic_score": mean_autopoietic_score,
                     "autopoietic_loss_component": mean_autopoietic_loss,
                     "device": str(dev),
@@ -889,6 +897,9 @@ def run(
                 mean_transfer_mismatch,
                 mean_remap_loss,
                 mean_detection_loss,
+                mean_emergent_signal_loss,
+                mean_memory_persistence_loss,
+                mean_paging_loss,
                 mean_autopoietic_score,
                 mean_autopoietic_loss,
             ) = run_gradient_epoch(
@@ -911,6 +922,9 @@ def run(
                 scaler=scalers[idx],
                 remap_loss_weight=remap_loss_weight,
                 detection_loss_weight=detection_loss_weight,
+                emergent_signal_loss_weight=emergent_signal_loss_weight,
+                memory_persistence_loss_weight=memory_persistence_loss_weight,
+                paging_loss_weight=paging_loss_weight,
                 enable_autopoietic_objective=enable_autopoietic_objective,
                 autopoietic_loss_weight=autopoietic_loss_weight,
                 autopoietic_self_repair_weight=autopoietic_self_repair_weight,
@@ -929,6 +943,7 @@ def run(
                     "mean_detection_loss": mean_detection_loss,
                     "mean_emergent_signal_loss": mean_emergent_signal_loss,
                     "mean_memory_persistence_loss": mean_memory_persistence_loss,
+                    "mean_paging_loss": mean_paging_loss,
                     "mean_autopoietic_score": mean_autopoietic_score,
                     "autopoietic_loss_component": mean_autopoietic_loss,
                     "remap_probability": remap_probability,
@@ -954,6 +969,7 @@ def run(
                 noise_strength=noise_strength,
                 noise_seed=seed + generation * 3001 + idx * 53,
                 autopoietic_fitness_weight=0.15 * autopoietic_loss_weight if enable_autopoietic_objective else 0.0,
+                genetic_memory_persistence_weight=genetic_memory_persistence_weight,
             )
             for idx, model in enumerate(pop)
         ]
@@ -1005,6 +1021,7 @@ def run(
             noise_strength=noise_strength_end if noise_profile_resolved != "none" else 0.0,
             noise_seed=seed + 99991 + idx * 97,
             autopoietic_fitness_weight=0.15 * autopoietic_loss_weight if enable_autopoietic_objective else 0.0,
+            genetic_memory_persistence_weight=genetic_memory_persistence_weight,
         )
         for idx, model in enumerate(pop)
     ]
