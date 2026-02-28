@@ -32,3 +32,37 @@ class IOAdapter:
             mapped = mapped.squeeze(0)
             
         return mapped
+
+class I2CTransport:
+    """Low-level I2C transport stub for physical hardware access."""
+    def __init__(self, bus_id: int = 1):
+        self.bus_id = bus_id
+        # Placeholder for smbus or similar library
+        self.bus = None
+
+    def read_block(self, address: int, length: int) -> list[int]:
+        """Reads a block of bytes from an I2C device."""
+        return [0] * length
+
+    def write_block(self, address: int, data: list[int]) -> None:
+        """Writes a block of bytes to an I2C device."""
+        pass
+
+class I2CAdapter(IOAdapter):
+    """Bridges ModelCore with physical I2C sensors and actuators."""
+    def __init__(self, signal_dim: int, transport: I2CTransport):
+        super().__init__(signal_dim)
+        self.transport = transport
+
+    def read_sensors(self, device_address: int) -> torch.Tensor:
+        """Reads raw I2C data and returns a normalized tensor."""
+        raw = self.transport.read_block(device_address, self.signal_dim * 2) # Assume 16-bit
+        # Convert bytes to floats, then normalize
+        raw_tensor = torch.tensor(raw, dtype=torch.float32).view(-1, 2).mean(dim=1)
+        return self.normalize(raw_tensor)
+
+    def write_actuators(self, device_address: int, model_output: torch.Tensor):
+        """Maps model output to hardware ranges and writes via I2C."""
+        raw_output = self.denormalize(model_output, target_range=(0, 255))
+        data = raw_output.byte().tolist()
+        self.transport.write_block(device_address, data)
