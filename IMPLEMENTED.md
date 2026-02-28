@@ -260,6 +260,10 @@
 - Per-embodiment profiling quickly reveals expected channel bottlenecks (e.g., `io_channels << control_dof`) and should be run before long sweeps to set realistic mapping-coverage expectations.
 - A fixed `>=85%` checkmate threshold is useful as a floor gate, but current models already exceed it on the selected hardy split; tighter thresholds or harder heldout regimes are needed for discrimination.
 - Harder noise regimes + stricter checkmate thresholds (`0.95`) create meaningful separation where `0.85` did not.
+- Added policy-level task objectives module (`sim/objectives.py`) and tests with:
+  - `NavigationObjective` (target distance rewards)
+  - `StabilityObjective` (world stress reduction rewards)
+  - `CombinedObjective` (weighted multi-task blending)
 
 ## Agent Continuity And Handoff Infrastructure
 

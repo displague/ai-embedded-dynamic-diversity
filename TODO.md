@@ -30,7 +30,7 @@
 - [x] Add CI check for agent continuity assets drift (`AGENTS.md`, `.agents/subagent-*`, skill indexes, mirror adapters).
 - [x] Add lightweight script to diff canonical role contracts vs `.claude/.opencode` mirrors and flag divergence.
 - [x] Add compact "reference subset generator" for handoff packets based on scenario tags and current task.
-- [ ] Add policy-level task objectives on top of adaptation (navigation, stability, manipulation).
+- [x] Add policy-level task objectives on top of adaptation (navigation, stability, manipulation).
 - [ ] Add dynamic embodiment discovery at runtime (auto-infer I/O schema + safe default remap groups) without recompilation.
 - [x] Add constructor-tape architecture path (external parametric description) for universal-constructor style model instantiation and checkpoint metadata persistence.
 - [ ] Add online remap learning within episode (learned remap policy vs static periodic remaps).
