@@ -542,6 +542,7 @@ def run(
     elite_fraction: float = 0.5,
     mutation_std: float = 0.01,
     enable_curriculum: bool = False,
+    curriculum_power: float = 1.0,
     remap_probability_start: float = 0.1,
     remap_probability_end: float = 0.35,
     env_volatility_start: float = 0.05,
@@ -644,10 +645,10 @@ def run(
 
     amp_enabled = use_amp and dev.type == "cuda"
 
-    def _lin_schedule(start: float, end: float, epoch_idx: int) -> float:
+    def _lin_schedule(start: float, end: float, epoch_idx: int, power: float = 1.0) -> float:
         if tcfg.epochs <= 1:
             return end
-        alpha = epoch_idx / (tcfg.epochs - 1)
+        alpha = (epoch_idx / (tcfg.epochs - 1)) ** power
         return (1.0 - alpha) * start + alpha * end
 
     if not metrics_path:

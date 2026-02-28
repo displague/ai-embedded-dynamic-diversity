@@ -56,7 +56,7 @@
 - [x] Evaluate memory gating ablations: `sigmoid` vs `symplectic` vs `symplectic+dmd+phase` using `add-gating-bench`.
 - [x] Add manifold paging objective reduction beyond top-k slot paging (per-sample adaptive page budget).
 
-- [ ] Tune curriculum schedule for hardy-line gains (current curriculum run improved but did not beat non-curriculum focused run).
+- [x] Tune curriculum schedule for hardy-line gains (current curriculum run improved but did not beat non-curriculum focused run).
 - [x] Continue car-focused objective weighting/sampling in training (storm/crosswind emphasis) to push hardy car mismatch below `0.9`.
 - [ ] Make CUDA PyTorch install reproducible in `uv` lock workflow (strict-device guard is in place; remaining work is lock/index standardization so plain `uv run` keeps CUDA torch).
 - [ ] Promote next champion after high-repeat validation (`runs_per_combo >= 6`) on both transfer-only and capability-weighted hardy profiles.

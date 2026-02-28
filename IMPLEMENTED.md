@@ -185,6 +185,7 @@
   - `memory_persistence_loss` (MSE) to optimize stability vs initial genetic prior.
   - `paging_loss` (L1 sparsity on memory weights) to encourage adaptive slot reduction.
   - Training CLI support via `--genetic-memory-persistence-weight` and `--paging-loss-weight` flags.
+  - Support for non-linear curriculum scheduling via `--curriculum-power` (enables longer low-stress warmup).
   - Verified stability gains in long-horizon rollouts.
 - Restored CUDA runtime in project venv (`torch==2.10.0+cu130`) and verified RTX 5080 visibility.
 - Ran capability-focused warm-start sweep `artifacts/parallel-cuda-capability-v01` (6 variants, 40 epochs, coevolution, transfer-aware, `hexapod/car/drone/polymorph120`) initialized from `artifacts/parallel-cuda-converge-v03/variant-06.pt`.
