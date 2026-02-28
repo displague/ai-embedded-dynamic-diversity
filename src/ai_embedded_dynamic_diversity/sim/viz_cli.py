@@ -190,6 +190,7 @@ def _simulate(
     wind_values = []
     force_values = []
     remap_steps = []
+    object_trajectories = []
 
     for step in range(params.steps):
         remap_code = torch.zeros(1, cfg.max_remap_groups, device=device)
@@ -213,6 +214,7 @@ def _simulate(
             vitality_values.append(float(state.life.mean().item()))
             wind_values.append(float(torch.norm(controls.wind, dim=1).mean().item()))
             force_values.append(float((controls.force_strength * controls.force_active).mean().item()))
+            object_trajectories.append(state.object_pos.detach().cpu().numpy()[0].tolist())
 
             frame = state.life[0, 0, world.z // 2].detach().cpu().numpy()
             life_frames.append(frame)
@@ -224,7 +226,43 @@ def _simulate(
         "wind_values": wind_values,
         "force_values": force_values,
         "remap_steps": remap_steps,
+        "object_pos": object_trajectories,
     }
+
+
+def _save_metrics(output: str, result: dict) -> None:
+    """Saves simulation metrics to JSON or CSV."""
+    import csv
+    
+    path = Path(output)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    
+    steps = len(result["mismatch_values"])
+    rows = []
+    for i in range(steps):
+        row = {
+            "step": i,
+            "mismatch": result["mismatch_values"][i],
+            "vitality": result["vitality_values"][i],
+            "wind": result["wind_values"][i],
+            "force": result["force_values"][i],
+        }
+        if "object_pos" in result and result["object_pos"]:
+            pos = result["object_pos"][i]
+            row.update({"obj_x": pos[0], "obj_y": pos[1], "obj_z": pos[2]})
+        rows.append(row)
+
+    if path.suffix.lower() == ".json":
+        path.write_text(json.dumps(rows, indent=2), encoding="utf-8")
+    else:
+        fieldnames = ["step", "mismatch", "vitality", "wind", "force"]
+        if "object_pos" in result and result["object_pos"]:
+            fieldnames += ["obj_x", "obj_y", "obj_z"]
+        with open(path, "w", newline="", encoding="utf-8") as f:
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(rows)
+    print({"metrics_saved": str(path)})
 
 
 def _save_single(output: str, result: dict, title: str) -> None:
@@ -260,8 +298,13 @@ def _save_single(output: str, result: dict, title: str) -> None:
     line_force, = ax_env.plot([], [], color="tab:orange", label="force strength")
     ax_env.legend(loc="upper right")
 
-    ax_obj.axis("off")
-    text = ax_obj.text(0.02, 0.98, "", va="top", family="monospace", fontsize=10)
+    # Task 3: Trajectory Overlay
+    ax_obj.set_title("Object Trajectory (X-Y)")
+    ax_obj.set_xlim(-1.1, 1.1)
+    ax_obj.set_ylim(-1.1, 1.1)
+    ax_obj.grid(True, alpha=0.3)
+    line_traj, = ax_obj.plot([], [], color="magenta", lw=1.5, label="path")
+    point_obj, = ax_obj.plot([], [], "o", color="red")
 
     fig.suptitle(title)
 
@@ -271,8 +314,9 @@ def _save_single(output: str, result: dict, title: str) -> None:
         line_vitality.set_data([], [])
         line_wind.set_data([], [])
         line_force.set_data([], [])
-        text.set_text("")
-        return (heat, line_mismatch, line_vitality, line_wind, line_force, text)
+        line_traj.set_data([], [])
+        point_obj.set_data([], [])
+        return (heat, line_mismatch, line_vitality, line_wind, line_force, line_traj, point_obj)
 
     def _update(i: int):
         xs = list(range(i + 1))
@@ -281,14 +325,15 @@ def _save_single(output: str, result: dict, title: str) -> None:
         line_vitality.set_data(xs, result["vitality_values"][: i + 1])
         line_wind.set_data(xs, result["wind_values"][: i + 1])
         line_force.set_data(xs, result["force_values"][: i + 1])
-        text.set_text(
-            f"step={i}\n"
-            f"mismatch={result['mismatch_values'][i]:.4f}\n"
-            f"vitality={result['vitality_values'][i]:.4f}\n"
-            f"wind={result['wind_values'][i]:.3f}\n"
-            f"force={result['force_values'][i]:.3f}"
-        )
-        return (heat, line_mismatch, line_vitality, line_wind, line_force, text)
+        
+        if result["object_pos"]:
+            path_xy = result["object_pos"][: i + 1]
+            px = [p[0] for p in path_xy]
+            py = [p[1] for p in path_xy]
+            line_traj.set_data(px, py)
+            point_obj.set_data([px[-1]], [py[-1]])
+            
+        return (heat, line_mismatch, line_vitality, line_wind, line_force, line_traj, point_obj)
 
     anim = animation.FuncAnimation(fig, _update, init_func=_init, frames=len(result["life_frames"]), interval=70, blit=True)
 
@@ -312,7 +357,7 @@ def _save_compare(output: str, left: dict, right: dict, left_name: str, right_na
     ax_left = axes[0, 0]
     ax_right = axes[0, 1]
     ax_lines = axes[1, 0]
-    ax_text = axes[1, 1]
+    ax_traj = axes[1, 1]
 
     heat_left = ax_left.imshow(left["life_frames"][0], cmap="viridis", vmin=0.0, vmax=1.0)
     heat_right = ax_right.imshow(right["life_frames"][0], cmap="viridis", vmin=0.0, vmax=1.0)
@@ -328,16 +373,21 @@ def _save_compare(output: str, left: dict, right: dict, left_name: str, right_na
     rr_v, = ax_lines.plot([], [], color="tab:blue", label=f"{right_name} vitality")
     ax_lines.legend(loc="upper right", fontsize=8)
 
-    ax_text.axis("off")
-    txt = ax_text.text(0.02, 0.98, "", va="top", family="monospace", fontsize=10)
+    ax_traj.set_title("Trajectories (X-Y)")
+    ax_traj.set_xlim(-1.1, 1.1)
+    ax_traj.set_ylim(-1.1, 1.1)
+    l_path, = ax_traj.plot([], [], color="tab:green", alpha=0.6, label=left_name)
+    r_path, = ax_traj.plot([], [], color="tab:blue", alpha=0.6, label=right_name)
+    ax_traj.legend(loc="upper right", fontsize=8)
 
     def _init():
         ll_m.set_data([], [])
         rr_m.set_data([], [])
         ll_v.set_data([], [])
         rr_v.set_data([], [])
-        txt.set_text("")
-        return (heat_left, heat_right, ll_m, rr_m, ll_v, rr_v, txt)
+        l_path.set_data([], [])
+        r_path.set_data([], [])
+        return (heat_left, heat_right, ll_m, rr_m, ll_v, rr_v, l_path, r_path)
 
     def _update(i: int):
         xs = list(range(i + 1))
@@ -347,12 +397,17 @@ def _save_compare(output: str, left: dict, right: dict, left_name: str, right_na
         rr_m.set_data(xs, right["mismatch_values"][: i + 1])
         ll_v.set_data(xs, left["vitality_values"][: i + 1])
         rr_v.set_data(xs, right["vitality_values"][: i + 1])
-        txt.set_text(
-            f"step={i}\n"
-            f"{left_name}: mismatch={left['mismatch_values'][i]:.4f} vitality={left['vitality_values'][i]:.4f}\n"
-            f"{right_name}: mismatch={right['mismatch_values'][i]:.4f} vitality={right['vitality_values'][i]:.4f}"
-        )
-        return (heat_left, heat_right, ll_m, rr_m, ll_v, rr_v, txt)
+        
+        if left["object_pos"]:
+            lpx = [p[0] for p in left["object_pos"][: i + 1]]
+            lpy = [p[1] for p in left["object_pos"][: i + 1]]
+            l_path.set_data(lpx, lpy)
+        if right["object_pos"]:
+            rpx = [p[0] for p in right["object_pos"][: i + 1]]
+            rpy = [p[1] for p in right["object_pos"][: i + 1]]
+            r_path.set_data(rpx, rpy)
+            
+        return (heat_left, heat_right, ll_m, rr_m, ll_v, rr_v, l_path, r_path)
 
     anim = animation.FuncAnimation(fig, _update, init_func=_init, frames=frames, interval=70, blit=True)
     ext = Path(output).suffix.lower()
@@ -573,6 +628,7 @@ def run(
     light_drift_x: float = 0.002,
     light_drift_y: float = 0.0,
     light_drift_z: float = 0.0,
+    metrics_out: str = "",
 ) -> None:
     try:
         import matplotlib.pyplot as _  # noqa: F401
@@ -613,6 +669,9 @@ def run(
     projection = torch.randn(cfg.signal_dim, control_dim, device=dev) * 0.3
     result = _simulate(model, cfg, world, initial_state, params, embodiment, projection, dev, seed_offset=seed)
     _save_single(output, result, f"Embodiment={embodiment} force={force_mode}")
+
+    if metrics_out:
+        _save_metrics(metrics_out, result)
 
     print(
         {
@@ -655,6 +714,8 @@ def compare(
     light_drift_x: float = 0.002,
     light_drift_y: float = 0.0,
     light_drift_z: float = 0.0,
+    metrics_left: str = "",
+    metrics_right: str = "",
 ) -> None:
     try:
         import matplotlib.pyplot as _  # noqa: F401
@@ -703,6 +764,12 @@ def compare(
     right_result = _simulate(right_model, right_cfg, world, initial_state, params, embodiment, projection, dev, seed_offset=seed)
 
     _save_compare(output, left_result, right_result, left_name="left", right_name="right")
+    
+    if metrics_left:
+        _save_metrics(metrics_left, left_result)
+    if metrics_right:
+        _save_metrics(metrics_right, right_result)
+
     print(
         {
             "visualization": output,
@@ -829,12 +896,17 @@ def storyboard(
                 primary_result,
                 title=f"{embodiment_name} | {scenario_name} | {_checkpoint_label(primary_ckpt)}",
             )
+            
+            # Save individual metrics for primary result
+            metrics_evo_name = f"{scenario_name}-{embodiment_name}-{_checkpoint_label(primary_ckpt)}-metrics.json"
+            _save_metrics(str(out_dir / metrics_evo_name), primary_result)
 
             item = {
                 "scenario": scenario_name,
                 "embodiment": embodiment_name,
                 "primary_checkpoint": primary_ckpt,
                 "evolution_gif": evo_path,
+                "evolution_metrics": str(out_dir / metrics_evo_name),
                 "final_mismatch": float(primary_result["mismatch_values"][-1]),
                 "final_vitality": float(primary_result["vitality_values"][-1]),
             }
@@ -855,9 +927,18 @@ def storyboard(
                     left_name=_checkpoint_label(left_ckpt),
                     right_name=_checkpoint_label(right_ckpt),
                 )
+                
+                # Save comparison metrics
+                metrics_left_name = f"{scenario_name}-{embodiment_name}-{_checkpoint_label(left_ckpt)}-compare-left-metrics.json"
+                metrics_right_name = f"{scenario_name}-{embodiment_name}-{_checkpoint_label(right_ckpt)}-compare-right-metrics.json"
+                _save_metrics(str(out_dir / metrics_left_name), left_result)
+                _save_metrics(str(out_dir / metrics_right_name), right_result)
+                
                 item["compare_gif"] = compare_path
                 item["compare_left_checkpoint"] = left_ckpt
                 item["compare_right_checkpoint"] = right_ckpt
+                item["compare_left_metrics"] = str(out_dir / metrics_left_name)
+                item["compare_right_metrics"] = str(out_dir / metrics_right_name)
                 item["compare_left_final_mismatch"] = float(left_result["mismatch_values"][-1])
                 item["compare_right_final_mismatch"] = float(right_result["mismatch_values"][-1])
             generated_artifacts.append(item)
