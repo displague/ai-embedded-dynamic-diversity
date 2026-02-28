@@ -72,6 +72,7 @@ def run(
     env["PYTHONPATH"] = "src"
 
     device_list = [x.strip() for x in device_pool.replace(";", ",").split(",") if x.strip()]
+    print({"info": "Parallel launcher started", "sys.executable": sys.executable})
 
     gating_modes = ["sigmoid", "symplectic"]
     topk_values = [0, 4]

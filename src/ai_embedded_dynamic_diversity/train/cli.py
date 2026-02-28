@@ -28,9 +28,18 @@ app = typer.Typer(add_completion=False)
 def choose_device(preferred: str, strict: bool = True) -> torch.device:
     normalized = preferred.strip().lower()
     if normalized == "cuda":
+        if not torch.cuda.is_available():
+            import os
+            import sys
+            print({"debug_child_env": {
+                "sys.executable": sys.executable,
+                "sys.path": sys.path[:5],
+                "PATH_prefix": os.environ.get("PATH", "")[:200],
+                "VIRTUAL_ENV": os.environ.get("VIRTUAL_ENV")
+            }})
         if torch.cuda.is_available():
             return torch.device("cuda")
-        if strict:
+
             raise typer.BadParameter(
                 "CUDA was requested but is unavailable in this environment. "
                 "Check that the active Python environment has a CUDA-enabled PyTorch build."
@@ -380,6 +389,7 @@ def run_gradient_epoch(
     mean_detection_loss = detection_loss_total / max(1, tcfg.unroll_steps)
     mean_emergent_signal_loss = emergent_signal_loss_total / max(1, tcfg.unroll_steps)
     mean_memory_persistence_loss = memory_persistence_loss_total / max(1, tcfg.unroll_steps)
+    mean_paging_loss = paging_loss_total / max(1, tcfg.unroll_steps)
     mean_autopoietic_score = autopoietic_score_total / max(1, tcfg.unroll_steps)
     mean_autopoietic_loss = autopoietic_loss_total / max(1, tcfg.unroll_steps)
     return (
@@ -391,6 +401,7 @@ def run_gradient_epoch(
         mean_detection_loss,
         mean_emergent_signal_loss,
         mean_memory_persistence_loss,
+        mean_paging_loss,
         mean_autopoietic_score,
         mean_autopoietic_loss,
     )
@@ -767,6 +778,9 @@ def run(
                 scaler=scaler if amp_enabled else None,
                 remap_loss_weight=remap_loss_weight,
                 detection_loss_weight=detection_loss_weight,
+                emergent_signal_loss_weight=emergent_signal_loss_weight,
+                memory_persistence_loss_weight=memory_persistence_loss_weight,
+                paging_loss_weight=paging_loss_weight,
                 enable_autopoietic_objective=enable_autopoietic_objective,
                 autopoietic_loss_weight=autopoietic_loss_weight,
                 autopoietic_self_repair_weight=autopoietic_self_repair_weight,

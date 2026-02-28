@@ -75,4 +75,5 @@ def loss_fn(
         "memory_persistence_loss": memory_persistence_loss.item(),
         "paging_loss": paging_loss.item(),
     }
+    return total, logs
 
