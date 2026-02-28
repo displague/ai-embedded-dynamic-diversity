@@ -346,6 +346,11 @@
 
 ## Agent Continuity And Handoff Infrastructure
 
+- Ran high-repeat validation (`runs_per_combo=12`, `steps=60`) for champion candidates using `bio-tech-v1` capability profile:
+  - `model-core-champion-v04.pt`: `0.54947` (Best overall score)
+  - `variant-01.pt`: `0.53897`
+  - `variant-00.pt`: `0.53341`
+  - Confirmed `model-core-champion-v04` retention as current research champion based on robust cross-embodiment capability and transfer.
 - Added modularized skill structure:
   - `skills/dynamic-diversity-research`: core embodiment and transfer research.
   - `skills/ai-convergence-research`: advanced convergence (universal constructor, pre-life, autopoiesis).
