@@ -1,57 +1,60 @@
 ---
 name: dynamic-diversity-research
-description: Continue and extend the AI Embedded Dynamic Diversity project using its PyTorch core, world simulator, training loop, and export pipeline. Use when asked to add experiments, improve robustness/efficiency, adapt anonymous I/O remapping, prepare Raspberry Pi 5 deployment, or maintain autonomous research workflows for this repository.
+description: Continue AI Embedded Dynamic Diversity work with low-context, reusable workflows across convergence, evaluation, visualization, and handoff.
 ---
 
 # Dynamic Diversity Research Skill
 
-Follow this workflow.
+## Use This Skill When
 
-1. Read `README.md` and map user request to one or more components:
-- `models/core.py`
-- `sim/world.py`
-- `sim/embodiments.py`
-- `sim/viz_cli.py`
-- `train/cli.py`
-- `deploy/cli.py`
-- `deploy/bench_cli.py`
-- `deploy/hil_cli.py`
+1. Extending convergence experiments (diversity/hardiness/replication/autopoiesis).
+2. Running or auditing cross-eval/cross-report promotion workflows.
+3. Producing or analyzing adaptation/storyboard visualization artifacts.
+4. Preparing multi-agent handoff packets and return-ready continuity updates.
 
-2. Preserve these core invariants unless user explicitly requests a change:
-- Keep sensor/actuator channels anonymous (no modality-specific hardcoding in the model core).
-- Keep both passive interpretation and active memory pathways.
-- Keep remap adaptation capability for channel reassignment.
-- Keep efficiency and robustness in objective tradeoffs.
+## Do Not Use This Skill When
 
-3. For model changes, update all impacted places in one pass:
-- `config.py` dataclasses
-- model forward signature and outputs
-- loss terms in `train/losses.py`
-- export inputs in `deploy/cli.py`
+1. Task is unrelated to this repository.
+2. User asks for general-purpose coding outside embodied convergence workflows.
 
-4. For simulator changes:
-- Maintain 3D state evolution over time.
-- Model at least one resource constraint and one stress/pressure field.
-- Keep observation encoding anonymous and fixed-size (`signal_dim`).
+## Core Invariants
 
-5. For Raspberry Pi 5 deployment work:
-- Prioritize smaller hidden dimensions, reduced memory slots, and stable ops supported by TorchScript/ONNX.
-- Prefer deterministic paths and avoid exotic custom ops.
-- Add or update a benchmark script before claiming improvements.
+1. Preserve anonymous sensor/actuator channel semantics.
+2. Preserve remap adaptation capability.
+3. Preserve cross-embodiment transfer priorities.
+4. Use promotion evidence from cross-eval artifacts, not training fitness alone.
+5. Keep context overhead low: load references on demand.
 
-6. Validate each non-trivial change:
-- Run a short train smoke test (1-2 epochs).
-- Run simulator rollout.
-- Run visualization smoke (short GIF generation) if remap/adaptation behavior changed.
-- Run at least one export command (TorchScript preferred first).
-- Run `add-bench` for edge-profile changes.
+## Minimal Startup Workflow
 
-7. Record experiment intent and outcomes in `references/experiment-log.md` as compact entries:
-- date
-- hypothesis
-- change
-- result
-- next action
+1. Read `AGENTS.md`.
+2. Read this `SKILL.md`.
+3. Load only one or two targeted references listed below.
+4. Execute task.
+5. Update continuity artifacts and handoff packet fields.
 
-Load `references/research-backlog.md` when user asks for roadmap prioritization.
-Update root `TODO.md` for goals and root `IMPLEMENTED.md` for delivered work and lessons learned.
+## Reference Loading (On Demand)
+
+Load only what matches the task:
+
+- `references/handoff-playbook.md`: lifecycle and packet practice.
+- `references/session-lessons-latest.md`: latest high-value learnings.
+- `references/lessons-common.md`: reusable patterns.
+- `references/lessons-unique.md`: edge-case patterns and caveats.
+- `references/experiment-log.md`: full chronology (heavy; load only when needed).
+- `references/research-backlog.md`: roadmap and prioritization.
+
+## Scripts And Assets
+
+- `scripts/validate_handoff_packet.py`: validate required packet fields.
+- `assets/handoff-packet-example.json`: starting packet example.
+
+## Required Continuity Updates For Non-Trivial Work
+
+1. Update `IMPLEMENTED.md` with shipped behavior and lessons.
+2. Update `TODO.md` for actionable next steps.
+3. Update relevant lesson reference files (common vs unique).
+4. Ensure handoff packet contains:
+- `lesson_tags`
+- `scenario_class`
+- `reference_subset_recommended`

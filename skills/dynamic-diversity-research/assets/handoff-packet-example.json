@@ -1,0 +1,54 @@
+{
+  "session_id": "20260228-1500-orchestrator-example",
+  "parent_session_id": "",
+  "agent_role": "orchestrator",
+  "timestamp_utc": "2026-02-28T20:00:00Z",
+  "state": "HANDOFF_READY",
+  "goal": "Continue convergence ratchet and storyboard updates with strict lifecycle handoff.",
+  "in_scope": [
+    "Cross-eval ratchet artifacts",
+    "Storyboard artifact updates",
+    "Report consistency checks"
+  ],
+  "out_of_scope": [
+    "Unrelated model architecture changes"
+  ],
+  "constraints": [
+    "Preserve anonymous-channel invariants",
+    "Use high-signal minimal context loading"
+  ],
+  "changes": [],
+  "validation": {
+    "commands": [],
+    "key_results": [],
+    "artifacts": []
+  },
+  "risks": [],
+  "assumptions": [],
+  "next_actions": [
+    "Run convergence cycle with configured thresholds.",
+    "Generate storyboard package for selected cycle.",
+    "Regenerate cross-report and verify cycle table consistency."
+  ],
+  "return_trigger": "Cycle complete with validated report+storyboard alignment.",
+  "return_trigger_status": "pending",
+  "lesson_tags": [
+    "convergence",
+    "viz",
+    "handoff"
+  ],
+  "scenario_class": "common",
+  "reusable_artifacts": [
+    "artifacts/convergence-ratchet-summary-*.json",
+    "artifacts/viz-storyboard-*/manifest.json"
+  ],
+  "portability_notes": [
+    "Packet schema is tool-agnostic and usable across codex/claude/opencode style subagents."
+  ],
+  "reference_subset_recommended": [
+    "AGENTS.md",
+    ".agents/subagent-convergence-operator.md",
+    "skills/dynamic-diversity-research/SKILL.md",
+    "skills/dynamic-diversity-research/references/session-lessons-latest.md"
+  ]
+}
