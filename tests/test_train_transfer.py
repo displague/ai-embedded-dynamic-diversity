@@ -12,6 +12,7 @@ from ai_embedded_dynamic_diversity.train.cli import (
     _autopoietic_step_score,
     _apply_observation_noise,
     _build_transfer_states,
+    _capability_guardrail_penalty,
     _inject_force_curriculum_controls,
     _parse_init_weights_cycle,
     _resolve_embodiments,
@@ -154,3 +155,9 @@ def test_autopoietic_step_score_in_range() -> None:
     )
     assert score.ndim == 0
     assert 0.0 <= float(score.item()) <= 1.0
+
+
+def test_capability_guardrail_penalty_applies_only_on_deficit() -> None:
+    assert _capability_guardrail_penalty(0.7, 0.4, 0.55, 0.28, 0.25) == 0.0
+    penalty = _capability_guardrail_penalty(0.2, 0.1, 0.55, 0.28, 0.25)
+    assert penalty == pytest.approx(0.1325)

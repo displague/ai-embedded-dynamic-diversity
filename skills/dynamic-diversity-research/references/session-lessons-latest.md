@@ -15,10 +15,11 @@ Date: 2026-03-01
 9. **Shared-environment 1200-generation retrain (v03)** completed with all five embodiments in `large_v1_extreme`, seeded from leading checkpoints; this improved weighted transfer but reduced blended capability score.
 10. **Failure mode identified:** transfer gains can hide capability collapse when `signal_reliability` and `conjoining_gain` decay under aggressive objective weighting.
 11. **Storyboard evidence expanded** with 30 compare GIFs + montage (`artifacts/viz-storyboard-v07-v03-calib-large-v1`) showing strongest v03 regressions in `latency-storm/storm` for `hexapod`, `car`, and `drone`.
+12. **Capability guardrail controls implemented** in coevolution selection with floor-based penalties and per-generation proxy telemetry (`mean_signal_reliability`, `mean_conjoining_gain`).
 
 ## Immediate Handoff Continuation
 
-1. Add capability-preserving guardrails in coevolution (explicit floors/penalties for `signal_reliability` and `conjoining_gain`) and rerun a constrained shared-environment training cycle.
+1. Tune capability guardrail thresholds/weights and rerun a constrained shared-environment cycle to recover capability while preserving transfer.
 2. Add periodic capability probe checkpoints during training and terminate/ratchet when capability decays while transfer rises.
 3. Run targeted curriculum pass for `latency-storm` and `storm` (especially `hexapod`, `car`, `drone`) before next 1200-generation promotion attempt.
 

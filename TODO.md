@@ -70,7 +70,7 @@
 - [x] Add world-state latent rollouts and consistency checks (short-horizon imagination vs simulated truth) for environment harness validation.
 - [ ] Add contact-rich locomotion/manipulation stress suites (uneven terrain, slips, perturbation recovery) with deterministic seed bundles.
 - [x] Add scenario-level domain randomization manifests (sensor latency/dropout/fault envelopes) and keep cross-eval world profile parity checks.
-- [ ] Add capability-preserving training guardrails for coevolution (floor constraints or adaptive penalties on `signal_reliability` and `conjoining_gain`) to prevent transfer-only overfitting.
+- [x] Add capability-preserving training guardrails for coevolution (floor constraints or adaptive penalties on `signal_reliability` and `conjoining_gain`) to prevent transfer-only overfitting.
 - [ ] Add periodic in-training capability probes (small fixed eval bundle every N generations) and early-stop/ratchet triggers when capability drops while transfer rises.
 - [ ] Add scenario-targeted remediation curriculum for `latency-storm` and `storm` in `hexapod/car/drone` where `v03` regressed vs `v07` in storyboard deltas.
 

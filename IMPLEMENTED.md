@@ -3,6 +3,13 @@
 ## Completed
 
 - Added coevolution warm-start cycling via `--init-weights-cycle` (multi-checkpoint seeding with dedupe + compatibility guards) so leading models can co-train in the same run before mutation expansion.
+- Added coevolution capability guardrails to reduce transfer-only overfitting:
+  - `--enable-capability-guardrail`
+  - `--signal-reliability-floor`
+  - `--conjoining-gain-floor`
+  - `--capability-guardrail-penalty-weight`
+  - coevolution selection now supports penalty-adjusted fitness when capability proxies fall below configured floors.
+- Added in-training capability proxy logging (`mean_signal_reliability`, `mean_conjoining_gain`) per epoch/generation and in metrics artifacts for faster collapse detection.
 - Ran a shared-environment 1200-generation extreme coevolution cycle with all five embodiments (`hexapod,car,drone,polymorph120,humanoid120`) in `large_v1_extreme`:
   - checkpoint: `artifacts/model-core-coevo-1200-shared-extreme-v03.pt`
   - metrics: `artifacts/model-core-coevo-1200-shared-extreme-v03.metrics.json`

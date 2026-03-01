@@ -239,6 +239,36 @@ def _autopoietic_step_score(
     ) / denom
 
 
+def _capability_step_proxies(
+    out: dict[str, torch.Tensor],
+    state,
+    target_signal_type: torch.Tensor | None,
+) -> tuple[float, float]:
+    signal_reliability = 0.0
+    if target_signal_type is not None and "predicted_signal_type" in out:
+        pred = torch.argmax(out["predicted_signal_type"], dim=1)
+        signal_reliability = float((pred == target_signal_type).float().mean().item())
+    resource_mean = float(torch.mean(state.resources[:, :1]).item())
+    vitality_mean = float(torch.mean(state.life).item())
+    stress_mean = float(torch.mean(state.stress).item())
+    conjoining_gain = float(torch.sigmoid(torch.tensor(4.0 * resource_mean * vitality_mean - 1.5 * stress_mean)).item())
+    return signal_reliability, conjoining_gain
+
+
+def _capability_guardrail_penalty(
+    signal_reliability: float,
+    conjoining_gain: float,
+    signal_reliability_floor: float,
+    conjoining_gain_floor: float,
+    penalty_weight: float,
+) -> float:
+    if penalty_weight <= 0.0:
+        return 0.0
+    signal_deficit = max(0.0, signal_reliability_floor - signal_reliability)
+    conjoining_deficit = max(0.0, conjoining_gain_floor - conjoining_gain)
+    return penalty_weight * (signal_deficit + conjoining_deficit)
+
+
 def run_gradient_epoch(
     model: ModelCore,
     world: DynamicDiversityWorld,
@@ -271,7 +301,7 @@ def run_gradient_epoch(
     paging_loss_weight: float = 0.01,
     force_curriculum_mode: str = "none",
     force_curriculum_strength: float = 0.0,
-) -> tuple[float, torch.Tensor, float, float, float, float, float, float, float, float, float]:
+) -> tuple[float, torch.Tensor, float, float, float, float, float, float, float, float, float, float, float]:
     state = world.init(tcfg.batch_size)
     if genetic_memory is None:
         memory = model.init_memory(tcfg.batch_size, mcfg.memory_slots, mcfg.memory_dim, dev)
@@ -288,6 +318,8 @@ def run_gradient_epoch(
     paging_loss_total = 0.0
     autopoietic_score_total = 0.0
     autopoietic_loss_total = 0.0
+    signal_reliability_total = 0.0
+    conjoining_gain_total = 0.0
     amp_enabled = use_amp and dev.type == "cuda"
     amp_dtype = torch.bfloat16 if dev.type == "cuda" and torch.cuda.is_bf16_supported() else torch.float16
     
@@ -388,6 +420,13 @@ def run_gradient_epoch(
                 step_index=step_index,
             )
             state = world.step(state, action_field, controls)
+            signal_reliability_step, conjoining_gain_step = _capability_step_proxies(
+                out=out,
+                state=state,
+                target_signal_type=target_signal_type,
+            )
+            signal_reliability_total += signal_reliability_step
+            conjoining_gain_total += conjoining_gain_step
 
         if scaler is not None:
             scaler.scale(total_loss).backward()
@@ -414,6 +453,8 @@ def run_gradient_epoch(
     mean_paging_loss = paging_loss_total / max(1, tcfg.unroll_steps)
     mean_autopoietic_score = autopoietic_score_total / max(1, tcfg.unroll_steps)
     mean_autopoietic_loss = autopoietic_loss_total / max(1, tcfg.unroll_steps)
+    mean_signal_reliability = signal_reliability_total / max(1, tcfg.unroll_steps)
+    mean_conjoining_gain = conjoining_gain_total / max(1, tcfg.unroll_steps)
     final_memory = memory.mean(dim=0, keepdim=True).detach()
     
     return (
@@ -428,6 +469,8 @@ def run_gradient_epoch(
         mean_paging_loss,
         mean_autopoietic_score,
         mean_autopoietic_loss,
+        mean_signal_reliability,
+        mean_conjoining_gain,
     )
 
 
@@ -599,6 +642,10 @@ def run(
     mutation_std: float = 0.01,
     enable_adaptive_loss: bool = False,
     adaptive_loss_alpha: float = 0.1,
+    enable_capability_guardrail: bool = False,
+    signal_reliability_floor: float = 0.55,
+    conjoining_gain_floor: float = 0.28,
+    capability_guardrail_penalty_weight: float = 0.25,
     enable_curriculum: bool = False,
     curriculum_power: float = 1.0,
     remap_probability_start: float = 0.1,
@@ -678,6 +725,12 @@ def run(
         raise typer.BadParameter("autopoietic_fitness_gain must be >= 0.0")
     if remap_loss_weight < 0.0:
         raise typer.BadParameter("remap_loss_weight must be >= 0.0")
+    if signal_reliability_floor < 0.0 or signal_reliability_floor > 1.0:
+        raise typer.BadParameter("signal_reliability_floor must be in [0.0, 1.0]")
+    if conjoining_gain_floor < 0.0 or conjoining_gain_floor > 1.0:
+        raise typer.BadParameter("conjoining_gain_floor must be in [0.0, 1.0]")
+    if capability_guardrail_penalty_weight < 0.0:
+        raise typer.BadParameter("capability_guardrail_penalty_weight must be >= 0.0")
 
     dev = choose_device(tcfg.device, strict=strict_device)
     if dev.type == "cuda":
@@ -756,6 +809,10 @@ def run(
         "curriculum_power": curriculum_power,
         "enable_adaptive_loss": enable_adaptive_loss,
         "adaptive_loss_alpha": adaptive_loss_alpha,
+        "enable_capability_guardrail": enable_capability_guardrail,
+        "signal_reliability_floor": signal_reliability_floor,
+        "conjoining_gain_floor": conjoining_gain_floor,
+        "capability_guardrail_penalty_weight": capability_guardrail_penalty_weight,
         "enable_genetic_memory": enable_genetic_memory,
         "genetic_memory_decay": genetic_memory_decay,
         "embodiments": embodiment_names,
@@ -867,6 +924,8 @@ def run(
                 mean_paging_loss,
                 mean_autopoietic_score,
                 mean_autopoietic_loss,
+                mean_signal_reliability,
+                mean_conjoining_gain,
             ) = run_gradient_epoch(
                 model,
                 world,
@@ -951,6 +1010,8 @@ def run(
                     "mean_paging_loss": mean_paging_loss,
                     "mean_autopoietic_score": mean_autopoietic_score,
                     "autopoietic_loss_component": mean_autopoietic_loss,
+                    "mean_signal_reliability": mean_signal_reliability,
+                    "mean_conjoining_gain": mean_conjoining_gain,
                     "remap_probability": remap_probability,
                     "env_volatility": env_volatility,
                     "noise_strength": noise_strength,
@@ -973,6 +1034,8 @@ def run(
                     "mean_paging_loss": mean_paging_loss,
                     "mean_autopoietic_score": mean_autopoietic_score,
                     "autopoietic_loss_component": mean_autopoietic_loss,
+                    "mean_signal_reliability": mean_signal_reliability,
+                    "mean_conjoining_gain": mean_conjoining_gain,
                     "device": str(dev),
                     "profile": profile,
                     "remap_probability": remap_probability,
@@ -1101,6 +1164,10 @@ def run(
         mean_memory_persistence_loss_acc = 0.0
         mean_paging_loss_acc = 0.0
         mean_epoch_loss_acc = 0.0
+        mean_signal_reliability_acc = 0.0
+        mean_conjoining_gain_acc = 0.0
+        agent_signal_reliability: list[float] = []
+        agent_conjoining_gain: list[float] = []
 
         for idx, model in enumerate(pop):
             model.train()
@@ -1116,6 +1183,8 @@ def run(
                 mean_paging_loss,
                 mean_autopoietic_score,
                 mean_autopoietic_loss,
+                mean_signal_reliability,
+                mean_conjoining_gain,
             ) = run_gradient_epoch(
                 model,
                 world,
@@ -1155,6 +1224,10 @@ def run(
             mean_memory_persistence_loss_acc += mean_memory_persistence_loss
             mean_paging_loss_acc += mean_paging_loss
             mean_epoch_loss_acc += warmup_loss
+            mean_signal_reliability_acc += mean_signal_reliability
+            mean_conjoining_gain_acc += mean_conjoining_gain
+            agent_signal_reliability.append(mean_signal_reliability)
+            agent_conjoining_gain.append(mean_conjoining_gain)
 
             print(
                 {
@@ -1169,6 +1242,8 @@ def run(
                     "mean_paging_loss": mean_paging_loss,
                     "mean_autopoietic_score": mean_autopoietic_score,
                     "autopoietic_loss_component": mean_autopoietic_loss,
+                    "mean_signal_reliability": mean_signal_reliability,
+                    "mean_conjoining_gain": mean_conjoining_gain,
                     "remap_probability": remap_probability,
                     "env_volatility": env_volatility,
                     "noise_strength": noise_strength,
@@ -1191,8 +1266,10 @@ def run(
             memory_persistence_loss_weight = new_weights["memory_persistence_loss_weight"]
             paging_loss_weight = new_weights["paging_loss_weight"]
 
-        scores = [
-            evaluate_fitness(
+        scores: list[float] = []
+        score_penalties: list[float] = []
+        for idx, model in enumerate(pop):
+            raw_score = evaluate_fitness(
                 model,
                 world,
                 mcfg,
@@ -1212,8 +1289,17 @@ def run(
                 force_curriculum_mode=force_curriculum_mode_resolved,
                 force_curriculum_strength=force_curriculum_strength,
             )
-            for idx, model in enumerate(pop)
-        ]
+            penalty = 0.0
+            if enable_capability_guardrail:
+                penalty = _capability_guardrail_penalty(
+                    signal_reliability=agent_signal_reliability[idx],
+                    conjoining_gain=agent_conjoining_gain[idx],
+                    signal_reliability_floor=signal_reliability_floor,
+                    conjoining_gain_floor=conjoining_gain_floor,
+                    penalty_weight=capability_guardrail_penalty_weight,
+                )
+            scores.append(raw_score - penalty)
+            score_penalties.append(penalty)
         rank = sorted(range(len(pop)), key=lambda i: scores[i], reverse=True)
         elites = rank[:elite_count]
         best_idx = elites[0]
@@ -1222,6 +1308,9 @@ def run(
             "best_agent": best_idx, 
             "best_fitness": scores[best_idx], 
             "mean_fitness": sum(scores) / len(scores),
+            "best_fitness_penalty": score_penalties[best_idx] if score_penalties else 0.0,
+            "mean_signal_reliability": mean_signal_reliability_acc / max(1, len(pop)),
+            "mean_conjoining_gain": mean_conjoining_gain_acc / max(1, len(pop)),
             "remap_loss_w": round(remap_loss_weight, 4),
             "detect_loss_w": round(detection_loss_weight, 4),
         })
@@ -1231,8 +1320,11 @@ def run(
                 "best_agent": best_idx,
                 "best_fitness": scores[best_idx],
                 "mean_fitness": sum(scores) / len(scores),
+                "best_fitness_penalty": score_penalties[best_idx] if score_penalties else 0.0,
                 "mean_step_ms": mean_step_acc / max(1, len(pop)),
                 "mean_transfer_mismatch": mean_transfer_mismatch_acc / max(1, len(pop)),
+                "mean_signal_reliability": mean_signal_reliability_acc / max(1, len(pop)),
+                "mean_conjoining_gain": mean_conjoining_gain_acc / max(1, len(pop)),
                 "remap_probability": remap_probability,
                 "env_volatility": env_volatility,
                 "noise_strength": noise_strength,
