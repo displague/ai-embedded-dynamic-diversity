@@ -1,9 +1,11 @@
 # TODO
 
 ## High Priority
-
 - [x] Run long-form RTX 5080 training sweep with curriculum schedules across `hexapod`, `car`, and `drone` embodiment mappings.
+- [x] Develop adaptive loss-weighting controller to prevent signaling collapse.
+- [ ] Produce a 1200-gen champion after autopoietic optimizations (running: `artifacts/parallel-extreme-v02`).
 - [x] Run `add-train-parallel` on RTX 5080 with 6-8 variants and compare fitness/logs in `artifacts/parallel/summary.json`.
+
 - [x] Capture and compare side-by-side adaptation visualizations for baseline vs co-evolution checkpoints.
 - [x] Add cross-embodiment transfer ranking (`add-cross-eval`) over `hexapod`, `car`, and `drone`.
 - [x] Add cross-eval report generation (`add-cross-report`) with rank/delta outputs.

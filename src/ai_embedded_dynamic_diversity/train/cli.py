@@ -21,6 +21,7 @@ from ai_embedded_dynamic_diversity.sim.signaling import SignalingWorld
 from ai_embedded_dynamic_diversity.train.losses import loss_fn
 from ai_embedded_dynamic_diversity.train.quantization import prepare_qat_model
 from ai_embedded_dynamic_diversity.models.memory_bank import GeneticMemoryBank
+from ai_embedded_dynamic_diversity.train.curriculum import AdaptiveLossController
 
 app = typer.Typer(add_completion=False)
 
@@ -40,6 +41,7 @@ def choose_device(preferred: str, strict: bool = True) -> torch.device:
         if torch.cuda.is_available():
             return torch.device("cuda")
 
+        if strict:
             raise typer.BadParameter(
                 "CUDA was requested but is unavailable in this environment. "
                 "Check that the active Python environment has a CUDA-enabled PyTorch build."
@@ -282,6 +284,7 @@ def run_gradient_epoch(
     autopoietic_loss_total = 0.0
     amp_enabled = use_amp and dev.type == "cuda"
     amp_dtype = torch.bfloat16 if dev.type == "cuda" and torch.cuda.is_bf16_supported() else torch.float16
+    
     for step_index in range(tcfg.unroll_steps):
         t0 = time.perf_counter()
         opt.zero_grad(set_to_none=True)
@@ -294,7 +297,7 @@ def run_gradient_epoch(
             else:
                 obs = world.encode_observation(state, signal_dim=mcfg.signal_dim)
             
-            clean_obs = obs # For target recon, we'll use same obs for now or world.encode_observation(state)
+            clean_obs = obs 
             
             obs = _apply_observation_noise(
                 obs,
@@ -338,6 +341,7 @@ def run_gradient_epoch(
             emergent_signal_loss_total += logs["emergent_signal_loss"]
             memory_persistence_loss_total += logs["memory_persistence_loss"]
             paging_loss_total += logs["paging_loss"]
+            
             transfer_mismatch = 0.0
             transfer_loss_tensor = out["io"].new_zeros(())
             if transfer_states and transfer_loss_weight > 0.0:
@@ -350,6 +354,7 @@ def run_gradient_epoch(
                     sample_count=transfer_samples_per_step,
                     remap_probability=remap_probability,
                 )
+            
             total_loss = base_loss + transfer_loss_weight * transfer_loss_tensor
             if enable_autopoietic_objective and autopoietic_loss_weight > 0.0:
                 autopoietic_score_t = _autopoietic_step_score(
@@ -363,6 +368,7 @@ def run_gradient_epoch(
                 total_loss = total_loss + autopoietic_loss_weight * autopoietic_loss_t
                 autopoietic_score_total += float(autopoietic_score_t.detach().item())
                 autopoietic_loss_total += float(autopoietic_loss_t.detach().item())
+            
             transfer_mismatch_total += transfer_mismatch
 
             # Apply actions to world
@@ -396,6 +402,7 @@ def run_gradient_epoch(
     mean_autopoietic_score = autopoietic_score_total / max(1, tcfg.unroll_steps)
     mean_autopoietic_loss = autopoietic_loss_total / max(1, tcfg.unroll_steps)
     final_memory = memory.mean(dim=0, keepdim=True).detach()
+    
     return (
         epoch_loss / max(1, tcfg.unroll_steps),
         final_memory,
@@ -556,6 +563,8 @@ def run(
     population_size: int = 4,
     elite_fraction: float = 0.5,
     mutation_std: float = 0.01,
+    enable_adaptive_loss: bool = False,
+    adaptive_loss_alpha: float = 0.1,
     enable_curriculum: bool = False,
     curriculum_power: float = 1.0,
     remap_probability_start: float = 0.1,
@@ -680,6 +689,9 @@ def run(
         "enable_qat": enable_qat,
         "coevolution": coevolution,
         "enable_curriculum": enable_curriculum,
+        "curriculum_power": curriculum_power,
+        "enable_adaptive_loss": enable_adaptive_loss,
+        "adaptive_loss_alpha": adaptive_loss_alpha,
         "enable_genetic_memory": enable_genetic_memory,
         "genetic_memory_decay": genetic_memory_decay,
         "embodiments": embodiment_names,
@@ -735,19 +747,34 @@ def run(
             if embodiment_names
             else None
         )
+        
+        controller = None
+        if enable_adaptive_loss:
+            controller = AdaptiveLossController(
+                initial_weights={
+                    "remap_loss_weight": remap_loss_weight,
+                    "detection_loss_weight": detection_loss_weight,
+                    "emergent_signal_loss_weight": emergent_signal_loss_weight,
+                    "memory_persistence_loss_weight": memory_persistence_loss_weight,
+                    "paging_loss_weight": paging_loss_weight,
+                },
+                alpha=adaptive_loss_alpha
+            )
+
         for epoch in range(tcfg.epochs):
             if enable_curriculum:
-                remap_probability = _lin_schedule(remap_probability_start, remap_probability_end, epoch)
-                env_volatility = _lin_schedule(env_volatility_start, env_volatility_end, epoch)
+                remap_probability = _lin_schedule(remap_probability_start, remap_probability_end, epoch, power=curriculum_power)
+                env_volatility = _lin_schedule(env_volatility_start, env_volatility_end, epoch, power=curriculum_power)
             else:
                 remap_probability = tcfg.remap_probability
                 env_volatility = 0.0
             if noise_profile_resolved == "none":
                 noise_strength = 0.0
             elif enable_noise_curriculum:
-                noise_strength = _lin_schedule(noise_strength_start, noise_strength_end, epoch)
+                noise_strength = _lin_schedule(noise_strength_start, noise_strength_end, epoch, power=curriculum_power)
             else:
                 noise_strength = noise_strength_end
+            
             (
                 mean_loss,
                 memory_snapshot,
@@ -762,7 +789,6 @@ def run(
                 mean_autopoietic_loss,
             ) = run_gradient_epoch(
                 model,
-
                 world,
                 mcfg,
                 tcfg,
@@ -791,6 +817,22 @@ def run(
                 autopoietic_closure_weight=autopoietic_closure_weight,
                 autopoietic_resource_cycle_weight=autopoietic_resource_cycle_weight,
             )
+            
+            if controller:
+                new_weights = controller.step({
+                    "loss": mean_loss,
+                    "remap_loss": mean_remap_loss,
+                    "detection_loss": mean_detection_loss,
+                    "emergent_signal_loss": mean_emergent_signal_loss,
+                    "memory_persistence_loss": mean_memory_persistence_loss,
+                    "paging_loss": mean_paging_loss,
+                })
+                remap_loss_weight = new_weights["remap_loss_weight"]
+                detection_loss_weight = new_weights["detection_loss_weight"]
+                emergent_signal_loss_weight = new_weights["emergent_signal_loss_weight"]
+                memory_persistence_loss_weight = new_weights["memory_persistence_loss_weight"]
+                paging_loss_weight = new_weights["paging_loss_weight"]
+
             if genetic_memory is not None:
                 genetic_memory = genetic_memory_decay * genetic_memory + (1.0 - genetic_memory_decay) * memory_snapshot
             fitness = evaluate_fitness(
@@ -828,6 +870,8 @@ def run(
                     "remap_probability": remap_probability,
                     "env_volatility": env_volatility,
                     "noise_strength": noise_strength,
+                    "remap_loss_weight": remap_loss_weight,
+                    "detection_loss_weight": detection_loss_weight,
                 }
             )
             print(
@@ -850,6 +894,8 @@ def run(
                     "env_volatility": env_volatility,
                     "noise_profile": noise_profile_resolved,
                     "noise_strength": noise_strength,
+                    "remap_loss_w": round(remap_loss_weight, 4),
+                    "detect_loss_w": round(detection_loss_weight, 4),
                 }
             )
         
@@ -896,22 +942,44 @@ def run(
         if embodiment_names
         else [None for _ in pop]
     )
+    
+    controller = None
+    if enable_adaptive_loss:
+        controller = AdaptiveLossController(
+            initial_weights={
+                "remap_loss_weight": remap_loss_weight,
+                "detection_loss_weight": detection_loss_weight,
+                "emergent_signal_loss_weight": emergent_signal_loss_weight,
+                "memory_persistence_loss_weight": memory_persistence_loss_weight,
+                "paging_loss_weight": paging_loss_weight,
+            },
+            alpha=adaptive_loss_alpha
+        )
+
     elite_count = max(1, int(population_size * elite_fraction))
     for generation in range(tcfg.epochs):
         if enable_curriculum:
-            remap_probability = _lin_schedule(remap_probability_start, remap_probability_end, generation)
-            env_volatility = _lin_schedule(env_volatility_start, env_volatility_end, generation)
+            remap_probability = _lin_schedule(remap_probability_start, remap_probability_end, generation, power=curriculum_power)
+            env_volatility = _lin_schedule(env_volatility_start, env_volatility_end, generation, power=curriculum_power)
         else:
             remap_probability = tcfg.remap_probability
             env_volatility = 0.0
         if noise_profile_resolved == "none":
             noise_strength = 0.0
         elif enable_noise_curriculum:
-            noise_strength = _lin_schedule(noise_strength_start, noise_strength_end, generation)
+            noise_strength = _lin_schedule(noise_strength_start, noise_strength_end, generation, power=curriculum_power)
         else:
             noise_strength = noise_strength_end
+        
         mean_step_acc = 0.0
         mean_transfer_mismatch_acc = 0.0
+        mean_remap_loss_acc = 0.0
+        mean_detection_loss_acc = 0.0
+        mean_emergent_signal_loss_acc = 0.0
+        mean_memory_persistence_loss_acc = 0.0
+        mean_paging_loss_acc = 0.0
+        mean_epoch_loss_acc = 0.0
+
         for idx, model in enumerate(pop):
             model.train()
             (
@@ -957,6 +1025,13 @@ def run(
             )
             mean_step_acc += step_ms
             mean_transfer_mismatch_acc += mean_transfer_mismatch
+            mean_remap_loss_acc += mean_remap_loss
+            mean_detection_loss_acc += mean_detection_loss
+            mean_emergent_signal_loss_acc += mean_emergent_signal_loss
+            mean_memory_persistence_loss_acc += mean_memory_persistence_loss
+            mean_paging_loss_acc += mean_paging_loss
+            mean_epoch_loss_acc += warmup_loss
+
             print(
                 {
                     "generation": generation + 1,
@@ -975,6 +1050,21 @@ def run(
                     "noise_strength": noise_strength,
                 }
             )
+
+        if controller:
+            new_weights = controller.step({
+                "loss": mean_epoch_loss_acc / population_size,
+                "remap_loss": mean_remap_loss_acc / population_size,
+                "detection_loss": mean_detection_loss_acc / population_size,
+                "emergent_signal_loss": mean_emergent_signal_loss_acc / population_size,
+                "memory_persistence_loss": mean_memory_persistence_loss_acc / population_size,
+                "paging_loss": mean_paging_loss_acc / population_size,
+            })
+            remap_loss_weight = new_weights["remap_loss_weight"]
+            detection_loss_weight = new_weights["detection_loss_weight"]
+            emergent_signal_loss_weight = new_weights["emergent_signal_loss_weight"]
+            memory_persistence_loss_weight = new_weights["memory_persistence_loss_weight"]
+            paging_loss_weight = new_weights["paging_loss_weight"]
 
         scores = [
             evaluate_fitness(
@@ -1000,7 +1090,14 @@ def run(
         rank = sorted(range(len(pop)), key=lambda i: scores[i], reverse=True)
         elites = rank[:elite_count]
         best_idx = elites[0]
-        print({"generation": generation + 1, "best_agent": best_idx, "best_fitness": scores[best_idx], "mean_fitness": sum(scores) / len(scores)})
+        print({
+            "generation": generation + 1, 
+            "best_agent": best_idx, 
+            "best_fitness": scores[best_idx], 
+            "mean_fitness": sum(scores) / len(scores),
+            "remap_loss_w": round(remap_loss_weight, 4),
+            "detect_loss_w": round(detection_loss_weight, 4),
+        })
         metrics_records.append(
             {
                 "generation": generation + 1,
@@ -1012,6 +1109,8 @@ def run(
                 "remap_probability": remap_probability,
                 "env_volatility": env_volatility,
                 "noise_strength": noise_strength,
+                "remap_loss_weight": remap_loss_weight,
+                "detection_loss_weight": detection_loss_weight,
             }
         )
 

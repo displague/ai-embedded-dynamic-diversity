@@ -365,6 +365,10 @@
   - Added `batch-force` command to automate rendering across all supported stress modes (poke, press, push, etc.).
   - Integrated metric export (JSON/CSV) for all simulation runs via `--metrics-out`.
   - Added 2D object trajectory (X-Y) overlays to visualization plots for better path analysis.
+- Implemented **Adaptive Loss-Weighting Controller** (`train/curriculum.py`):
+  - Dynamically balances optimization pressure across reconstruction, detection, remap, and signaling tracks.
+  - Automatically increases weights for "under-pressured" tracks to prevent behavioral collapse during long-horizon coevolution.
+  - Integrated into both standard and coevolution training loops in `train/cli.py`.
 - Added I2C hardware-in-the-loop (HIL) abstraction (`deploy/io_adapter.py`) with:
   - `I2CTransport` stub for low-level bus communication.
   - `I2CAdapter` for bridging `ModelCore` with physical I2C sensors and actuators.
