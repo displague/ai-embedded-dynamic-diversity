@@ -34,6 +34,9 @@ def run(
     prelife_enabled = prelife_profile != "none"
     prelife_score_weight = float(cfg.get("prelife_score_weight", 0.0))
     autopoiesis_score_weight = float(cfg.get("autopoiesis_score_weight", 0.0))
+    humanoid_compliance_enabled = bool(cfg.get("enable_humanoid_compliance", False))
+    humanoid_compliance_embodiment = str(cfg.get("humanoid_embodiment_name", "humanoid120")).strip().lower()
+    humanoid_compliance_profile = str(cfg.get("humanoid_compliance_profile", "human_rigid_v1")).strip().lower()
     noise_profile = str(cfg.get("noise_profile", "none")).strip().lower()
     ratchet = payload.get("ratchet", {}) if isinstance(payload.get("ratchet", {}), dict) else {}
     ratchet_cycles = ratchet.get("cycles", []) if isinstance(ratchet.get("cycles", []), list) else []
@@ -74,6 +77,8 @@ def run(
             "overall_transfer_score_calibrated_large": float(item.get("overall_transfer_score_calibrated_large", transfer_weighted)),
             "sim_optimism_gap": float(item.get("sim_optimism_gap", 0.0)),
             "ranking_component_optimism_penalty": float(item.get("ranking_component_optimism_penalty", 0.0)),
+            "humanoid_compliance_score": float(item.get("humanoid_compliance", {}).get("overall_score", 0.0)),
+            "humanoid_compliance_pass": bool(item.get("humanoid_compliance", {}).get("pass", False)),
             "checkmate_pass_all": bool(item.get("checkmate_pass_all", False)),
             "checkmate_pass_heldout": bool(item.get("checkmate_pass_heldout", False)),
             "checkmate_min_effectiveness": float(item.get("checkmate_min_effectiveness", 0.0)),
@@ -118,6 +123,9 @@ def run(
                 row[f"{emb}_evasion_success"] = emb_stats.get("evasion_success", 0.0)
                 row[f"{emb}_mimicry_reliability"] = emb_stats.get("mimicry_reliability", 0.0)
                 row[f"{emb}_conjoining_gain"] = emb_stats.get("conjoining_gain", 0.0)
+            if humanoid_compliance_enabled and emb == humanoid_compliance_embodiment:
+                row[f"{emb}_humanoid_compliance_score"] = emb_stats.get("humanoid_compliance_score", 0.0)
+                row[f"{emb}_humanoid_compliance_pass"] = emb_stats.get("humanoid_compliance_pass", False)
         rows.append(row)
 
     Path(csv_out).parent.mkdir(parents=True, exist_ok=True)
@@ -154,6 +162,10 @@ def run(
         md_lines.append("")
     md_lines.append(f"Autopoiesis score weight: `{autopoiesis_score_weight}`")
     md_lines.append("")
+    if humanoid_compliance_enabled:
+        md_lines.append(f"Humanoid compliance profile: `{humanoid_compliance_profile}`")
+        md_lines.append(f"Humanoid compliance embodiment: `{humanoid_compliance_embodiment}`")
+        md_lines.append("")
     if ratchet.get("enabled", False):
         md_lines.append("Convergence ratchet: `enabled`")
         md_lines.append(f"Ratchet stop reason: `{ratchet.get('stop_reason', 'unknown')}`")
@@ -241,6 +253,18 @@ def run(
             "| "
             + f"{row['rank']} | `{row['checkpoint']}` | {row['symbio_gate_pass']} | {row['autopoiesis_gate_pass']} | {row['optimism_gate_pass']} | {row['convergence_gate_pass']} | {row['promotion_eligible']} |"
         )
+
+    if humanoid_compliance_enabled:
+        md_lines.append("")
+        md_lines.append("## Humanoid Compliance (Top 10)")
+        md_lines.append("")
+        md_lines.append("| Rank | Checkpoint | Compliance Score | Compliance Pass |")
+        md_lines.append("|---|---|---:|---|")
+        for row in rows[:10]:
+            md_lines.append(
+                "| "
+                + f"{row['rank']} | `{row['checkpoint']}` | {_fmt(float(row.get('humanoid_compliance_score', 0.0)))} | {bool(row.get('humanoid_compliance_pass', False))} |"
+            )
 
     if ratchet_cycles:
         md_lines.append("")

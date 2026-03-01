@@ -17,6 +17,7 @@ from ai_embedded_dynamic_diversity.train.cross_eval_cli import (
     _resolve_prelife_profile,
     _resolve_prelife_seeds,
     _resolve_noise_profile,
+    _resolve_humanoid_embodiment_name,
     _resolve_subset_embodiments,
     _resolve_train_embodiments,
     _resolve_scenario_profile,
@@ -26,6 +27,7 @@ from ai_embedded_dynamic_diversity.train.cross_eval_cli import (
     compute_recovery_score,
     rollout_metrics,
 )
+from ai_embedded_dynamic_diversity.sim.humanoid_compliance import resolve_humanoid_compliance_profile
 
 
 def test_compute_recovery_score_detects_post_remap_improvement() -> None:
@@ -326,3 +328,10 @@ def test_build_convergence_threshold_payload_custom_ratchet_steps() -> None:
 
 def test_cycle_output_path_suffixes_cycle_index() -> None:
     assert _cycle_output_path("artifacts/cross-eval.json", 3).endswith("cross-eval-cycle3.json")
+
+
+def test_humanoid_profile_and_name_resolution() -> None:
+    assert _resolve_humanoid_embodiment_name("") == "humanoid120"
+    assert _resolve_humanoid_embodiment_name("HuManoiD120") == "humanoid120"
+    profile = resolve_humanoid_compliance_profile("human_rigid_v1")
+    assert profile.required_embodiment == "humanoid120"

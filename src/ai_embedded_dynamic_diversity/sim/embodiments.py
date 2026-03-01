@@ -55,6 +55,31 @@ EMBODIMENTS: dict[str, Embodiment] = {
             "strain",
         ),
     ),
+    # Human-form constrained subclass profile of polymorph120.
+    "humanoid120": Embodiment(
+        name="humanoid120",
+        controls=(
+            _indexed("humanoid_leg_joint", 36)
+            + _indexed("humanoid_arm_joint", 32)
+            + _indexed("humanoid_spine_joint", 16)
+            + _indexed("humanoid_hand_joint", 24)
+            + _indexed("humanoid_neck_head_joint", 12)
+        ),
+        sensors=(
+            "vision",
+            "stereo_audio",
+            "imu",
+            "pressure",
+            "temperature",
+            "proximity",
+            "chemical",
+            "magnetic",
+            "rf",
+            "current",
+            "light",
+            "strain",
+        ),
+    ),
 }
 
 

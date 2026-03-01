@@ -24,6 +24,9 @@ def test_cross_report_includes_mimicry_and_conjoining_columns() -> None:
             "prelife_profile": "none",
             "prelife_score_weight": 0.0,
             "autopoiesis_score_weight": 0.15,
+            "enable_humanoid_compliance": True,
+            "humanoid_embodiment_name": "humanoid120",
+            "humanoid_compliance_profile": "human_rigid_v1",
             "embodiment_weights": {"hexapod": 1.0, "car": 1.0},
             "checkmate_threshold": 0.85,
         },
@@ -43,6 +46,10 @@ def test_cross_report_includes_mimicry_and_conjoining_columns() -> None:
                 "ranking_component_capability": 0.125,
                 "ranking_component_prelife": 0.0,
                 "ranking_component_autopoiesis": 0.06,
+                "humanoid_compliance": {
+                    "overall_score": 0.83,
+                    "pass": True,
+                },
                 "checkmate_pass_all": True,
                 "checkmate_pass_heldout": True,
                 "checkmate_min_effectiveness": 0.9,
@@ -87,7 +94,10 @@ def test_cross_report_includes_mimicry_and_conjoining_columns() -> None:
     assert "overall_conjoining_gain" in csv_text
     assert "hexapod_mimicry_reliability" in csv_text
     assert "car_conjoining_gain" in csv_text
+    assert "humanoid_compliance_score" in csv_text
+    assert "humanoid_compliance_pass" in csv_text
 
     md_text = markdown_out.read_text(encoding="utf-8")
     assert "Mimicry Reliability" in md_text
     assert "Conjoining Gain" in md_text
+    assert "Humanoid Compliance" in md_text

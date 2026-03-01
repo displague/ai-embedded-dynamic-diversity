@@ -13,6 +13,10 @@ from ai_embedded_dynamic_diversity.config import ModelConfig, model_config_for_p
 from ai_embedded_dynamic_diversity.models import ModelCore
 from ai_embedded_dynamic_diversity.sim.autopoiesis import autopoietic_metrics
 from ai_embedded_dynamic_diversity.sim.embodiments import device_map_for_embodiment, get_embodiment
+from ai_embedded_dynamic_diversity.sim.humanoid_compliance import (
+    evaluate_humanoid_compliance,
+    resolve_humanoid_compliance_profile,
+)
 from ai_embedded_dynamic_diversity.sim.prelife_cli import run_prelife_simulation
 from ai_embedded_dynamic_diversity.sim.world import DynamicDiversityWorld
 from ai_embedded_dynamic_diversity.train.device import choose_device
@@ -486,6 +490,13 @@ def _resolve_noise_profile(profile: str) -> str:
     return normalized
 
 
+def _resolve_humanoid_embodiment_name(name: str) -> str:
+    normalized = name.strip().lower()
+    if not normalized:
+        return "humanoid120"
+    return normalized
+
+
 def _apply_observation_noise(obs: torch.Tensor, profile: str, seed: int, step: int) -> torch.Tensor:
     if profile == "none":
         return obs
@@ -924,6 +935,9 @@ def _evaluate_ranked_checkpoints(
     noise_profile_resolved: str,
     world_dims: tuple[int, int, int, int],
     world_params: dict[str, float | int],
+    enable_humanoid_compliance: bool,
+    humanoid_embodiment_name: str,
+    humanoid_compliance_profile_name: str,
     dev: torch.device,
     seed: int,
     embodiment_weight_map: dict[str, float],
@@ -1015,6 +1029,23 @@ def _evaluate_ranked_checkpoints(
             # Blended mean across all capability proxies
             overall_capability_score = float(sum(float(row["capability_score"]) for row in run_rows) / max(1, len(run_rows)))
         overall_autopoiesis_score = float(sum(float(row["autopoiesis_score"]) for row in run_rows) / max(1, len(run_rows)))
+        humanoid_compliance = None
+        if enable_humanoid_compliance:
+            hum_name = humanoid_embodiment_name.strip().lower()
+            if hum_name in by_embodiment:
+                hum_stats = by_embodiment[hum_name]
+                hum_emb = get_embodiment(hum_name)
+                profile = resolve_humanoid_compliance_profile(humanoid_compliance_profile_name)
+                humanoid_compliance = evaluate_humanoid_compliance(
+                    hum_emb,
+                    profile,
+                    mean_mismatch=float(hum_stats.get("mean_mismatch", 0.0)),
+                    mean_vitality=float(hum_stats.get("mean_vitality", 0.0)),
+                    recovery=float(hum_stats.get("recovery", 0.0)),
+                    autopoiesis_score=float(hum_stats.get("autopoiesis_score", 0.0)),
+                )
+                by_embodiment[hum_name]["humanoid_compliance_score"] = float(humanoid_compliance["overall_score"])
+                by_embodiment[hum_name]["humanoid_compliance_pass"] = bool(humanoid_compliance["pass"])
         standard_transfer_weighted = base_transfer_weighted
         calibrated_transfer_weighted = base_transfer_weighted
         sim_optimism_gap = 0.0
@@ -1103,6 +1134,10 @@ def _evaluate_ranked_checkpoints(
                 "ranking_component_prelife": prelife_score_weight * overall_prelife_score,
                 "ranking_component_autopoiesis": autopoiesis_score_weight * overall_autopoiesis_score,
                 "ranking_component_optimism_penalty": ranking_component_optimism_penalty,
+                "humanoid_compliance": humanoid_compliance if humanoid_compliance is not None else {},
+                "humanoid_compliance_enabled": enable_humanoid_compliance,
+                "humanoid_compliance_profile": humanoid_compliance_profile_name,
+                "humanoid_compliance_embodiment": humanoid_embodiment_name,
                 "train_embodiments": train_embodiments_resolved,
                 "heldout_embodiments": heldout_embodiments,
                 "transfer_ratio_matrix": transfer_ratio_matrix,
@@ -1175,6 +1210,9 @@ def run(
     world_z: int = 10,
     resource_channels: int = 5,
     world_profile: str = "",
+    enable_humanoid_compliance: bool = False,
+    humanoid_embodiment_name: str = "humanoid120",
+    humanoid_compliance_profile: str = "human_rigid_v1",
     device: str = "cpu",
     strict_device: bool = True,
     seed: int = 31,
@@ -1225,6 +1263,17 @@ def run(
         noise_profile_resolved = _resolve_noise_profile(noise_profile)
     except ValueError as exc:
         raise typer.BadParameter(str(exc)) from exc
+    humanoid_name_resolved = _resolve_humanoid_embodiment_name(humanoid_embodiment_name)
+    try:
+        resolve_humanoid_compliance_profile(humanoid_compliance_profile)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    if enable_humanoid_compliance and humanoid_name_resolved not in embodiment_list:
+        allowed = ", ".join(embodiment_list)
+        raise typer.BadParameter(
+            f"humanoid_embodiment_name '{humanoid_name_resolved}' is not in embodiments. "
+            f"Embodiments: {allowed}"
+        )
     if capability_score_weight < 0.0:
         raise typer.BadParameter("capability_score_weight must be >= 0.0")
     if prelife_score_weight < 0.0:
@@ -1304,6 +1353,9 @@ def run(
             noise_profile_resolved=noise_profile_resolved,
             world_dims=world_dims,
             world_params=world_params,
+            enable_humanoid_compliance=enable_humanoid_compliance,
+            humanoid_embodiment_name=humanoid_name_resolved,
+            humanoid_compliance_profile_name=humanoid_compliance_profile,
             dev=dev,
             seed=seed,
             embodiment_weight_map=embodiment_weight_map,
@@ -1341,6 +1393,9 @@ def run(
                 "autopoiesis_min_threshold": current_autopoiesis_threshold,
                 "noise_profile": noise_profile_resolved,
                 "world_profile": world_profile,
+                "enable_humanoid_compliance": enable_humanoid_compliance,
+                "humanoid_embodiment_name": humanoid_name_resolved,
+                "humanoid_compliance_profile": humanoid_compliance_profile,
                 "storyboard_manifest": storyboard_manifest,
                 "device": str(dev),
                 "strict_device": strict_device,
