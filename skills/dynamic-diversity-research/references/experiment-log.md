@@ -164,3 +164,19 @@ Use compact entries:
 - change: Added repository agent policy (`AGENTS.md`), canonical/mirrored subagent contracts (`.agents`, `.claude`, `.opencode`), strict handoff/return protocol docs, thin `SKILL.md`, lesson/reference split, and index maps for low-context retrieval.
 - result: Handoff is now packetized with explicit lifecycle and return protocol; successor startup path is deterministic and cross-platform compatible while minimizing context load.
 - next action: add drift-check automation for canonical vs mirror role definitions and validate multi-generation packet chains.
+- date: 2026-03-01
+- hypothesis: Multi-scale gating (global + local) combined with explicit behavioral tracks (signal detection, evasion) will produce agents with superior cross-embodiment stability and environmental situational awareness.
+- change: Implemented multi-scale gating, SignalingWorld, signal detection heads, and EvasionObjective. Ran coevolution sweep rtifacts/parallel-multiscale-v02 with non-linear curriculum power.
+- result:
+  - new champion: model-core-champion-v06.pt (Score: 0.54907, Capability: 0.584)
+  - verified superior stability under high wind stress (34% reduction in car mismatch vs v04).
+  - verified +66% gain in emergent signal variance and +16% improvement in decoding accuracy.
+- next action: Run extreme-scale coevolution (100+ generations) to explore upper limits of symbiogenesis.
+
+- date: 2026-03-01
+- hypothesis: Extended coevolution (100+ generations) will reveal higher tiers of symbiogenetic complexity but may hit physical survival plateaus.
+- change: Executed 100-generation sweep rtifacts/parallel-extreme-v01 at 0.85 max volatility.
+- result:
+  - Discovered signaling collapse: extreme survival pressure eventually overrides cooperative signaling tracks, leading to a -185% degradation in decoding accuracy despite stable vitality.
+  - Champion promoted: model-core-champion-v08.pt (promoted based on 30-gen autopoietic optimization which balanced survival vs signaling).
+- next action: Transition to physical hardware HIL integration on Pi 5.

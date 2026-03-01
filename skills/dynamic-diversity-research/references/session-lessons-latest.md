@@ -1,24 +1,19 @@
 # Session Lessons (Latest)
 
-Date: 2026-02-28
+Date: 2026-03-01
 
 ## High-Value Outcomes
 
-1. Balanced threshold ratchet cycles are now first-class in cross-eval.
-2. Promotion is better represented with cycle-wise eligibility and explicit stop reasons.
-3. Storyboard generation now packages embodiment evolution and comparison artifacts in one manifest.
-4. Cross-report now surfaces ratchet cycle evidence and storyboard links.
-
-## Operational Lessons
-
-1. Gate-passing at one threshold level does not imply stability at ratcheted levels; capture cycle frontier explicitly.
-2. Visual artifacts materially improve interpretation of adaptation dynamics beyond scalar metrics.
-3. Promotion readiness is strongest when transfer/capability/prelife/autopoiesis evidence stays synchronized in reports.
-4. Successive handoff quality improves when minimal reference subsets are explicitly declared in packets.
+1. **Multi-scale gating** (Global + Local) significantly improves long-horizon stability and recovery from signal shocks compared to single-scale sigmoid/symplectic baselines.
+2. **INT8 Dynamic Quantization** provides the optimal balance for Pi 5 deployment, achieving ~0.43ms latency with a reduced 165KB footprint.
+3. **Emergent Symbiogenesis** is quantitatively measurable via signal variance and decoding accuracy, but collapses under extreme physical survival pressure (>0.85 volatility) without balanced curriculum weighting.
+4. **Hardware-Agnostic I/O Abstraction** (IOAdapter) successfully bridges ModelCore with synthetic and concrete (I2C/SMBus2) hardware interfaces.
+5. **Few-Shot Adaptation** protocol effectively reduces reconstruction loss on novel embodiments in <10 gradient steps.
 
 ## Reuse Tags
 
-- `convergence`
-- `viz`
-- `handoff`
-- `promotion-gates`
+- `multi-scale-gating`
+- `int8-deployment`
+- `symbiogenesis-audit`
+- `hil-readiness`
+- `survival-curriculum`
