@@ -50,6 +50,7 @@ def run(
     transfer_samples_per_step: int = 3,
     enable_autopoietic_objective: bool = False,
     autopoietic_loss_weight: float = 0.10,
+    autopoietic_fitness_gain: float = 0.15,
     autopoietic_self_repair_weight: float = 0.35,
     autopoietic_closure_weight: float = 0.45,
     autopoietic_resource_cycle_weight: float = 0.20,
@@ -143,6 +144,7 @@ def run(
             cmd.append("--enable-autopoietic-objective")
             aw = auto_cycle[i % len(auto_cycle)] if auto_cycle else autopoietic_loss_weight
             cmd.extend(["--autopoietic-loss-weight", str(aw)])
+            cmd.extend(["--autopoietic-fitness-gain", str(autopoietic_fitness_gain)])
             cmd.extend(["--autopoietic-self-repair-weight", str(autopoietic_self_repair_weight)])
             cmd.extend(["--autopoietic-closure-weight", str(autopoietic_closure_weight)])
             cmd.extend(["--autopoietic-resource-cycle-weight", str(autopoietic_resource_cycle_weight)])

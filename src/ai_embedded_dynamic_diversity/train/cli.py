@@ -261,6 +261,7 @@ def run_gradient_epoch(
     remap_loss_weight: float = 0.1,
     enable_autopoietic_objective: bool = False,
     autopoietic_loss_weight: float = 0.10,
+    autopoietic_fitness_gain: float = 0.15,
     autopoietic_self_repair_weight: float = 0.35,
     autopoietic_closure_weight: float = 0.45,
     autopoietic_resource_cycle_weight: float = 0.20,
@@ -656,6 +657,8 @@ def run(
         raise typer.BadParameter("force_curriculum_strength_start and force_curriculum_strength_end must be >= 0.0")
     if autopoietic_loss_weight < 0.0:
         raise typer.BadParameter("autopoietic_loss_weight must be >= 0.0")
+    if autopoietic_fitness_gain < 0.0:
+        raise typer.BadParameter("autopoietic_fitness_gain must be >= 0.0")
     if remap_loss_weight < 0.0:
         raise typer.BadParameter("remap_loss_weight must be >= 0.0")
 
@@ -731,6 +734,7 @@ def run(
         "transfer_fitness_weight": transfer_fitness_weight,
         "enable_autopoietic_objective": enable_autopoietic_objective,
         "autopoietic_loss_weight": autopoietic_loss_weight,
+        "autopoietic_fitness_gain": autopoietic_fitness_gain,
         "autopoietic_self_repair_weight": autopoietic_self_repair_weight,
         "autopoietic_closure_weight": autopoietic_closure_weight,
         "autopoietic_resource_cycle_weight": autopoietic_resource_cycle_weight,
@@ -896,7 +900,7 @@ def run(
                 noise_profile=noise_profile_resolved,
                 noise_strength=noise_strength,
                 noise_seed=seed + epoch * 3001,
-                autopoietic_fitness_weight=0.15 * autopoietic_loss_weight if enable_autopoietic_objective else 0.0,
+                autopoietic_fitness_weight=autopoietic_fitness_gain * autopoietic_loss_weight if enable_autopoietic_objective else 0.0,
                 genetic_memory_persistence_weight=genetic_memory_persistence_weight,
                 force_curriculum_mode=force_curriculum_mode_resolved,
                 force_curriculum_strength=force_curriculum_strength,
@@ -1145,7 +1149,7 @@ def run(
                 noise_profile=noise_profile_resolved,
                 noise_strength=noise_strength,
                 noise_seed=seed + generation * 3001 + idx * 53,
-                autopoietic_fitness_weight=0.15 * autopoietic_loss_weight if enable_autopoietic_objective else 0.0,
+                autopoietic_fitness_weight=autopoietic_fitness_gain * autopoietic_loss_weight if enable_autopoietic_objective else 0.0,
                 genetic_memory_persistence_weight=genetic_memory_persistence_weight,
                 force_curriculum_mode=force_curriculum_mode_resolved,
                 force_curriculum_strength=force_curriculum_strength,
@@ -1209,7 +1213,7 @@ def run(
             noise_profile=noise_profile_resolved,
             noise_strength=noise_strength_end if noise_profile_resolved != "none" else 0.0,
             noise_seed=seed + 99991 + idx * 97,
-            autopoietic_fitness_weight=0.15 * autopoietic_loss_weight if enable_autopoietic_objective else 0.0,
+            autopoietic_fitness_weight=autopoietic_fitness_gain * autopoietic_loss_weight if enable_autopoietic_objective else 0.0,
             genetic_memory_persistence_weight=genetic_memory_persistence_weight,
             force_curriculum_mode=force_curriculum_mode_resolved,
             force_curriculum_strength=force_curriculum_strength_end if force_curriculum_mode_resolved != "none" else 0.0,
