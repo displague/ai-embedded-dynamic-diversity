@@ -1094,6 +1094,11 @@ def _evaluate_ranked_checkpoints(
     autopoiesis_score_weight: float,
     enable_optimism_penalty: bool,
     optimism_penalty_weight: float,
+    enable_world_consistency_penalty: bool,
+    world_consistency_penalty_weight: float,
+    world_consistency_target: float,
+    latency_storm_consistency_target: float,
+    latency_storm_penalty_mix: float,
     max_optimism_gap: float,
     enable_convergence_gates: bool,
     symbio_min_threshold: float,
@@ -1271,6 +1276,25 @@ def _evaluate_ranked_checkpoints(
                     "std_score_h3": std_h3,
                 }
             _, world_consistency_scenario_std = _mean_std(scenario_mean_scores)
+        ranking_component_world_consistency_penalty = 0.0
+        world_consistency_penalty_components = {
+            "overall_gap": 0.0,
+            "latency_storm_gap": 0.0,
+            "latency_storm_mean_score": 0.0,
+        }
+        if enable_world_consistency_penalty and world_consistency_profile_resolved != "none":
+            latency_metrics = world_consistency_by_scenario.get("latency-storm", {})
+            latency_mean_score = float(latency_metrics.get("mean_score", overall_world_consistency_score))
+            overall_gap = max(0.0, world_consistency_target - overall_world_consistency_score)
+            latency_gap = max(0.0, latency_storm_consistency_target - latency_mean_score)
+            mix = max(0.0, min(1.0, latency_storm_penalty_mix))
+            combined_gap = (1.0 - mix) * overall_gap + mix * latency_gap
+            ranking_component_world_consistency_penalty = world_consistency_penalty_weight * combined_gap
+            world_consistency_penalty_components = {
+                "overall_gap": float(overall_gap),
+                "latency_storm_gap": float(latency_gap),
+                "latency_storm_mean_score": float(latency_mean_score),
+            }
         humanoid_compliance = None
         if enable_humanoid_compliance:
             hum_name = humanoid_embodiment_name.strip().lower()
@@ -1341,6 +1365,7 @@ def _evaluate_ranked_checkpoints(
             + prelife_score_weight * overall_prelife_score
             + autopoiesis_score_weight * overall_autopoiesis_score
             - ranking_component_optimism_penalty
+            - ranking_component_world_consistency_penalty
         )
         transfer_ratio_matrix = _transfer_ratio_matrix(
             by_embodiment=by_embodiment,
@@ -1383,12 +1408,14 @@ def _evaluate_ranked_checkpoints(
                 "ranking_component_prelife": prelife_score_weight * overall_prelife_score,
                 "ranking_component_autopoiesis": autopoiesis_score_weight * overall_autopoiesis_score,
                 "ranking_component_optimism_penalty": ranking_component_optimism_penalty,
+                "ranking_component_world_consistency_penalty": ranking_component_world_consistency_penalty,
                 "overall_world_consistency_score": overall_world_consistency_score,
                 "overall_world_consistency_score_h1": overall_world_consistency_score_h1,
                 "overall_world_consistency_score_h2": overall_world_consistency_score_h2,
                 "overall_world_consistency_score_h3": overall_world_consistency_score_h3,
                 "world_consistency_scenario_std": world_consistency_scenario_std,
                 "world_consistency_by_scenario": world_consistency_by_scenario,
+                "world_consistency_penalty_components": world_consistency_penalty_components,
                 "world_consistency_profile": world_consistency_profile_resolved,
                 "humanoid_compliance": humanoid_compliance if humanoid_compliance is not None else {},
                 "humanoid_compliance_enabled": enable_humanoid_compliance,
@@ -1448,6 +1475,11 @@ def run(
     autopoiesis_score_weight: float = 0.15,
     enable_optimism_penalty: bool = False,
     optimism_penalty_weight: float = 0.25,
+    enable_world_consistency_penalty: bool = False,
+    world_consistency_penalty_weight: float = 0.20,
+    world_consistency_target: float = 0.76,
+    latency_storm_consistency_target: float = 0.50,
+    latency_storm_penalty_mix: float = 0.70,
     max_optimism_gap: float = 0.08,
     enable_convergence_gates: bool = True,
     symbio_min_threshold: float = 0.45,
@@ -1544,6 +1576,14 @@ def run(
         raise typer.BadParameter("autopoiesis_score_weight must be >= 0.0")
     if optimism_penalty_weight < 0.0:
         raise typer.BadParameter("optimism_penalty_weight must be >= 0.0")
+    if world_consistency_penalty_weight < 0.0:
+        raise typer.BadParameter("world_consistency_penalty_weight must be >= 0.0")
+    if world_consistency_target < 0.0:
+        raise typer.BadParameter("world_consistency_target must be >= 0.0")
+    if latency_storm_consistency_target < 0.0:
+        raise typer.BadParameter("latency_storm_consistency_target must be >= 0.0")
+    if latency_storm_penalty_mix < 0.0 or latency_storm_penalty_mix > 1.0:
+        raise typer.BadParameter("latency_storm_penalty_mix must be in [0.0, 1.0]")
     if max_optimism_gap < 0.0:
         raise typer.BadParameter("max_optimism_gap must be >= 0.0")
     if prelife_steps <= 0:
@@ -1612,6 +1652,11 @@ def run(
             autopoiesis_score_weight=autopoiesis_score_weight,
             enable_optimism_penalty=enable_optimism_penalty,
             optimism_penalty_weight=optimism_penalty_weight,
+            enable_world_consistency_penalty=enable_world_consistency_penalty,
+            world_consistency_penalty_weight=world_consistency_penalty_weight,
+            world_consistency_target=world_consistency_target,
+            latency_storm_consistency_target=latency_storm_consistency_target,
+            latency_storm_penalty_mix=latency_storm_penalty_mix,
             max_optimism_gap=max_optimism_gap,
             enable_convergence_gates=enable_convergence_gates,
             symbio_min_threshold=current_symbio_threshold,
@@ -1655,6 +1700,11 @@ def run(
                 "autopoiesis_score_weight": autopoiesis_score_weight,
                 "enable_optimism_penalty": enable_optimism_penalty,
                 "optimism_penalty_weight": optimism_penalty_weight,
+                "enable_world_consistency_penalty": enable_world_consistency_penalty,
+                "world_consistency_penalty_weight": world_consistency_penalty_weight,
+                "world_consistency_target": world_consistency_target,
+                "latency_storm_consistency_target": latency_storm_consistency_target,
+                "latency_storm_penalty_mix": latency_storm_penalty_mix,
                 "max_optimism_gap": max_optimism_gap,
                 "enable_convergence_gates": enable_convergence_gates,
                 "symbio_min_threshold": current_symbio_threshold,

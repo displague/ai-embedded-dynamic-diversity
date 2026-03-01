@@ -451,6 +451,13 @@
   - scenario spread metric: `world_consistency_scenario_std` + `world_consistency_by_scenario`
   - aggregated checkpoint field: `overall_world_consistency_score`
   - surfaced in `add-cross-report` via World Consistency table
+- Added optional world-consistency ranking penalty controls in `add-cross-eval`:
+  - `--enable-world-consistency-penalty`
+  - `--world-consistency-penalty-weight`
+  - `--world-consistency-target`
+  - `--latency-storm-consistency-target`
+  - `--latency-storm-penalty-mix`
+  - output fields: `ranking_component_world_consistency_penalty` and `world_consistency_penalty_components`
 - Added optional humanoid-form compliance evaluation path (report-only, no rank impact):
   - `add-cross-eval` flags: `--enable-humanoid-compliance`, `--humanoid-embodiment-name`, `--humanoid-compliance-profile`
   - strict/relaxed profiles: `human_rigid_v1`, `human_rigid_relaxed_v1`

@@ -56,6 +56,7 @@ def test_cross_report_includes_mimicry_and_conjoining_columns() -> None:
                 "overall_world_consistency_score_h2": 0.88,
                 "overall_world_consistency_score_h3": 0.86,
                 "world_consistency_scenario_std": 0.01,
+                "ranking_component_world_consistency_penalty": 0.012,
                 "world_consistency_by_scenario": {
                     "gust": {
                         "mean_score": 0.89,
@@ -114,6 +115,7 @@ def test_cross_report_includes_mimicry_and_conjoining_columns() -> None:
     assert "overall_world_consistency_score" in csv_text
     assert "overall_world_consistency_score_h3" in csv_text
     assert "world_consistency_scenario_std" in csv_text
+    assert "ranking_component_world_consistency_penalty" in csv_text
 
     md_text = markdown_out.read_text(encoding="utf-8")
     assert "Mimicry Reliability" in md_text

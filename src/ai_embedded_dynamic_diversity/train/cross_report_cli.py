@@ -79,6 +79,7 @@ def run(
             "overall_transfer_score_calibrated_large": float(item.get("overall_transfer_score_calibrated_large", transfer_weighted)),
             "sim_optimism_gap": float(item.get("sim_optimism_gap", 0.0)),
             "ranking_component_optimism_penalty": float(item.get("ranking_component_optimism_penalty", 0.0)),
+            "ranking_component_world_consistency_penalty": float(item.get("ranking_component_world_consistency_penalty", 0.0)),
             "overall_world_consistency_score": float(item.get("overall_world_consistency_score", 0.0)),
             "overall_world_consistency_score_h1": float(item.get("overall_world_consistency_score_h1", 0.0)),
             "overall_world_consistency_score_h2": float(item.get("overall_world_consistency_score_h2", 0.0)),
@@ -186,12 +187,12 @@ def run(
     md_lines.append("## Top 5")
     md_lines.append("")
     if capability_enabled or prelife_enabled:
-        md_lines.append("| Rank | Checkpoint | Ranking Score | Transfer (Weighted) | Standard Transfer | Calibrated Transfer | Optimism Gap | Capability Score | Prelife Score | Autopoiesis Score | C.Transfer | C.Capability | C.Prelife | C.Autopoiesis | C.OptimismPenalty | Eligible | Delta vs Best | Mismatch | Vitality | Recovery |")
-        md_lines.append("|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|---:|---:|---:|")
+        md_lines.append("| Rank | Checkpoint | Ranking Score | Transfer (Weighted) | Standard Transfer | Calibrated Transfer | Optimism Gap | Capability Score | Prelife Score | Autopoiesis Score | C.Transfer | C.Capability | C.Prelife | C.Autopoiesis | C.OptimismPenalty | C.WorldConsistencyPenalty | Eligible | Delta vs Best | Mismatch | Vitality | Recovery |")
+        md_lines.append("|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|---:|---:|---:|")
         for row in rows[:5]:
             md_lines.append(
                 "| "
-                + f"{row['rank']} | `{row['checkpoint']}` | {_fmt(row['overall_ranking_score'])} | {_fmt(row['overall_transfer_score_weighted'])} | {_fmt(row['overall_transfer_score_standard'])} | {_fmt(row['overall_transfer_score_calibrated_large'])} | {_fmt(row['sim_optimism_gap'])} | {_fmt(row['overall_capability_score'])} | {_fmt(row['overall_prelife_score'])} | {_fmt(row['overall_autopoiesis_score'])} | {_fmt(row['ranking_component_transfer'])} | {_fmt(row['ranking_component_capability'])} | {_fmt(row['ranking_component_prelife'])} | {_fmt(row['ranking_component_autopoiesis'])} | {_fmt(row['ranking_component_optimism_penalty'])} | {row['promotion_eligible']} | {_fmt(row['delta_vs_best'])} | {_fmt(row['overall_mean_mismatch'])} | {_fmt(row['overall_mean_vitality'])} | {_fmt(row['overall_recovery'])} |"
+                + f"{row['rank']} | `{row['checkpoint']}` | {_fmt(row['overall_ranking_score'])} | {_fmt(row['overall_transfer_score_weighted'])} | {_fmt(row['overall_transfer_score_standard'])} | {_fmt(row['overall_transfer_score_calibrated_large'])} | {_fmt(row['sim_optimism_gap'])} | {_fmt(row['overall_capability_score'])} | {_fmt(row['overall_prelife_score'])} | {_fmt(row['overall_autopoiesis_score'])} | {_fmt(row['ranking_component_transfer'])} | {_fmt(row['ranking_component_capability'])} | {_fmt(row['ranking_component_prelife'])} | {_fmt(row['ranking_component_autopoiesis'])} | {_fmt(row['ranking_component_optimism_penalty'])} | {_fmt(row['ranking_component_world_consistency_penalty'])} | {row['promotion_eligible']} | {_fmt(row['delta_vs_best'])} | {_fmt(row['overall_mean_mismatch'])} | {_fmt(row['overall_mean_vitality'])} | {_fmt(row['overall_recovery'])} |"
             )
     else:
         md_lines.append("| Rank | Checkpoint | Transfer (Ranking) | Transfer (Unweighted) | Delta vs Best | Mismatch | Vitality | Recovery |")
