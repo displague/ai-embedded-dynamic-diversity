@@ -73,6 +73,9 @@ def run(
     enable_noise_curriculum: bool = False,
     noise_strength_start: float = 0.2,
     noise_strength_end: float = 1.0,
+    force_curriculum_mode: str = "none",
+    force_curriculum_strength_start: float = 0.0,
+    force_curriculum_strength_end: float = 1.0,
     enable_multi_scale_gating: bool = True,
     init_weights: str = "",
     out_dir: str = "artifacts/parallel",
@@ -122,6 +125,9 @@ def run(
             "--noise-profile", noise_profile,
             "--noise-strength-start", str(noise_strength_start),
             "--noise-strength-end", str(noise_strength_end),
+            "--force-curriculum-mode", force_curriculum_mode,
+            "--force-curriculum-strength-start", str(force_curriculum_strength_start),
+            "--force-curriculum-strength-end", str(force_curriculum_strength_end),
             "--seed", str(variant_seed),
             "--save-path", str(variant_output),
             "--metrics-path", str(variant_metrics),
@@ -171,9 +177,13 @@ def run(
     )
     start_time = time.perf_counter()
 
-    with ProcessPoolExecutor(max_workers=max_workers) as executor:
-        futures = [executor.submit(_run_variant, cmd, log) for cmd, log in variant_cmds]
-        results = [f.result() for f in futures]
+    if max_workers <= 1:
+        # Avoid multiprocessing setup overhead/permission issues in constrained hosts.
+        results = [_run_variant(cmd, log) for cmd, log in variant_cmds]
+    else:
+        with ProcessPoolExecutor(max_workers=max_workers) as executor:
+            futures = [executor.submit(_run_variant, cmd, log) for cmd, log in variant_cmds]
+            results = [f.result() for f in futures]
 
     duration = time.perf_counter() - start_time
     print(f"[bold green]Parallel sweep complete in {duration:.2f}s[/bold green]")

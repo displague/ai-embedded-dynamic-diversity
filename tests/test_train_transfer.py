@@ -12,12 +12,15 @@ from ai_embedded_dynamic_diversity.train.cli import (
     _autopoietic_step_score,
     _apply_observation_noise,
     _build_transfer_states,
+    _inject_force_curriculum_controls,
     _resolve_embodiments,
+    _resolve_force_curriculum_mode,
     _resolve_model_config,
     _resolve_noise_profile,
     _transfer_mismatch_loss,
 )
 from ai_embedded_dynamic_diversity.train.device import choose_device
+from ai_embedded_dynamic_diversity.sim.world import DynamicDiversityWorld
 
 
 def test_resolve_embodiments_deduplicates_and_validates() -> None:
@@ -71,6 +74,28 @@ def test_resolve_noise_profile_accepts_and_rejects() -> None:
     assert _resolve_noise_profile("dropout-quant-v2") == "dropout-quant-v2"
     with pytest.raises(ValueError):
         _resolve_noise_profile("bad-noise")
+
+
+def test_resolve_force_curriculum_mode_accepts_and_rejects() -> None:
+    assert _resolve_force_curriculum_mode("none") == "none"
+    assert _resolve_force_curriculum_mode("continuous-blow") == "continuous-blow"
+    with pytest.raises(ValueError):
+        _resolve_force_curriculum_mode("bad-force-mode")
+
+
+def test_inject_force_curriculum_controls_continuous_blow() -> None:
+    world = DynamicDiversityWorld(8, 8, 4, 3, device="cpu")
+    controls = world.default_controls(batch_size=2)
+    _inject_force_curriculum_controls(
+        controls=controls,
+        mode="continuous-blow",
+        env_volatility=0.5,
+        strength=0.8,
+        step_index=9,
+    )
+    assert float(controls.force_active.mean().item()) == pytest.approx(1.0)
+    assert float(controls.force_strength.mean().item()) > 0.0
+    assert float(torch.norm(controls.force_vector, dim=1).mean().item()) > 0.0
 
 
 def test_apply_observation_noise_strength_controls_effect() -> None:

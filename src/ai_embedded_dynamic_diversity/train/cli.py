@@ -46,6 +46,42 @@ def _resolve_noise_profile(profile: str) -> str:
     return normalized
 
 
+def _resolve_force_curriculum_mode(mode: str) -> str:
+    normalized = mode.strip().lower()
+    allowed = {"none", "continuous-blow"}
+    if normalized not in allowed:
+        raise ValueError(f"Unknown force curriculum mode '{mode}'. Allowed: {', '.join(sorted(allowed))}")
+    return normalized
+
+
+def _inject_force_curriculum_controls(
+    controls,
+    mode: str,
+    env_volatility: float,
+    strength: float,
+    step_index: int,
+) -> None:
+    if mode == "none":
+        return
+    s = max(0.0, float(strength))
+    if s <= 1e-8:
+        return
+    vol = max(0.0, float(env_volatility))
+    if mode == "continuous-blow":
+        phase = step_index / 6.0
+        amp = min(1.0, max(0.0, (0.45 + 0.55 * vol) * s))
+        w = 0.65 + 0.35 * float(torch.sin(torch.tensor(phase)).item())
+        controls.force_active.fill_(1.0)
+        controls.force_strength = torch.maximum(controls.force_strength, torch.full_like(controls.force_strength, amp * w))
+        fx = 0.9 + 0.25 * float(torch.cos(torch.tensor(phase * 0.5)).item())
+        fy = 0.15 * float(torch.sin(torch.tensor(phase * 0.8)).item())
+        fz = 0.05 * float(torch.sin(torch.tensor(phase * 0.3)).item())
+        vec = controls.force_vector.new_tensor([fx, fy, fz]).view(1, 3).repeat(controls.force_vector.size(0), 1)
+        controls.force_vector = vec * (0.7 + 0.6 * vol)
+        return
+    raise ValueError(f"Unsupported force curriculum mode: {mode}")
+
+
 def _apply_observation_noise(
     obs: torch.Tensor,
     profile: str,
@@ -232,6 +268,8 @@ def run_gradient_epoch(
     emergent_signal_loss_weight: float = 0.05,
     memory_persistence_loss_weight: float = 0.05,
     paging_loss_weight: float = 0.01,
+    force_curriculum_mode: str = "none",
+    force_curriculum_strength: float = 0.0,
 ) -> tuple[float, torch.Tensor, float, float, float, float, float, float, float, float, float]:
     state = world.init(tcfg.batch_size)
     if genetic_memory is None:
@@ -341,6 +379,13 @@ def run_gradient_epoch(
             # Apply actions to world
             action_field = out["io"].detach().float().mean(dim=1, keepdim=True).repeat(1, world.x * world.y * world.z)
             controls = world.random_controls(tcfg.batch_size, volatility=env_volatility, step_index=step_index)
+            _inject_force_curriculum_controls(
+                controls=controls,
+                mode=force_curriculum_mode,
+                env_volatility=env_volatility,
+                strength=force_curriculum_strength,
+                step_index=step_index,
+            )
             state = world.step(state, action_field, controls)
 
         if scaler is not None:
@@ -403,6 +448,8 @@ def evaluate_fitness(
     noise_seed: int = 0,
     autopoietic_fitness_weight: float = 0.0,
     genetic_memory_persistence_weight: float = 0.0,
+    force_curriculum_mode: str = "none",
+    force_curriculum_strength: float = 0.0,
 ) -> float:
     model.eval()
     state = world.init(batch)
@@ -446,6 +493,13 @@ def evaluate_fitness(
             transfer_mismatch_total += transfer_mismatch
         action_field = out["io"].float().mean(dim=1, keepdim=True).repeat(1, wcfg.x * wcfg.y * wcfg.z)
         controls = world.random_controls(batch, env_volatility, step_index=step_index)
+        _inject_force_curriculum_controls(
+            controls=controls,
+            mode=force_curriculum_mode,
+            env_volatility=env_volatility,
+            strength=force_curriculum_strength,
+            step_index=step_index,
+        )
         state = world.step(state, action_field, controls=controls)
         mismatch_values.append(float(torch.mean((out["io"] @ out["io"].new_ones(mcfg.io_channels, 1)) ** 2).item()))
         vitality_values.append(float(state.life.mean().item()))
@@ -560,6 +614,9 @@ def run(
     enable_noise_curriculum: bool = False,
     noise_strength_start: float = 0.2,
     noise_strength_end: float = 1.0,
+    force_curriculum_mode: str = "none",
+    force_curriculum_strength_start: float = 0.0,
+    force_curriculum_strength_end: float = 1.0,
     use_amp: bool = True,
     allow_tf32: bool = True,
     compile_model: bool = False,
@@ -589,8 +646,14 @@ def run(
         noise_profile_resolved = _resolve_noise_profile(noise_profile)
     except ValueError as exc:
         raise typer.BadParameter(str(exc)) from exc
+    try:
+        force_curriculum_mode_resolved = _resolve_force_curriculum_mode(force_curriculum_mode)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
     if noise_strength_start < 0.0 or noise_strength_end < 0.0:
         raise typer.BadParameter("noise_strength_start and noise_strength_end must be >= 0.0")
+    if force_curriculum_strength_start < 0.0 or force_curriculum_strength_end < 0.0:
+        raise typer.BadParameter("force_curriculum_strength_start and force_curriculum_strength_end must be >= 0.0")
     if autopoietic_loss_weight < 0.0:
         raise typer.BadParameter("autopoietic_loss_weight must be >= 0.0")
     if remap_loss_weight < 0.0:
@@ -680,6 +743,9 @@ def run(
         "enable_noise_curriculum": enable_noise_curriculum,
         "noise_strength_start": noise_strength_start,
         "noise_strength_end": noise_strength_end,
+        "force_curriculum_mode": force_curriculum_mode_resolved,
+        "force_curriculum_strength_start": force_curriculum_strength_start,
+        "force_curriculum_strength_end": force_curriculum_strength_end,
         "use_amp": amp_enabled,
         "allow_tf32": allow_tf32 and dev.type == "cuda",
         "compile_model": compile_model,
@@ -741,6 +807,17 @@ def run(
                 noise_strength = _lin_schedule(noise_strength_start, noise_strength_end, epoch, power=curriculum_power)
             else:
                 noise_strength = noise_strength_end
+            if force_curriculum_mode_resolved == "none":
+                force_curriculum_strength = 0.0
+            elif enable_curriculum:
+                force_curriculum_strength = _lin_schedule(
+                    force_curriculum_strength_start,
+                    force_curriculum_strength_end,
+                    epoch,
+                    power=curriculum_power,
+                )
+            else:
+                force_curriculum_strength = force_curriculum_strength_end
             
             (
                 mean_loss,
@@ -783,6 +860,8 @@ def run(
                 autopoietic_self_repair_weight=autopoietic_self_repair_weight,
                 autopoietic_closure_weight=autopoietic_closure_weight,
                 autopoietic_resource_cycle_weight=autopoietic_resource_cycle_weight,
+                force_curriculum_mode=force_curriculum_mode_resolved,
+                force_curriculum_strength=force_curriculum_strength,
             )
             
             if controller:
@@ -819,6 +898,8 @@ def run(
                 noise_seed=seed + epoch * 3001,
                 autopoietic_fitness_weight=0.15 * autopoietic_loss_weight if enable_autopoietic_objective else 0.0,
                 genetic_memory_persistence_weight=genetic_memory_persistence_weight,
+                force_curriculum_mode=force_curriculum_mode_resolved,
+                force_curriculum_strength=force_curriculum_strength,
             )
             metrics_records.append(
                 {
@@ -837,6 +918,7 @@ def run(
                     "remap_probability": remap_probability,
                     "env_volatility": env_volatility,
                     "noise_strength": noise_strength,
+                    "force_curriculum_strength": force_curriculum_strength,
                     "remap_loss_weight": remap_loss_weight,
                     "detection_loss_weight": detection_loss_weight,
                 }
@@ -937,6 +1019,17 @@ def run(
             noise_strength = _lin_schedule(noise_strength_start, noise_strength_end, generation, power=curriculum_power)
         else:
             noise_strength = noise_strength_end
+        if force_curriculum_mode_resolved == "none":
+            force_curriculum_strength = 0.0
+        elif enable_curriculum:
+            force_curriculum_strength = _lin_schedule(
+                force_curriculum_strength_start,
+                force_curriculum_strength_end,
+                generation,
+                power=curriculum_power,
+            )
+        else:
+            force_curriculum_strength = force_curriculum_strength_end
         
         mean_step_acc = 0.0
         mean_transfer_mismatch_acc = 0.0
@@ -989,6 +1082,8 @@ def run(
                 autopoietic_self_repair_weight=autopoietic_self_repair_weight,
                 autopoietic_closure_weight=autopoietic_closure_weight,
                 autopoietic_resource_cycle_weight=autopoietic_resource_cycle_weight,
+                force_curriculum_mode=force_curriculum_mode_resolved,
+                force_curriculum_strength=force_curriculum_strength,
             )
             mean_step_acc += step_ms
             mean_transfer_mismatch_acc += mean_transfer_mismatch
@@ -1015,6 +1110,7 @@ def run(
                     "remap_probability": remap_probability,
                     "env_volatility": env_volatility,
                     "noise_strength": noise_strength,
+                    "force_curriculum_strength": force_curriculum_strength,
                 }
             )
 
@@ -1051,6 +1147,8 @@ def run(
                 noise_seed=seed + generation * 3001 + idx * 53,
                 autopoietic_fitness_weight=0.15 * autopoietic_loss_weight if enable_autopoietic_objective else 0.0,
                 genetic_memory_persistence_weight=genetic_memory_persistence_weight,
+                force_curriculum_mode=force_curriculum_mode_resolved,
+                force_curriculum_strength=force_curriculum_strength,
             )
             for idx, model in enumerate(pop)
         ]
@@ -1076,6 +1174,7 @@ def run(
                 "remap_probability": remap_probability,
                 "env_volatility": env_volatility,
                 "noise_strength": noise_strength,
+                "force_curriculum_strength": force_curriculum_strength,
                 "remap_loss_weight": remap_loss_weight,
                 "detection_loss_weight": detection_loss_weight,
             }
@@ -1112,6 +1211,8 @@ def run(
             noise_seed=seed + 99991 + idx * 97,
             autopoietic_fitness_weight=0.15 * autopoietic_loss_weight if enable_autopoietic_objective else 0.0,
             genetic_memory_persistence_weight=genetic_memory_persistence_weight,
+            force_curriculum_mode=force_curriculum_mode_resolved,
+            force_curriculum_strength=force_curriculum_strength_end if force_curriculum_mode_resolved != "none" else 0.0,
         )
         for idx, model in enumerate(pop)
     ]
