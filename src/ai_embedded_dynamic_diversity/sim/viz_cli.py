@@ -230,6 +230,65 @@ def _simulate(
     }
 
 
+def _classify_adaptation_signature(result: dict) -> dict[str, object]:
+    mismatch = [float(x) for x in result.get("mismatch_values", [])]
+    vitality = [float(x) for x in result.get("vitality_values", [])]
+    remap_events = int(len(result.get("remap_steps", [])))
+    if not mismatch or not vitality:
+        return {
+            "label": "insufficient-data",
+            "severity": 0.0,
+            "vitality_collapse": False,
+            "mismatch_elevated": False,
+            "recovery_failure": False,
+            "remap_events": remap_events,
+            "details": {},
+        }
+
+    n = len(mismatch)
+    start_n = max(1, n // 4)
+    end_start = max(0, n - start_n)
+
+    start_mismatch = float(sum(mismatch[:start_n]) / start_n)
+    end_mismatch = float(sum(mismatch[end_start:]) / max(1, n - end_start))
+    end_vitality = float(sum(vitality[end_start:]) / max(1, n - end_start))
+    final_mismatch = float(mismatch[-1])
+    final_vitality = float(vitality[-1])
+
+    vitality_collapse = final_vitality < 0.05 and end_vitality < 0.08
+    mismatch_elevated = final_mismatch > 0.30 and end_mismatch > 0.28
+    recovery_failure = (end_mismatch - start_mismatch) > 0.08
+
+    severity = (
+        (0.45 if vitality_collapse else 0.0)
+        + (0.35 if mismatch_elevated else 0.0)
+        + (0.20 if recovery_failure else 0.0)
+    )
+
+    if severity >= 0.7:
+        label = "failure"
+    elif severity >= 0.35:
+        label = "degraded"
+    else:
+        label = "stable"
+
+    return {
+        "label": label,
+        "severity": float(min(1.0, severity)),
+        "vitality_collapse": bool(vitality_collapse),
+        "mismatch_elevated": bool(mismatch_elevated),
+        "recovery_failure": bool(recovery_failure),
+        "remap_events": remap_events,
+        "details": {
+            "start_mismatch": start_mismatch,
+            "end_mismatch": end_mismatch,
+            "final_mismatch": final_mismatch,
+            "end_vitality": end_vitality,
+            "final_vitality": final_vitality,
+        },
+    }
+
+
 def _save_metrics(output: str, result: dict) -> None:
     """Saves simulation metrics to JSON or CSV."""
     import csv
@@ -669,6 +728,7 @@ def run(
     projection = torch.randn(cfg.signal_dim, control_dim, device=dev) * 0.3
     result = _simulate(model, cfg, world, initial_state, params, embodiment, projection, dev, seed_offset=seed)
     _save_single(output, result, f"Embodiment={embodiment} force={force_mode}")
+    signature = _classify_adaptation_signature(result)
 
     if metrics_out:
         _save_metrics(metrics_out, result)
@@ -681,6 +741,7 @@ def run(
             "remap_events": len(result["remap_steps"]),
             "final_mismatch": result["mismatch_values"][-1],
             "final_vitality": result["vitality_values"][-1],
+            "adaptation_signature": signature,
         }
     )
 
@@ -762,6 +823,8 @@ def compare(
 
     left_result = _simulate(left_model, left_cfg, world, initial_state, params, embodiment, projection, dev, seed_offset=seed)
     right_result = _simulate(right_model, right_cfg, world, initial_state, params, embodiment, projection, dev, seed_offset=seed)
+    left_signature = _classify_adaptation_signature(left_result)
+    right_signature = _classify_adaptation_signature(right_result)
 
     _save_compare(output, left_result, right_result, left_name="left", right_name="right")
     
@@ -778,6 +841,8 @@ def compare(
             "right_final_mismatch": right_result["mismatch_values"][-1],
             "left_final_vitality": left_result["vitality_values"][-1],
             "right_final_vitality": right_result["vitality_values"][-1],
+            "left_signature": left_signature,
+            "right_signature": right_signature,
         }
     )
 
@@ -806,7 +871,8 @@ def batch_force(
     projection = torch.randn(cfg.signal_dim, control_dim, device=dev) * 0.3
 
     print({"info": f"Starting batch force visualization for {embodiment} in {output_dir}"})
-    
+    summaries: list[dict[str, object]] = []
+
     for mode in modes:
         params = VizParams(
             steps=steps,
@@ -838,8 +904,21 @@ def batch_force(
         
         _save_single(str(out_path / gif_name), result, title=f"Force Mode: {mode}")
         _save_metrics(str(out_path / metrics_name), result)
-        
-    print({"batch_complete": str(out_path), "modes": len(modes)})
+        signature = _classify_adaptation_signature(result)
+        summaries.append(
+            {
+                "mode": mode,
+                "gif": str(out_path / gif_name),
+                "metrics": str(out_path / metrics_name),
+                "final_mismatch": float(result["mismatch_values"][-1]),
+                "final_vitality": float(result["vitality_values"][-1]),
+                "adaptation_signature": signature,
+            }
+        )
+
+    summary_path = out_path / f"{embodiment}-batch-summary.json"
+    summary_path.write_text(json.dumps(summaries, indent=2), encoding="utf-8")
+    print({"batch_complete": str(out_path), "modes": len(modes), "summary": str(summary_path)})
 
 
 @app.command()
@@ -969,6 +1048,7 @@ def storyboard(
                 "evolution_metrics": str(out_dir / metrics_evo_name),
                 "final_mismatch": float(primary_result["mismatch_values"][-1]),
                 "final_vitality": float(primary_result["vitality_values"][-1]),
+                "adaptation_signature": _classify_adaptation_signature(primary_result),
             }
             if scenario_idx == 0:
                 results_for_montage[embodiment_name] = primary_result
@@ -1001,6 +1081,8 @@ def storyboard(
                 item["compare_right_metrics"] = str(out_dir / metrics_right_name)
                 item["compare_left_final_mismatch"] = float(left_result["mismatch_values"][-1])
                 item["compare_right_final_mismatch"] = float(right_result["mismatch_values"][-1])
+                item["compare_left_signature"] = _classify_adaptation_signature(left_result)
+                item["compare_right_signature"] = _classify_adaptation_signature(right_result)
             generated_artifacts.append(item)
 
     montage_path = ""
