@@ -15,6 +15,7 @@ PyTorch research scaffold for a portable "model core" that adapts to anonymous l
 - `car`: `6` DOF controls, `5` sensor channels
 - `drone`: `8` DOF controls, `5` sensor channels
 - `polymorph120`: `120` DOF controls, `12` sensor channels (complex stress-test; multiple of 10/6/8)
+- `humanoid120`: `120` DOF controls, `12` sensor channels (human-form constrained subclass for compliance evaluation)
 
 List from CLI:
 
@@ -281,6 +282,13 @@ Calibrated large-world evaluation with optimism-gap penalty:
 ```bash
 ~/.local/bin/uv run add-cross-eval --checkpoints-list "artifacts/model-core-champion-v09.pt,artifacts/parallel-v10b-stress-autopo-cuda/variant-03.pt" --profile pi5 --embodiments "hexapod,car,drone,polymorph120" --scenario-profile calibrated_large_v1 --world-profile large_v1 --runs-per-combo 3 --steps 120 --remap-every 12 --capability-profile bio-tech-v1 --capability-score-weight 0.5 --autopoiesis-score-weight 0.15 --enable-optimism-penalty --optimism-penalty-weight 0.25 --max-optimism-gap 0.08 --output artifacts/cross-eval-calibrated-large.json
 ~/.local/bin/uv run add-cross-report --input-path artifacts/cross-eval-calibrated-large.json --markdown-out artifacts/cross-eval-calibrated-large.md --csv-out artifacts/cross-eval-calibrated-large.csv
+```
+
+Humanoid-form compliance evaluation (report-only, ranking unchanged):
+
+```bash
+~/.local/bin/uv run add-cross-eval --checkpoints-list "artifacts/model-core-champion-v09.pt,artifacts/parallel-v10b-stress-autopo-cuda/variant-03.pt" --profile pi5 --embodiments "hexapod,car,drone,polymorph120,humanoid120" --scenario-profile calibrated_large_v1 --world-profile large_v1 --runs-per-combo 3 --steps 120 --remap-every 12 --capability-profile bio-tech-v1 --capability-score-weight 0.5 --autopoiesis-score-weight 0.15 --enable-optimism-penalty --optimism-penalty-weight 0.25 --max-optimism-gap 0.08 --enable-humanoid-compliance --humanoid-embodiment-name humanoid120 --humanoid-compliance-profile human_rigid_v1 --output artifacts/cross-eval-calibrated-large-humanoid.json
+~/.local/bin/uv run add-cross-report --input-path artifacts/cross-eval-calibrated-large-humanoid.json --markdown-out artifacts/cross-eval-calibrated-large-humanoid.md --csv-out artifacts/cross-eval-calibrated-large-humanoid.csv
 ```
 
 Pre-life emergence experiments:

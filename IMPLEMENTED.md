@@ -12,6 +12,7 @@
   - force interaction and object movement
 - Added reproducible embodiment schemas (`hexapod`, `car`, `drone`) and deterministic I/O remapping.
 - Added high-complexity embodiment `polymorph120` (120 DOF; multiple of 10/6/8) and DOF reporting via `add-sim embodiments`.
+- Added human-form constrained embodiment `humanoid120` as a polymorph120-derived 120-DOF schema for rigid compliance evaluation tracks.
 - Added visualization command for single-run adaptation with environment control traces.
 - Added side-by-side checkpoint comparison visualization under the same remap/environment schedule.
 - Added dynamic quantized TorchScript export path.
@@ -439,3 +440,8 @@
   - new scenarios: `latency-storm`, `friction-shift`, `persistent-gust`
   - new scenario profile: `calibrated_large_v1`
   - optimism-gap ranking penalty and promotion gate fields (`sim_optimism_gap`, optimism penalty component, optimism gate pass)
+- Added optional humanoid-form compliance evaluation path (report-only, no rank impact):
+  - `add-cross-eval` flags: `--enable-humanoid-compliance`, `--humanoid-embodiment-name`, `--humanoid-compliance-profile`
+  - strict/relaxed profiles: `human_rigid_v1`, `human_rigid_relaxed_v1`
+  - checkpoint payload fields: `humanoid_compliance.overall_score`, `humanoid_compliance.pass`
+  - `add-cross-report` humanoid compliance section/CSV columns for top checkpoints
