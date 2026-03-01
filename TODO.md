@@ -75,6 +75,7 @@
 - [ ] Add scenario-targeted remediation curriculum for `latency-storm` and `storm` in `hexapod/car/drone` where `v03` regressed vs `v07` in storyboard deltas.
 - [ ] Align in-training capability proxies with cross-eval capability metrics (signal reliability/conjoining calibration mismatch) so guardrail penalties predict ranking outcomes.
 - [ ] Recover transfer after guardrail capability gains (`v04/v05`) by rebalancing transfer-loss/fitness and capability penalties without sacrificing restored capability.
+- [ ] Push `v06` beyond champion line (`v07/v09`) by targeting remaining score gap through scenario-weighted transfer recovery on `car`/`hexapod` without dropping capability floor.
 
 ## Hardware-In-The-Loop
 

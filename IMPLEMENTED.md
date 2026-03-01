@@ -20,6 +20,14 @@
 - Generated guardrail storyline visual package (`v04` vs `v02`) in large calibrated world:
   - `artifacts/viz-storyboard-v04-v02-calib-large-v1/convergence-storyboard.gif`
   - delta summary: `artifacts/viz-storyboard-v04-v02-calib-large-v1/compare-summary.md`.
+- Ran transfer-recovery calibration line from `v05`:
+  - checkpoint: `artifacts/model-core-coevo-guardrail-transfercal-v06.pt`
+  - metrics: `artifacts/model-core-coevo-guardrail-transfercal-v06.metrics.json`
+  - calibrated cross-eval: `artifacts/cross-eval-guardrail-v06-v05-v02-v07-v09-calib-extreme-r3.json`
+  - result: `v06` moved to rank 3, surpassing `v02` overall (`0.564079 > 0.561211`) with capability gain (`0.476272`) and near-baseline transfer (`0.434984`).
+- Added new targeted compare GIFs for ongoing visual evidence:
+  - `artifacts/v06-vs-v02-car-latency-storm-ish.gif`
+  - `artifacts/v07-vs-v06-drone-storm-ish.gif`.
 - Ran a shared-environment 1200-generation extreme coevolution cycle with all five embodiments (`hexapod,car,drone,polymorph120,humanoid120`) in `large_v1_extreme`:
   - checkpoint: `artifacts/model-core-coevo-1200-shared-extreme-v03.pt`
   - metrics: `artifacts/model-core-coevo-1200-shared-extreme-v03.metrics.json`
