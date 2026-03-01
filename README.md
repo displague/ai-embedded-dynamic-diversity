@@ -208,6 +208,12 @@ Convergence storyboard GIF package (top-k checkpoints from cross-eval):
 - a montage GIF (`convergence-storyboard.gif`)
 - a manifest JSON linking GIFs and final mismatch/vitality metrics
 
+Storyboard delta summarization (left vs right compare metrics):
+
+```bash
+.\.venv\Scripts\python scripts/analyze_storyboard_metrics.py --storyboard-dir artifacts/viz-storyboard-calibrated-h3-v2-r6 --left-tag model-core-champion-v07 --right-tag model-core-champion-v09 --top-k 12 --output-json artifacts/viz-storyboard-calibrated-h3-v2-r6/compare-summary.json --output-md artifacts/viz-storyboard-calibrated-h3-v2-r6/compare-summary.md
+```
+
 Memory gating benchmark:
 
 ```bash

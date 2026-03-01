@@ -458,6 +458,10 @@
   - `--latency-storm-consistency-target`
   - `--latency-storm-penalty-mix`
   - output fields: `ranking_component_world_consistency_penalty` and `world_consistency_penalty_components`
+- Added storyboard compare analysis utility:
+  - `scripts/analyze_storyboard_metrics.py`
+  - summarizes per-scenario/per-embodiment left-vs-right mismatch/vitality deltas from storyboard compare metrics
+  - emits reusable JSON/Markdown summaries for rapid checkpoint tradeoff review
 - Added optional humanoid-form compliance evaluation path (report-only, no rank impact):
   - `add-cross-eval` flags: `--enable-humanoid-compliance`, `--humanoid-embodiment-name`, `--humanoid-compliance-profile`
   - strict/relaxed profiles: `human_rigid_v1`, `human_rigid_relaxed_v1`
