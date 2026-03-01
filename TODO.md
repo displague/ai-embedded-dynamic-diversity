@@ -73,6 +73,8 @@
 - [x] Add capability-preserving training guardrails for coevolution (floor constraints or adaptive penalties on `signal_reliability` and `conjoining_gain`) to prevent transfer-only overfitting.
 - [ ] Add periodic in-training capability probes (small fixed eval bundle every N generations) and early-stop/ratchet triggers when capability drops while transfer rises.
 - [ ] Add scenario-targeted remediation curriculum for `latency-storm` and `storm` in `hexapod/car/drone` where `v03` regressed vs `v07` in storyboard deltas.
+- [ ] Align in-training capability proxies with cross-eval capability metrics (signal reliability/conjoining calibration mismatch) so guardrail penalties predict ranking outcomes.
+- [ ] Recover transfer after guardrail capability gains (`v04/v05`) by rebalancing transfer-loss/fitness and capability penalties without sacrificing restored capability.
 
 ## Hardware-In-The-Loop
 

@@ -16,12 +16,14 @@ Date: 2026-03-01
 10. **Failure mode identified:** transfer gains can hide capability collapse when `signal_reliability` and `conjoining_gain` decay under aggressive objective weighting.
 11. **Storyboard evidence expanded** with 30 compare GIFs + montage (`artifacts/viz-storyboard-v07-v03-calib-large-v1`) showing strongest v03 regressions in `latency-storm/storm` for `hexapod`, `car`, and `drone`.
 12. **Capability guardrail controls implemented** in coevolution selection with floor-based penalties and per-generation proxy telemetry (`mean_signal_reliability`, `mean_conjoining_gain`).
+13. **Guardrail retrain results (`v04`, `v05`)** improved capability over `v02` but reduced transfer enough to keep overall ranking below `v02`.
+14. **Training-vs-eval proxy gap remains:** high in-training signal proxy values did not translate to champion-level cross-eval capability, indicating calibration mismatch in guardrail proxies.
 
 ## Immediate Handoff Continuation
 
-1. Tune capability guardrail thresholds/weights and rerun a constrained shared-environment cycle to recover capability while preserving transfer.
-2. Add periodic capability probe checkpoints during training and terminate/ratchet when capability decays while transfer rises.
-3. Run targeted curriculum pass for `latency-storm` and `storm` (especially `hexapod`, `car`, `drone`) before next 1200-generation promotion attempt.
+1. Calibrate guardrail proxies against cross-eval capability metrics and update penalty formulation so in-training signals better predict final ranking.
+2. Rebalance transfer and capability objectives (starting from `v05`) to regain weighted transfer while preserving improved capability floor.
+3. Keep targeted curriculum pressure on `latency-storm` and `storm` for `hexapod`, `car`, `drone` to reduce dominant regression scenarios seen in storyboard deltas.
 
 ## Reuse Tags
 
@@ -36,3 +38,5 @@ Date: 2026-03-01
 - `shared-env-v03-regression`
 - `capability-guardrail-needed`
 - `storyboard-v07-v03-calib-large`
+- `guardrail-v04-v05`
+- `proxy-calibration-gap`

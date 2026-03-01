@@ -10,6 +10,16 @@
   - `--capability-guardrail-penalty-weight`
   - coevolution selection now supports penalty-adjusted fitness when capability proxies fall below configured floors.
 - Added in-training capability proxy logging (`mean_signal_reliability`, `mean_conjoining_gain`) per epoch/generation and in metrics artifacts for faster collapse detection.
+- Ran guardrail-enabled shared-environment retrains to test capability recovery under the large extreme world:
+  - `v04` (400 generations): `artifacts/model-core-coevo-guardrail-shared-extreme-v04.pt`
+  - `v05` (1200 generations): `artifacts/model-core-coevo-guardrail-shared-extreme-v05.pt`
+  - calibrated cross-eval (`artifacts/cross-eval-guardrail-v05-v04-v02-v07-v09-calib-extreme-r3.json`) showed:
+    - capability improved vs `v02` (`v02=0.451197`, `v04=0.469510`, `v05=0.470872`)
+    - weighted transfer regressed (`v02=0.436566`, `v04=0.432410`, `v05=0.431482`)
+    - ranking remained below `v02` and champion line (`v07`, `v09`).
+- Generated guardrail storyline visual package (`v04` vs `v02`) in large calibrated world:
+  - `artifacts/viz-storyboard-v04-v02-calib-large-v1/convergence-storyboard.gif`
+  - delta summary: `artifacts/viz-storyboard-v04-v02-calib-large-v1/compare-summary.md`.
 - Ran a shared-environment 1200-generation extreme coevolution cycle with all five embodiments (`hexapod,car,drone,polymorph120,humanoid120`) in `large_v1_extreme`:
   - checkpoint: `artifacts/model-core-coevo-1200-shared-extreme-v03.pt`
   - metrics: `artifacts/model-core-coevo-1200-shared-extreme-v03.metrics.json`
