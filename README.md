@@ -284,6 +284,25 @@ Calibrated large-world evaluation with optimism-gap penalty:
 ~/.local/bin/uv run add-cross-report --input-path artifacts/cross-eval-calibrated-large.json --markdown-out artifacts/cross-eval-calibrated-large.md --csv-out artifacts/cross-eval-calibrated-large.csv
 ```
 
+Optional world randomization manifest (deterministic by seed):
+
+```json
+{
+  "global": {
+    "surface_friction_scale": {"min": 0.85, "max": 1.15},
+    "sensor_dropout_burst_prob": {"min": 0.0, "max": 0.08}
+  },
+  "scenarios": {
+    "storm": {
+      "actuation_delay_steps": {"min": 1, "max": 4},
+      "actuation_noise_std": {"min": 0.0, "max": 0.03}
+    }
+  }
+}
+```
+
+Pass with `--world-randomization-manifest artifacts/world-randomization.json` to jitter realism parameters per run while preserving reproducibility.
+
 Humanoid-form compliance evaluation (report-only, ranking unchanged):
 
 ```bash

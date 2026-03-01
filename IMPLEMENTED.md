@@ -440,6 +440,10 @@
   - new scenarios: `latency-storm`, `friction-shift`, `persistent-gust`
   - new scenario profile: `calibrated_large_v1`
   - optimism-gap ranking penalty and promotion gate fields (`sim_optimism_gap`, optimism penalty component, optimism gate pass)
+- Added deterministic world-randomization manifest support in `add-cross-eval`:
+  - `--world-randomization-manifest <json>`
+  - global and scenario-specific sampling envelopes for world realism parameters (`decay`, latencies, dropout burst probability, friction scale, disturbance horizon)
+  - per-run sampled `world_params` persisted in run rows for auditability
 - Added optional humanoid-form compliance evaluation path (report-only, no rank impact):
   - `add-cross-eval` flags: `--enable-humanoid-compliance`, `--humanoid-embodiment-name`, `--humanoid-compliance-profile`
   - strict/relaxed profiles: `human_rigid_v1`, `human_rigid_relaxed_v1`

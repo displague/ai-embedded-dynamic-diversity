@@ -69,7 +69,7 @@
 - [ ] Add large-scene environment dataset loader for calibration runs (terrain diversity, lighting/weather sweeps, dynamic obstacles) to reduce sim optimism.
 - [ ] Add world-state latent rollouts and consistency checks (short-horizon imagination vs simulated truth) for environment harness validation.
 - [ ] Add contact-rich locomotion/manipulation stress suites (uneven terrain, slips, perturbation recovery) with deterministic seed bundles.
-- [ ] Add scenario-level domain randomization manifests (sensor latency/dropout/fault envelopes) and keep cross-eval world profile parity checks.
+- [x] Add scenario-level domain randomization manifests (sensor latency/dropout/fault envelopes) and keep cross-eval world profile parity checks.
 
 ## Hardware-In-The-Loop
 

@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import pytest
 import torch
 
@@ -18,6 +21,8 @@ from ai_embedded_dynamic_diversity.train.cross_eval_cli import (
     _resolve_prelife_seeds,
     _resolve_noise_profile,
     _resolve_humanoid_embodiment_name,
+    _resolve_world_randomization_manifest,
+    _sample_world_params_for_run,
     _resolve_subset_embodiments,
     _resolve_train_embodiments,
     _resolve_scenario_profile,
@@ -335,3 +340,41 @@ def test_humanoid_profile_and_name_resolution() -> None:
     assert _resolve_humanoid_embodiment_name("HuManoiD120") == "humanoid120"
     profile = resolve_humanoid_compliance_profile("human_rigid_v1")
     assert profile.required_embodiment == "humanoid120"
+
+
+def test_resolve_world_randomization_manifest_empty_and_missing() -> None:
+    assert _resolve_world_randomization_manifest("") == {}
+    with pytest.raises(ValueError):
+        _resolve_world_randomization_manifest("does-not-exist.json")
+
+
+def test_resolve_world_randomization_manifest_loads_json() -> None:
+    p = Path("artifacts/test-world-randomization-manifest.json")
+    p.parent.mkdir(parents=True, exist_ok=True)
+    payload = {"global": {"surface_friction_scale": {"min": 0.9, "max": 1.1}}}
+    p.write_text(json.dumps(payload), encoding="utf-8")
+    out = _resolve_world_randomization_manifest(str(p))
+    assert out["global"]["surface_friction_scale"]["min"] == 0.9
+
+
+def test_sample_world_params_for_run_deterministic_with_seed() -> None:
+    base = {
+        "decay": 0.03,
+        "actuation_delay_steps": 1,
+        "actuation_noise_std": 0.0,
+        "sensor_latency_steps": 1,
+        "sensor_dropout_burst_prob": 0.0,
+        "surface_friction_scale": 1.0,
+        "disturbance_correlation_horizon": 1,
+    }
+    manifest = {
+        "global": {"surface_friction_scale": {"min": 0.8, "max": 1.2}},
+        "scenarios": {"storm": {"actuation_delay_steps": {"min": 2, "max": 4}}},
+    }
+    a = _sample_world_params_for_run(base, "storm", manifest, seed=123)
+    b = _sample_world_params_for_run(base, "storm", manifest, seed=123)
+    c = _sample_world_params_for_run(base, "storm", manifest, seed=124)
+    assert a == b
+    assert a != c
+    assert 0.8 <= float(a["surface_friction_scale"]) <= 1.2
+    assert 2 <= int(a["actuation_delay_steps"]) <= 4

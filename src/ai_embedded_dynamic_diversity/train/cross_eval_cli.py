@@ -490,6 +490,81 @@ def _resolve_noise_profile(profile: str) -> str:
     return normalized
 
 
+_WORLD_PARAM_KEYS: tuple[str, ...] = (
+    "decay",
+    "actuation_delay_steps",
+    "actuation_noise_std",
+    "sensor_latency_steps",
+    "sensor_dropout_burst_prob",
+    "surface_friction_scale",
+    "disturbance_correlation_horizon",
+)
+
+
+def _resolve_world_randomization_manifest(path: str) -> dict:
+    p = path.strip()
+    if not p:
+        return {}
+    manifest_path = Path(p)
+    if not manifest_path.exists():
+        raise ValueError(f"world_randomization_manifest not found: {p}")
+    try:
+        payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Invalid JSON in world_randomization_manifest: {p}") from exc
+    if not isinstance(payload, dict):
+        raise ValueError("world_randomization_manifest must be a JSON object")
+    return payload
+
+
+def _sample_world_params_for_run(
+    base_params: dict[str, float | int],
+    scenario_name: str,
+    manifest: dict,
+    *,
+    seed: int,
+) -> dict[str, float | int]:
+    if not manifest:
+        return dict(base_params)
+    gen = torch.Generator(device="cpu")
+    gen.manual_seed(int(seed))
+    sampled: dict[str, float | int] = dict(base_params)
+
+    sections = []
+    global_section = manifest.get("global", {})
+    if isinstance(global_section, dict):
+        sections.append(global_section)
+    scenarios_section = manifest.get("scenarios", {})
+    if isinstance(scenarios_section, dict):
+        scenario_section = scenarios_section.get(scenario_name, {})
+        if isinstance(scenario_section, dict):
+            sections.append(scenario_section)
+
+    for section in sections:
+        for key, spec in section.items():
+            if key not in _WORLD_PARAM_KEYS or not isinstance(spec, dict):
+                continue
+            lo = spec.get("min")
+            hi = spec.get("max")
+            if lo is None or hi is None:
+                continue
+            low = float(min(lo, hi))
+            high = float(max(lo, hi))
+            if key in {"actuation_delay_steps", "sensor_latency_steps", "disturbance_correlation_horizon"}:
+                if high <= low:
+                    sampled[key] = int(round(low))
+                else:
+                    draw = float(torch.rand((), generator=gen).item())
+                    sampled[key] = int(round(low + (high - low) * draw))
+            else:
+                if high <= low:
+                    sampled[key] = low
+                else:
+                    draw = float(torch.rand((), generator=gen).item())
+                    sampled[key] = low + (high - low) * draw
+    return sampled
+
+
 def _resolve_humanoid_embodiment_name(name: str) -> str:
     normalized = name.strip().lower()
     if not normalized:
@@ -935,6 +1010,7 @@ def _evaluate_ranked_checkpoints(
     noise_profile_resolved: str,
     world_dims: tuple[int, int, int, int],
     world_params: dict[str, float | int],
+    world_randomization_manifest: dict,
     enable_humanoid_compliance: bool,
     humanoid_embodiment_name: str,
     humanoid_compliance_profile_name: str,
@@ -958,6 +1034,12 @@ def _evaluate_ranked_checkpoints(
             for scen_idx, scen in enumerate(scenario_specs):
                 for rep in range(runs_per_combo):
                     combo_seed = seed + emb_idx * 1000 + scen_idx * 100 + rep
+                    combo_world_params = _sample_world_params_for_run(
+                        world_params,
+                        scen.name,
+                        world_randomization_manifest,
+                        seed=combo_seed + 77,
+                    )
                     metrics = rollout_metrics(
                         model=model,
                         cfg=cfg,
@@ -967,7 +1049,7 @@ def _evaluate_ranked_checkpoints(
                         remap_every=remap_every,
                         seed=combo_seed,
                         world_dims=world_dims,
-                        world_params=world_params,
+                        world_params=combo_world_params,
                         device=dev,
                         capability_profile=capability_profile_resolved,
                         noise_profile=noise_profile_resolved,
@@ -977,6 +1059,7 @@ def _evaluate_ranked_checkpoints(
                             "embodiment": emb_name,
                             "scenario": scen.name,
                             "rep": rep,
+                            "world_params": dict(combo_world_params),
                             **metrics,
                         }
                     )
@@ -1057,6 +1140,12 @@ def _evaluate_ranked_checkpoints(
                 for scen_idx, scen in enumerate(std_scenarios):
                     for rep in range(runs_per_combo):
                         combo_seed = seed + 900000 + emb_idx * 1000 + scen_idx * 100 + rep
+                        std_world_params = _sample_world_params_for_run(
+                            world_params,
+                            scen.name,
+                            world_randomization_manifest,
+                            seed=combo_seed + 77,
+                        )
                         std_metrics = rollout_metrics(
                             model=model,
                             cfg=cfg,
@@ -1066,7 +1155,7 @@ def _evaluate_ranked_checkpoints(
                             remap_every=remap_every,
                             seed=combo_seed,
                             world_dims=world_dims,
-                            world_params=world_params,
+                            world_params=std_world_params,
                             device=dev,
                             capability_profile="none",
                             noise_profile=noise_profile_resolved,
@@ -1210,6 +1299,7 @@ def run(
     world_z: int = 10,
     resource_channels: int = 5,
     world_profile: str = "",
+    world_randomization_manifest: str = "",
     enable_humanoid_compliance: bool = False,
     humanoid_embodiment_name: str = "humanoid120",
     humanoid_compliance_profile: str = "human_rigid_v1",
@@ -1318,6 +1408,10 @@ def run(
         "surface_friction_scale": float(world_cfg.surface_friction_scale) if world_cfg is not None else 1.0,
         "disturbance_correlation_horizon": int(world_cfg.disturbance_correlation_horizon) if world_cfg is not None else 0,
     }
+    try:
+        world_randomization_manifest_resolved = _resolve_world_randomization_manifest(world_randomization_manifest)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
 
     current_symbio_threshold = symbio_min_threshold
     current_autopoiesis_threshold = autopoiesis_min_threshold
@@ -1353,6 +1447,7 @@ def run(
             noise_profile_resolved=noise_profile_resolved,
             world_dims=world_dims,
             world_params=world_params,
+            world_randomization_manifest=world_randomization_manifest_resolved,
             enable_humanoid_compliance=enable_humanoid_compliance,
             humanoid_embodiment_name=humanoid_name_resolved,
             humanoid_compliance_profile_name=humanoid_compliance_profile,
@@ -1393,6 +1488,7 @@ def run(
                 "autopoiesis_min_threshold": current_autopoiesis_threshold,
                 "noise_profile": noise_profile_resolved,
                 "world_profile": world_profile,
+                "world_randomization_manifest": world_randomization_manifest,
                 "enable_humanoid_compliance": enable_humanoid_compliance,
                 "humanoid_embodiment_name": humanoid_name_resolved,
                 "humanoid_compliance_profile": humanoid_compliance_profile,
