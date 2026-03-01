@@ -54,6 +54,15 @@ print(torch.__version__, torch.cuda.is_available(), torch.version.cuda)
 
 If `uv run` re-syncs CPU torch from lockfile, run training/eval via `.\.venv\Scripts\python -m ...` (or `uv run --no-sync` if your environment is already correct). Training now defaults to strict device selection, so `--device cuda` fails fast if CUDA is unavailable.
 
+External reference repositories (gitignored) can be synced for simulator calibration research:
+
+```powershell
+.\scripts\sync_external_refs.ps1
+.\scripts\sync_external_refs.ps1 -PullLatest
+```
+
+See `docs/external-references.md` for policy and traceability.
+
 ## Run training
 
 ```bash
@@ -265,6 +274,13 @@ Noisy-signal robustness eval (stricter checkmate):
 ```bash
 ~/.local/bin/uv run add-cross-eval --checkpoints-list "artifacts/model-core-champion-v03.pt,artifacts/parallel-cuda-capability-v01/variant-01.pt,artifacts/parallel-cuda-capability-v01/variant-00.pt" --profile pi5 --embodiments "hexapod,car,drone,polymorph120" --train-embodiments "hexapod,car" --checkmate-threshold 0.95 --scenario-profile hardy --runs-per-combo 6 --steps 110 --remap-every 12 --noise-profile dropout-quant-v2 --output artifacts/cross-eval-checkmate-transfer-noisyv2-hardy-poly4-r6-th095.json
 ~/.local/bin/uv run add-cross-report --input-path artifacts/cross-eval-checkmate-transfer-noisyv2-hardy-poly4-r6-th095.json --markdown-out artifacts/cross-eval-checkmate-transfer-noisyv2-hardy-poly4-r6-th095.md --csv-out artifacts/cross-eval-checkmate-transfer-noisyv2-hardy-poly4-r6-th095.csv
+```
+
+Calibrated large-world evaluation with optimism-gap penalty:
+
+```bash
+~/.local/bin/uv run add-cross-eval --checkpoints-list "artifacts/model-core-champion-v09.pt,artifacts/parallel-v10b-stress-autopo-cuda/variant-03.pt" --profile pi5 --embodiments "hexapod,car,drone,polymorph120" --scenario-profile calibrated_large_v1 --world-profile large_v1 --runs-per-combo 3 --steps 120 --remap-every 12 --capability-profile bio-tech-v1 --capability-score-weight 0.5 --autopoiesis-score-weight 0.15 --enable-optimism-penalty --optimism-penalty-weight 0.25 --max-optimism-gap 0.08 --output artifacts/cross-eval-calibrated-large.json
+~/.local/bin/uv run add-cross-report --input-path artifacts/cross-eval-calibrated-large.json --markdown-out artifacts/cross-eval-calibrated-large.md --csv-out artifacts/cross-eval-calibrated-large.csv
 ```
 
 Pre-life emergence experiments:

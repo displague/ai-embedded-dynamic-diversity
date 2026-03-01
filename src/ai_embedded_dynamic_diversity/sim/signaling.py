@@ -6,8 +6,35 @@ from ai_embedded_dynamic_diversity.sim.world import DynamicDiversityWorld, World
 class SignalingWorld(DynamicDiversityWorld):
     """Extends world with explicit signal injection for detection tasks."""
     
-    def __init__(self, x: int, y: int, z: int, resource_channels: int, decay: float = 0.03, device: str = "cpu"):
-        super().__init__(x, y, z, resource_channels, decay, device)
+    def __init__(
+        self,
+        x: int,
+        y: int,
+        z: int,
+        resource_channels: int,
+        decay: float = 0.03,
+        device: str = "cpu",
+        actuation_delay_steps: int = 0,
+        actuation_noise_std: float = 0.0,
+        sensor_latency_steps: int = 0,
+        sensor_dropout_burst_prob: float = 0.0,
+        surface_friction_scale: float = 1.0,
+        disturbance_correlation_horizon: int = 0,
+    ):
+        super().__init__(
+            x,
+            y,
+            z,
+            resource_channels,
+            decay,
+            device,
+            actuation_delay_steps=actuation_delay_steps,
+            actuation_noise_std=actuation_noise_std,
+            sensor_latency_steps=sensor_latency_steps,
+            sensor_dropout_burst_prob=sensor_dropout_burst_prob,
+            surface_friction_scale=surface_friction_scale,
+            disturbance_correlation_horizon=disturbance_correlation_horizon,
+        )
         # Signal types: 0=none, 1=peer, 2=environment, 3=threat
         self.signal_types = 4
         # Threat agent position state (not in core WorldState yet, we'll manage it here for now)

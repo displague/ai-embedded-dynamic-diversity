@@ -25,6 +25,7 @@
 - [x] Standardize latency benchmark matrix (P50/P95) across CPU/CUDA now and Pi5/Jetson/mobile accelerators as hardware is available.
 - [x] Add noisy-signal robustness eval profiles in `cross-eval` (`dropout-quant-v1`, `dropout-quant-v2`) and compare checkmate/transfer impact.
 - [x] Add noisy-signal resilience curriculum in training (sensor dropout + quantization noise) and evaluate impact on hardy transfer.
+- [x] Add calibrated large-world eval profile (`calibrated_large_v1`) with optimism-gap penalty/gate so promotion resists simulation over-optimism.
 
 ## Medium Priority
 

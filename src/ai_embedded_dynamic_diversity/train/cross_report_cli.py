@@ -70,6 +70,10 @@ def run(
             "ranking_component_capability": float(item.get("ranking_component_capability", capability_score_weight * overall_capability_score)),
             "ranking_component_prelife": float(item.get("ranking_component_prelife", prelife_score_weight * float(item.get("overall_prelife_score", 0.0)))),
             "ranking_component_autopoiesis": float(item.get("ranking_component_autopoiesis", autopoiesis_score_weight * float(item.get("overall_autopoiesis_score", 0.0)))),
+            "overall_transfer_score_standard": float(item.get("overall_transfer_score_standard", transfer_weighted)),
+            "overall_transfer_score_calibrated_large": float(item.get("overall_transfer_score_calibrated_large", transfer_weighted)),
+            "sim_optimism_gap": float(item.get("sim_optimism_gap", 0.0)),
+            "ranking_component_optimism_penalty": float(item.get("ranking_component_optimism_penalty", 0.0)),
             "checkmate_pass_all": bool(item.get("checkmate_pass_all", False)),
             "checkmate_pass_heldout": bool(item.get("checkmate_pass_heldout", False)),
             "checkmate_min_effectiveness": float(item.get("checkmate_min_effectiveness", 0.0)),
@@ -79,6 +83,7 @@ def run(
             "checkmate_heldout_embodiments": json.dumps(heldout_embodiments),
             "symbio_gate_pass": bool(item.get("symbio_gate_pass", True)),
             "autopoiesis_gate_pass": bool(item.get("autopoiesis_gate_pass", True)),
+            "optimism_gate_pass": bool(item.get("optimism_gate_pass", True)),
             "convergence_gate_pass": bool(item.get("convergence_gate_pass", True)),
             "promotion_eligible": bool(item.get("promotion_eligible", True)),
             "flags": json.dumps(item.get("flags", {}), sort_keys=True),
@@ -159,12 +164,12 @@ def run(
     md_lines.append("## Top 5")
     md_lines.append("")
     if capability_enabled or prelife_enabled:
-        md_lines.append("| Rank | Checkpoint | Ranking Score | Transfer (Weighted) | Capability Score | Prelife Score | Autopoiesis Score | C.Transfer | C.Capability | C.Prelife | C.Autopoiesis | Eligible | Delta vs Best | Mismatch | Vitality | Recovery |")
-        md_lines.append("|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|---:|---:|---:|")
+        md_lines.append("| Rank | Checkpoint | Ranking Score | Transfer (Weighted) | Standard Transfer | Calibrated Transfer | Optimism Gap | Capability Score | Prelife Score | Autopoiesis Score | C.Transfer | C.Capability | C.Prelife | C.Autopoiesis | C.OptimismPenalty | Eligible | Delta vs Best | Mismatch | Vitality | Recovery |")
+        md_lines.append("|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|---:|---:|---:|---:|")
         for row in rows[:5]:
             md_lines.append(
                 "| "
-                + f"{row['rank']} | `{row['checkpoint']}` | {_fmt(row['overall_ranking_score'])} | {_fmt(row['overall_transfer_score_weighted'])} | {_fmt(row['overall_capability_score'])} | {_fmt(row['overall_prelife_score'])} | {_fmt(row['overall_autopoiesis_score'])} | {_fmt(row['ranking_component_transfer'])} | {_fmt(row['ranking_component_capability'])} | {_fmt(row['ranking_component_prelife'])} | {_fmt(row['ranking_component_autopoiesis'])} | {row['promotion_eligible']} | {_fmt(row['delta_vs_best'])} | {_fmt(row['overall_mean_mismatch'])} | {_fmt(row['overall_mean_vitality'])} | {_fmt(row['overall_recovery'])} |"
+                + f"{row['rank']} | `{row['checkpoint']}` | {_fmt(row['overall_ranking_score'])} | {_fmt(row['overall_transfer_score_weighted'])} | {_fmt(row['overall_transfer_score_standard'])} | {_fmt(row['overall_transfer_score_calibrated_large'])} | {_fmt(row['sim_optimism_gap'])} | {_fmt(row['overall_capability_score'])} | {_fmt(row['overall_prelife_score'])} | {_fmt(row['overall_autopoiesis_score'])} | {_fmt(row['ranking_component_transfer'])} | {_fmt(row['ranking_component_capability'])} | {_fmt(row['ranking_component_prelife'])} | {_fmt(row['ranking_component_autopoiesis'])} | {_fmt(row['ranking_component_optimism_penalty'])} | {row['promotion_eligible']} | {_fmt(row['delta_vs_best'])} | {_fmt(row['overall_mean_mismatch'])} | {_fmt(row['overall_mean_vitality'])} | {_fmt(row['overall_recovery'])} |"
             )
     else:
         md_lines.append("| Rank | Checkpoint | Transfer (Ranking) | Transfer (Unweighted) | Delta vs Best | Mismatch | Vitality | Recovery |")
@@ -229,12 +234,12 @@ def run(
     md_lines.append("")
     md_lines.append("## Convergence Gates (Top 10)")
     md_lines.append("")
-    md_lines.append("| Rank | Checkpoint | Symbio Gate | Autopoiesis Gate | Convergence Gate | Promotion Eligible |")
-    md_lines.append("|---|---|---|---|---|---|")
+    md_lines.append("| Rank | Checkpoint | Symbio Gate | Autopoiesis Gate | Optimism Gate | Convergence Gate | Promotion Eligible |")
+    md_lines.append("|---|---|---|---|---|---|---|")
     for row in rows[:10]:
         md_lines.append(
             "| "
-            + f"{row['rank']} | `{row['checkpoint']}` | {row['symbio_gate_pass']} | {row['autopoiesis_gate_pass']} | {row['convergence_gate_pass']} | {row['promotion_eligible']} |"
+            + f"{row['rank']} | `{row['checkpoint']}` | {row['symbio_gate_pass']} | {row['autopoiesis_gate_pass']} | {row['optimism_gate_pass']} | {row['convergence_gate_pass']} | {row['promotion_eligible']} |"
         )
 
     if ratchet_cycles:

@@ -36,7 +36,21 @@ class WorldState:
 class DynamicDiversityWorld:
     """3D cellular world with resources, stressors, and local flow constraints."""
 
-    def __init__(self, x: int, y: int, z: int, resource_channels: int, decay: float = 0.03, device: str = "cpu"):
+    def __init__(
+        self,
+        x: int,
+        y: int,
+        z: int,
+        resource_channels: int,
+        decay: float = 0.03,
+        device: str = "cpu",
+        actuation_delay_steps: int = 0,
+        actuation_noise_std: float = 0.0,
+        sensor_latency_steps: int = 0,
+        sensor_dropout_burst_prob: float = 0.0,
+        surface_friction_scale: float = 1.0,
+        disturbance_correlation_horizon: int = 0,
+    ):
         self.x = x
         self.y = y
         self.z = z
@@ -45,6 +59,16 @@ class DynamicDiversityWorld:
         self.device = torch.device(device)
         self.kernel = self._kernel3d().to(self.device)
         self.coord_grid = self._coord_grid3d().to(self.device)
+        self.actuation_delay_steps = max(0, int(actuation_delay_steps))
+        self.actuation_noise_std = max(0.0, float(actuation_noise_std))
+        self.sensor_latency_steps = max(0, int(sensor_latency_steps))
+        self.sensor_dropout_burst_prob = max(0.0, float(sensor_dropout_burst_prob))
+        self.surface_friction_scale = max(0.0, float(surface_friction_scale))
+        self.disturbance_correlation_horizon = max(0, int(disturbance_correlation_horizon))
+        self._action_buffer: list[torch.Tensor] = []
+        self._obs_buffer: list[torch.Tensor] = []
+        self._dropout_burst_steps_remaining = 0
+        self._prev_controls: EnvironmentControls | None = None
 
     def _kernel3d(self) -> torch.Tensor:
         k = torch.ones((1, 1, 3, 3, 3), dtype=torch.float32)
@@ -85,6 +109,21 @@ class DynamicDiversityWorld:
             controls.force_strength = torch.rand(batch_size, 1, device=self.device) * (0.4 + 0.8 * vol)
             controls.force_vector = torch.randn(batch_size, 3, device=self.device) * vol
             controls.force_position = torch.rand(batch_size, 3, device=self.device) * 2.0 - 1.0
+        if self._prev_controls is not None and self.disturbance_correlation_horizon > 0:
+            alpha = max(0.05, min(0.95, 1.0 / float(self.disturbance_correlation_horizon)))
+            controls.wind = (1.0 - alpha) * self._prev_controls.wind + alpha * controls.wind
+            controls.force_vector = (1.0 - alpha) * self._prev_controls.force_vector + alpha * controls.force_vector
+            controls.force_strength = (1.0 - alpha) * self._prev_controls.force_strength + alpha * controls.force_strength
+        self._prev_controls = EnvironmentControls(
+            wind=controls.wind.clone(),
+            light_position=controls.light_position.clone(),
+            light_intensity=controls.light_intensity.clone(),
+            force_position=controls.force_position.clone(),
+            force_vector=controls.force_vector.clone(),
+            force_strength=controls.force_strength.clone(),
+            force_active=controls.force_active.clone(),
+            move_object_delta=controls.move_object_delta.clone(),
+        )
         return controls
 
     def init(self, batch_size: int) -> WorldState:
@@ -93,6 +132,10 @@ class DynamicDiversityWorld:
         stress = torch.zeros(batch_size, 1, self.z, self.y, self.x, device=self.device)
         object_pos = torch.zeros(batch_size, 3, device=self.device)
         object_vel = torch.zeros(batch_size, 3, device=self.device)
+        self._action_buffer = []
+        self._obs_buffer = []
+        self._dropout_burst_steps_remaining = 0
+        self._prev_controls = None
         return WorldState(life, resources, stress, object_pos, object_vel)
 
     def _light_field(self, controls: EnvironmentControls) -> torch.Tensor:
@@ -123,6 +166,15 @@ class DynamicDiversityWorld:
     def step(self, state: WorldState, action_field: torch.Tensor, controls: EnvironmentControls | None = None) -> WorldState:
         if controls is None:
             controls = self.default_controls(action_field.size(0))
+        if self.actuation_noise_std > 0.0:
+            action_field = action_field + self.actuation_noise_std * torch.randn_like(action_field)
+        if self.actuation_delay_steps > 0:
+            self._action_buffer.append(action_field.clone())
+            if len(self._action_buffer) <= self.actuation_delay_steps:
+                delayed_action = torch.zeros_like(action_field)
+            else:
+                delayed_action = self._action_buffer.pop(0)
+            action_field = delayed_action
 
         neighbors = torch.conv3d(state.life, self.kernel, padding=1)
         survive = ((neighbors >= 5) & (neighbors <= 7)).float() * state.life
@@ -143,7 +195,8 @@ class DynamicDiversityWorld:
         wind_pressure = torch.norm(controls.wind, dim=1, keepdim=True).view(-1, 1, 1, 1, 1)
         new_stress = 0.55 * pressure + 0.35 * scarcity + 0.10 * wind_pressure + 0.2 * force_impact
 
-        object_vel = 0.88 * state.object_vel + controls.force_vector * controls.force_strength * controls.force_active
+        drag = max(0.0, min(1.0, 0.88 * self.surface_friction_scale))
+        object_vel = drag * state.object_vel + controls.force_vector * controls.force_strength * controls.force_active
         object_pos = state.object_pos + object_vel + controls.move_object_delta
         object_pos = object_pos.clamp(-1.0, 1.0)
         return WorldState(new_life, new_resources, new_stress.clamp(0.0, 1.0), object_pos, object_vel)
@@ -161,6 +214,22 @@ class DynamicDiversityWorld:
             dim=1,
         )
         if pooled.size(1) >= signal_dim:
-            return pooled[:, :signal_dim]
-        pad = torch.zeros(pooled.size(0), signal_dim - pooled.size(1), device=pooled.device)
-        return torch.cat([pooled, pad], dim=1)
+            obs = pooled[:, :signal_dim]
+        else:
+            pad = torch.zeros(pooled.size(0), signal_dim - pooled.size(1), device=pooled.device)
+            obs = torch.cat([pooled, pad], dim=1)
+        if self.sensor_latency_steps > 0:
+            self._obs_buffer.append(obs.clone())
+            if len(self._obs_buffer) <= self.sensor_latency_steps:
+                delayed_obs = torch.zeros_like(obs)
+            else:
+                delayed_obs = self._obs_buffer.pop(0)
+            obs = delayed_obs
+        if self.sensor_dropout_burst_prob > 0.0:
+            if self._dropout_burst_steps_remaining <= 0 and torch.rand(1, device=self.device).item() < self.sensor_dropout_burst_prob:
+                self._dropout_burst_steps_remaining = int(torch.randint(2, 6, (1,), device=self.device).item())
+            if self._dropout_burst_steps_remaining > 0:
+                keep = (torch.rand_like(obs) > 0.45).float()
+                obs = obs * keep
+                self._dropout_burst_steps_remaining -= 1
+        return obs

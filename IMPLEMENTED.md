@@ -423,3 +423,19 @@
   - packet validation script (`skills/dynamic-diversity-research/scripts/validate_handoff_packet.py`)
   - packet example (`skills/dynamic-diversity-research/assets/handoff-packet-example.json`)
 - Injecting noisy observations while keeping transfer targets anchored to clean observations improves robustness without degrading clean transfer in this setup.
+- Added external reference ingestion workflow for simulator calibration:
+  - gitignored `external_refs/` root
+  - sync helper `scripts/sync_external_refs.ps1` for shallow clone/pull and manifest emission
+  - policy + traceability doc in `docs/external-references.md`
+- Expanded world realism controls in `sim/world.py` (default-off for compatibility):
+  - actuation delay/noise
+  - sensor latency/dropout bursts
+  - surface friction scaling
+  - disturbance correlation horizon
+- Added world profiles in config:
+  - `large_v1`
+  - `large_v1_extreme`
+- Extended cross-eval/cross-report with calibrated realism support:
+  - new scenarios: `latency-storm`, `friction-shift`, `persistent-gust`
+  - new scenario profile: `calibrated_large_v1`
+  - optimism-gap ranking penalty and promotion gate fields (`sim_optimism_gap`, optimism penalty component, optimism gate pass)

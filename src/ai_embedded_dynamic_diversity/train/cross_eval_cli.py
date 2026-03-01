@@ -9,7 +9,7 @@ from pathlib import Path
 import torch
 import typer
 
-from ai_embedded_dynamic_diversity.config import ModelConfig, model_config_for_profile
+from ai_embedded_dynamic_diversity.config import ModelConfig, model_config_for_profile, world_config_for_profile
 from ai_embedded_dynamic_diversity.models import ModelCore
 from ai_embedded_dynamic_diversity.sim.autopoiesis import autopoietic_metrics
 from ai_embedded_dynamic_diversity.sim.embodiments import device_map_for_embodiment, get_embodiment
@@ -129,6 +129,45 @@ def _scenario_catalog() -> dict[str, ScenarioSpec]:
             force_duration=34,
             force_pattern="decay",
         ),
+        "latency-storm": ScenarioSpec(
+            name="latency-storm",
+            wind=(0.9, 0.4, 0.1),
+            wind_variation=0.55,
+            light_pos=(-0.45, 0.0, 0.2),
+            light_drift=(0.004, 0.001, 0.0),
+            light_intensity=0.45,
+            force_vector=(1.2, 0.35, 0.0),
+            force_strength=1.2,
+            force_start=8,
+            force_duration=44,
+            force_pattern="sine",
+        ),
+        "friction-shift": ScenarioSpec(
+            name="friction-shift",
+            wind=(0.25, 0.7, 0.0),
+            wind_variation=0.35,
+            light_pos=(-0.25, 0.2, 0.15),
+            light_drift=(0.0, -0.002, 0.0),
+            light_intensity=0.55,
+            force_vector=(0.65, 0.95, 0.0),
+            force_strength=1.0,
+            force_start=12,
+            force_duration=36,
+            force_pattern="decay",
+        ),
+        "persistent-gust": ScenarioSpec(
+            name="persistent-gust",
+            wind=(0.75, 0.25, 0.0),
+            wind_variation=0.4,
+            light_pos=(-0.3, -0.1, 0.2),
+            light_drift=(0.002, 0.001, 0.0),
+            light_intensity=0.6,
+            force_vector=(0.95, 0.25, 0.0),
+            force_strength=1.05,
+            force_start=6,
+            force_duration=52,
+            force_pattern="sine",
+        ),
     }
 
 
@@ -152,6 +191,7 @@ def _resolve_scenario_profile(profile: str) -> list[ScenarioSpec]:
         "standard": "mild,gust,force",
         "hardy": "gust,force,storm,blackout,crosswind",
         "extreme": "force,storm,blackout,crosswind",
+        "calibrated_large_v1": "gust,force,storm,blackout,crosswind,latency-storm,friction-shift,persistent-gust",
     }
     if normalized not in profiles:
         allowed = ", ".join(sorted(profiles))
@@ -658,6 +698,7 @@ def rollout_metrics(
     remap_every: int,
     seed: int,
     world_dims: tuple[int, int, int, int],
+    world_params: dict[str, float | int] | None,
     device: torch.device,
     capability_profile: str = "none",
     noise_profile: str = "none",
@@ -665,7 +706,21 @@ def rollout_metrics(
     wx, wy, wz, resource_channels = world_dims
     torch.manual_seed(seed)
 
-    world = DynamicDiversityWorld(wx, wy, wz, resource_channels, decay=0.03, device=str(device))
+    wp = world_params or {}
+    world = DynamicDiversityWorld(
+        wx,
+        wy,
+        wz,
+        resource_channels,
+        decay=float(wp.get("decay", 0.03)),
+        device=str(device),
+        actuation_delay_steps=int(wp.get("actuation_delay_steps", 0)),
+        actuation_noise_std=float(wp.get("actuation_noise_std", 0.0)),
+        sensor_latency_steps=int(wp.get("sensor_latency_steps", 0)),
+        sensor_dropout_burst_prob=float(wp.get("sensor_dropout_burst_prob", 0.0)),
+        surface_friction_scale=float(wp.get("surface_friction_scale", 1.0)),
+        disturbance_correlation_horizon=int(wp.get("disturbance_correlation_horizon", 0)),
+    )
     state = world.init(batch_size=1)
     memory = model.init_memory(1, cfg.memory_slots, cfg.memory_dim, device)
 
@@ -860,11 +915,15 @@ def _evaluate_ranked_checkpoints(
     prelife_steps: int,
     prelife_seed_list: list[int],
     autopoiesis_score_weight: float,
+    enable_optimism_penalty: bool,
+    optimism_penalty_weight: float,
+    max_optimism_gap: float,
     enable_convergence_gates: bool,
     symbio_min_threshold: float,
     autopoiesis_min_threshold: float,
     noise_profile_resolved: str,
     world_dims: tuple[int, int, int, int],
+    world_params: dict[str, float | int],
     dev: torch.device,
     seed: int,
     embodiment_weight_map: dict[str, float],
@@ -894,6 +953,7 @@ def _evaluate_ranked_checkpoints(
                         remap_every=remap_every,
                         seed=combo_seed,
                         world_dims=world_dims,
+                        world_params=world_params,
                         device=dev,
                         capability_profile=capability_profile_resolved,
                         noise_profile=noise_profile_resolved,
@@ -955,11 +1015,52 @@ def _evaluate_ranked_checkpoints(
             # Blended mean across all capability proxies
             overall_capability_score = float(sum(float(row["capability_score"]) for row in run_rows) / max(1, len(run_rows)))
         overall_autopoiesis_score = float(sum(float(row["autopoiesis_score"]) for row in run_rows) / max(1, len(run_rows)))
+        standard_transfer_weighted = base_transfer_weighted
+        calibrated_transfer_weighted = base_transfer_weighted
+        sim_optimism_gap = 0.0
+        ranking_component_optimism_penalty = 0.0
+        if enable_optimism_penalty:
+            std_scenarios = _resolve_scenario_profile("standard")
+            std_rows: list[dict] = []
+            for emb_idx, emb_name in enumerate(embodiment_list):
+                for scen_idx, scen in enumerate(std_scenarios):
+                    for rep in range(runs_per_combo):
+                        combo_seed = seed + 900000 + emb_idx * 1000 + scen_idx * 100 + rep
+                        std_metrics = rollout_metrics(
+                            model=model,
+                            cfg=cfg,
+                            embodiment_name=emb_name,
+                            scenario=scen,
+                            steps=steps,
+                            remap_every=remap_every,
+                            seed=combo_seed,
+                            world_dims=world_dims,
+                            world_params=world_params,
+                            device=dev,
+                            capability_profile="none",
+                            noise_profile=noise_profile_resolved,
+                        )
+                        std_rows.append({"embodiment": emb_name, **std_metrics})
+            std_by_embodiment: dict[str, dict[str, float]] = {}
+            for emb_name in embodiment_list:
+                subset = [row for row in std_rows if row["embodiment"] == emb_name]
+                std_by_embodiment[emb_name] = {
+                    "transfer_score": float(sum(float(x["transfer_score"]) for x in subset) / max(1, len(subset))),
+                }
+            standard_transfer_weighted = _weighted_transfer_score(
+                by_embodiment=std_by_embodiment,
+                embodiments=embodiment_list,
+                embodiment_weights=embodiment_weight_map,
+            )
+            calibrated_transfer_weighted = base_transfer_weighted
+            sim_optimism_gap = max(0.0, standard_transfer_weighted - calibrated_transfer_weighted)
+            ranking_component_optimism_penalty = optimism_penalty_weight * sim_optimism_gap
         ranking_score = (
             base_transfer_weighted
             + capability_score_weight * overall_capability_score
             + prelife_score_weight * overall_prelife_score
             + autopoiesis_score_weight * overall_autopoiesis_score
+            - ranking_component_optimism_penalty
         )
         transfer_ratio_matrix = _transfer_ratio_matrix(
             by_embodiment=by_embodiment,
@@ -976,6 +1077,8 @@ def _evaluate_ranked_checkpoints(
         symbio_gate_pass = bool(symbio_contrast >= symbio_min_threshold) if prelife_profile_resolved != "none" else True
         autopoiesis_gate_pass = bool(overall_autopoiesis_score >= autopoiesis_min_threshold)
         convergence_gate_pass = bool(checkmate["checkmate_pass_all"]) and symbio_gate_pass and autopoiesis_gate_pass
+        optimism_gate_pass = bool(sim_optimism_gap <= max_optimism_gap)
+        convergence_gate_pass = convergence_gate_pass and optimism_gate_pass
         if not enable_convergence_gates:
             convergence_gate_pass = True
 
@@ -992,10 +1095,14 @@ def _evaluate_ranked_checkpoints(
                 "overall_capability_score": overall_capability_score,
                 "overall_prelife_score": overall_prelife_score,
                 "overall_autopoiesis_score": overall_autopoiesis_score,
+                "overall_transfer_score_calibrated_large": calibrated_transfer_weighted,
+                "overall_transfer_score_standard": standard_transfer_weighted,
+                "sim_optimism_gap": sim_optimism_gap,
                 "ranking_component_transfer": base_transfer_weighted,
                 "ranking_component_capability": capability_score_weight * overall_capability_score,
                 "ranking_component_prelife": prelife_score_weight * overall_prelife_score,
                 "ranking_component_autopoiesis": autopoiesis_score_weight * overall_autopoiesis_score,
+                "ranking_component_optimism_penalty": ranking_component_optimism_penalty,
                 "train_embodiments": train_embodiments_resolved,
                 "heldout_embodiments": heldout_embodiments,
                 "transfer_ratio_matrix": transfer_ratio_matrix,
@@ -1007,6 +1114,7 @@ def _evaluate_ranked_checkpoints(
                 },
                 "symbio_gate_pass": symbio_gate_pass,
                 "autopoiesis_gate_pass": autopoiesis_gate_pass,
+                "optimism_gate_pass": optimism_gate_pass,
                 "convergence_gate_pass": convergence_gate_pass,
                 "promotion_eligible": convergence_gate_pass,
                 **checkmate,
@@ -1047,6 +1155,9 @@ def run(
     prelife_steps: int = 120,
     prelife_seeds: str = "2",
     autopoiesis_score_weight: float = 0.15,
+    enable_optimism_penalty: bool = False,
+    optimism_penalty_weight: float = 0.25,
+    max_optimism_gap: float = 0.08,
     enable_convergence_gates: bool = True,
     symbio_min_threshold: float = 0.45,
     autopoiesis_min_threshold: float = 0.55,
@@ -1063,6 +1174,7 @@ def run(
     world_y: int = 20,
     world_z: int = 10,
     resource_channels: int = 5,
+    world_profile: str = "",
     device: str = "cpu",
     strict_device: bool = True,
     seed: int = 31,
@@ -1119,6 +1231,10 @@ def run(
         raise typer.BadParameter("prelife_score_weight must be >= 0.0")
     if autopoiesis_score_weight < 0.0:
         raise typer.BadParameter("autopoiesis_score_weight must be >= 0.0")
+    if optimism_penalty_weight < 0.0:
+        raise typer.BadParameter("optimism_penalty_weight must be >= 0.0")
+    if max_optimism_gap < 0.0:
+        raise typer.BadParameter("max_optimism_gap must be >= 0.0")
     if prelife_steps <= 0:
         raise typer.BadParameter("prelife_steps must be > 0")
     if symbio_min_threshold < 0.0:
@@ -1133,7 +1249,26 @@ def run(
         raise typer.BadParameter("ratchet_autopoiesis_step must be > 0.0")
 
     dev = choose_device(device, strict=strict_device)
-    world_dims = (world_x, world_y, world_z, resource_channels)
+    world_cfg = None
+    if world_profile.strip():
+        try:
+            world_cfg = world_config_for_profile(world_profile)
+        except ValueError as exc:
+            raise typer.BadParameter(str(exc)) from exc
+    wx = world_cfg.x if world_cfg is not None else world_x
+    wy = world_cfg.y if world_cfg is not None else world_y
+    wz = world_cfg.z if world_cfg is not None else world_z
+    wr = world_cfg.resource_channels if world_cfg is not None else resource_channels
+    world_dims = (wx, wy, wz, wr)
+    world_params = {
+        "decay": float(world_cfg.decay) if world_cfg is not None else 0.03,
+        "actuation_delay_steps": int(world_cfg.actuation_delay_steps) if world_cfg is not None else 0,
+        "actuation_noise_std": float(world_cfg.actuation_noise_std) if world_cfg is not None else 0.0,
+        "sensor_latency_steps": int(world_cfg.sensor_latency_steps) if world_cfg is not None else 0,
+        "sensor_dropout_burst_prob": float(world_cfg.sensor_dropout_burst_prob) if world_cfg is not None else 0.0,
+        "surface_friction_scale": float(world_cfg.surface_friction_scale) if world_cfg is not None else 1.0,
+        "disturbance_correlation_horizon": int(world_cfg.disturbance_correlation_horizon) if world_cfg is not None else 0,
+    }
 
     current_symbio_threshold = symbio_min_threshold
     current_autopoiesis_threshold = autopoiesis_min_threshold
@@ -1160,11 +1295,15 @@ def run(
             prelife_steps=prelife_steps,
             prelife_seed_list=prelife_seed_list,
             autopoiesis_score_weight=autopoiesis_score_weight,
+            enable_optimism_penalty=enable_optimism_penalty,
+            optimism_penalty_weight=optimism_penalty_weight,
+            max_optimism_gap=max_optimism_gap,
             enable_convergence_gates=enable_convergence_gates,
             symbio_min_threshold=current_symbio_threshold,
             autopoiesis_min_threshold=current_autopoiesis_threshold,
             noise_profile_resolved=noise_profile_resolved,
             world_dims=world_dims,
+            world_params=world_params,
             dev=dev,
             seed=seed,
             embodiment_weight_map=embodiment_weight_map,
@@ -1194,10 +1333,14 @@ def run(
                 "prelife_steps": prelife_steps,
                 "prelife_seeds": prelife_seed_list,
                 "autopoiesis_score_weight": autopoiesis_score_weight,
+                "enable_optimism_penalty": enable_optimism_penalty,
+                "optimism_penalty_weight": optimism_penalty_weight,
+                "max_optimism_gap": max_optimism_gap,
                 "enable_convergence_gates": enable_convergence_gates,
                 "symbio_min_threshold": current_symbio_threshold,
                 "autopoiesis_min_threshold": current_autopoiesis_threshold,
                 "noise_profile": noise_profile_resolved,
+                "world_profile": world_profile,
                 "storyboard_manifest": storyboard_manifest,
                 "device": str(dev),
                 "strict_device": strict_device,
@@ -1206,7 +1349,7 @@ def run(
                 "ratchet_symbio_step": ratchet_symbio_step,
                 "ratchet_autopoiesis_step": ratchet_autopoiesis_step,
                 "ratchet_stop_on_fail": ratchet_stop_on_fail,
-                "world": {"x": world_x, "y": world_y, "z": world_z, "resource_channels": resource_channels},
+                "world": {"x": wx, "y": wy, "z": wz, "resource_channels": wr, **world_params},
             },
             "ranked": ranked,
         }

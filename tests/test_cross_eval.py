@@ -68,6 +68,7 @@ def test_rollout_metrics_returns_transfer_keys() -> None:
         remap_every=4,
         seed=5,
         world_dims=(8, 8, 4, 3),
+        world_params={},
         device=model.passive.edge_projection.weight.device,
     )
 
@@ -85,6 +86,14 @@ def test_hardy_profile_resolves_multiple_scenarios() -> None:
     assert "storm" in names
     assert "blackout" in names
     assert len(names) >= 5
+
+
+def test_calibrated_large_profile_resolves_new_scenarios() -> None:
+    scenarios = _resolve_scenario_profile("calibrated_large_v1")
+    names = [s.name for s in scenarios]
+    assert "latency-storm" in names
+    assert "friction-shift" in names
+    assert "persistent-gust" in names
 
 
 def test_parse_embodiment_weights_defaults_and_overrides() -> None:
@@ -231,6 +240,7 @@ def test_rollout_metrics_capability_profile_returns_proxy_metrics() -> None:
         remap_every=5,
         seed=19,
         world_dims=(8, 8, 4, 3),
+        world_params={},
         device=model.passive.edge_projection.weight.device,
         capability_profile="bio-tech-v1",
     )

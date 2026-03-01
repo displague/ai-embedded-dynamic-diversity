@@ -12,7 +12,7 @@ import typer
 from rich import print
 from torch import nn
 
-from ai_embedded_dynamic_diversity.config import TrainConfig, WorldConfig, model_config_for_profile
+from ai_embedded_dynamic_diversity.config import TrainConfig, WorldConfig, model_config_for_profile, world_config_for_profile
 from ai_embedded_dynamic_diversity.models import ModelCore, UniversalConstructor, load_constructor_tape
 from ai_embedded_dynamic_diversity.sim.embodiments import device_map_for_embodiment, get_embodiment
 from ai_embedded_dynamic_diversity.sim.autopoiesis import autopoietic_metrics
@@ -575,6 +575,7 @@ def run(
     lr: float = 2e-4,
     device: str = "cuda",
     profile: str = "base",
+    world_profile: str = "",
     gating_mode: str = "sigmoid",
     topk_gating: int = 0,
     enable_dmd_gating: bool = False,
@@ -642,7 +643,10 @@ def run(
         mcfg.enable_dmd_gating = enable_dmd_gating
         mcfg.enable_phase_gating = enable_phase_gating
         mcfg.enable_multi_scale_gating = enable_multi_scale_gating
-    wcfg = WorldConfig()
+    try:
+        wcfg = world_config_for_profile(world_profile) if world_profile.strip() else WorldConfig()
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
     tcfg = TrainConfig(epochs=epochs, batch_size=batch_size, unroll_steps=unroll_steps, lr=lr, device=device)
     try:
         noise_profile_resolved = _resolve_noise_profile(noise_profile)
@@ -682,7 +686,20 @@ def run(
         print({"warning": "torch.compile is unavailable in this torch build; compile_model disabled"})
         compile_model = False
 
-    world = SignalingWorld(wcfg.x, wcfg.y, wcfg.z, wcfg.resource_channels, wcfg.decay, device=str(dev))
+    world = SignalingWorld(
+        wcfg.x,
+        wcfg.y,
+        wcfg.z,
+        wcfg.resource_channels,
+        wcfg.decay,
+        device=str(dev),
+        actuation_delay_steps=wcfg.actuation_delay_steps,
+        actuation_noise_std=wcfg.actuation_noise_std,
+        sensor_latency_steps=wcfg.sensor_latency_steps,
+        sensor_dropout_burst_prob=wcfg.sensor_dropout_burst_prob,
+        surface_friction_scale=wcfg.surface_friction_scale,
+        disturbance_correlation_horizon=wcfg.disturbance_correlation_horizon,
+    )
     
     bank = None
     if memory_bank_path:
@@ -715,6 +732,7 @@ def run(
     metrics_records: list[dict] = []
     run_flags = {
         "profile": profile,
+        "world_profile": world_profile.strip().lower() if world_profile.strip() else "custom-default",
         "gating_mode": mcfg.gating_mode,
         "topk_gating": mcfg.topk_gating,
         "enable_dmd_gating": mcfg.enable_dmd_gating,
