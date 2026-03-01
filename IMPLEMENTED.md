@@ -354,13 +354,17 @@
 
 ## Agent Continuity And Handoff Infrastructure
 - Ran high-repeat validation (`runs_per_combo=12`, `steps=60`) for champion candidates using `bio-tech-v1` capability profile:
-  - `model-core-champion-v08.pt`: `0.57046` (Current Champion - high volatility resilient)
+  - `model-core-champion-v09.pt`: `0.811105` (Current Champion - promoted from `parallel-extreme-v02/variant-02.pt`)
+  - `model-core-champion-v08.pt`: `0.57046` (Prior Champion - high volatility resilient)
   - `model-core-champion-v07.pt`: `0.57046` (Prior Champion)
   - `model-core-champion-v06.pt`: `0.54907`
-  - Confirmed `model-core-champion-v08` promotion based on stable transfer and capability scores under higher volatility (0.85).
+  - Confirmed `model-core-champion-v09` promotion after 1200-generation extreme run with adaptive loss control preserving signaling/detection stability.
 - Captured visual evidence of `v08` improvements:
   - `artifacts/v08-vs-v04-car-robustness.gif`: shows reduced control mismatch (0.137 vs 0.208) under high wind stress.
   - `artifacts/v08-vs-v04-poly120-robustness.gif`: demonstrates stable adaptation on complex 120-DOF morphology.
+- Captured visual evidence of `v09` progression:
+  - `artifacts/v09-vs-v08-car-storm.gif`: improved embodied stability under storm stress.
+  - `artifacts/v09-batch-force/*.gif`: updated force-mode sweep across embodied disturbances.
 - Enhanced Visualization CLI (`add-viz`):
   - Added `batch-force` command to automate rendering across all supported stress modes (poke, press, push, etc.).
   - Integrated metric export (JSON/CSV) for all simulation runs via `--metrics-out`.

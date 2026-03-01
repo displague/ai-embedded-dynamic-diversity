@@ -3,7 +3,7 @@
 ## High Priority
 - [x] Run long-form RTX 5080 training sweep with curriculum schedules across `hexapod`, `car`, and `drone` embodiment mappings.
 - [x] Develop adaptive loss-weighting controller to prevent signaling collapse.
-- [ ] Produce a 1200-gen champion after autopoietic optimizations (running: `artifacts/parallel-extreme-v02`).
+- [x] Produce a 1200-gen champion after autopoietic optimizations (`artifacts/model-core-champion-v09.pt`, promoted from `artifacts/parallel-extreme-v02/variant-02.pt`, score `0.811105`).
 - [x] Run `add-train-parallel` on RTX 5080 with 6-8 variants and compare fitness/logs in `artifacts/parallel/summary.json`.
 
 - [x] Capture and compare side-by-side adaptation visualizations for baseline vs co-evolution checkpoints.

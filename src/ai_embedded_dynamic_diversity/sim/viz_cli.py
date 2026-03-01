@@ -784,7 +784,7 @@ def compare(
 
 @app.command()
 def batch_force(
-    weights: str = "artifacts/model-core-champion-v08.pt",
+    weights: str = "artifacts/model-core-champion-v09.pt",
     profile: str = "pi5",
     embodiment: str = "car",
     output_dir: str = "artifacts/viz-batch-force",

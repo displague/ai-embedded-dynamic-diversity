@@ -114,7 +114,9 @@ Focused warm-start fine-tune from current champion:
 ~/.local/bin/uv run add-train --profile pi5 --epochs 36 --batch-size 24 --unroll-steps 18 --device cuda --gating-mode symplectic --topk-gating 4 --enable-dmd-gating --enable-phase-gating --enable-curriculum --enable-genetic-memory --embodiments "hexapod,car,drone,polymorph120" --enable-embodiment-transfer-loss --transfer-loss-weight 0.45 --transfer-fitness-weight 0.12 --transfer-samples-per-step 3 --init-weights artifacts/focused-variant03-long.pt --save-path artifacts/focused-variant03-long-poly-ft.pt
 ```
 
-Latest champion checkpoint: `artifacts/model-core-champion-v04.pt` (from `artifacts/parallel-cuda-noisecurr-v01/variant-01.pt`).
+Latest champion checkpoint: `artifacts/model-core-champion-v09.pt` (from `artifacts/parallel-extreme-v02/variant-02.pt`).
+Latest extreme validation highlight: ranking score `0.811105` on `artifacts/extreme-v02-cap-validation.json` with adaptive loss enabled through 1200 generations.
+Latest compare GIF: `artifacts/v09-vs-v08-car-storm.gif`.
 Latest noisy-curriculum sweep results:
 - transfer-only hardy poly4 (clean, r6): `artifacts/parallel-cuda-noisecurr-v01/variant-01.pt` at `~0.45131`
 - transfer-only hardy poly4 (noisy-v2, r6): `artifacts/parallel-cuda-noisecurr-v01/variant-01.pt` at `~0.45133`
@@ -231,14 +233,14 @@ Capability-aware cross-eval (biological/technological proxy harness):
 Convergence ranking with pre-life weighted term:
 
 ```bash
-~/.local/bin/uv run add-cross-eval --checkpoints-list "artifacts/model-core-champion-v04.pt,artifacts/parallel-cuda-noisecurr-v01/variant-00.pt,artifacts/parallel-cuda-noisecurr-v01/variant-01.pt" --profile pi5 --embodiments "hexapod,car,drone,polymorph120" --scenario-profile hardy --runs-per-combo 4 --steps 110 --remap-every 12 --capability-profile bio-tech-v1 --capability-score-weight 0.20 --prelife-profile dense-vs-control-v1 --prelife-score-weight 0.25 --prelife-steps 120 --prelife-seeds 3 --output artifacts/cross-eval-convergence-v1.json
+~/.local/bin/uv run add-cross-eval --checkpoints-list "artifacts/model-core-champion-v09.pt,artifacts/model-core-champion-v08.pt,artifacts/parallel-extreme-v02/variant-01.pt" --profile pi5 --embodiments "hexapod,car,drone,polymorph120" --scenario-profile hardy --runs-per-combo 4 --steps 110 --remap-every 12 --capability-profile bio-tech-v1 --capability-score-weight 0.20 --prelife-profile dense-vs-control-v1 --prelife-score-weight 0.25 --prelife-steps 120 --prelife-seeds 3 --output artifacts/cross-eval-convergence-v1.json
 ~/.local/bin/uv run add-cross-report --input-path artifacts/cross-eval-convergence-v1.json --markdown-out artifacts/cross-eval-convergence-v1.md --csv-out artifacts/cross-eval-convergence-v1.csv
 ```
 
 Convergence gates + autopoiesis-weighted ranking:
 
 ```bash
-~/.local/bin/uv run add-cross-eval --checkpoints-list "artifacts/model-core-champion-v04.pt,artifacts/parallel-cuda-noisecurr-v01/variant-00.pt,artifacts/parallel-cuda-noisecurr-v01/variant-01.pt" --profile pi5 --embodiments "hexapod,car,drone,polymorph120" --scenario-profile hardy --runs-per-combo 4 --steps 110 --remap-every 12 --capability-profile bio-tech-v1 --capability-score-weight 0.20 --prelife-profile dense-vs-control-v1 --prelife-score-weight 0.25 --autopoiesis-score-weight 0.15 --enable-convergence-gates --symbio-min-threshold 0.45 --autopoiesis-min-threshold 0.55 --convergence-thresholds-output artifacts/convergence-thresholds.json --output artifacts/cross-eval-convergence-v2.json
+~/.local/bin/uv run add-cross-eval --checkpoints-list "artifacts/model-core-champion-v09.pt,artifacts/model-core-champion-v08.pt,artifacts/parallel-extreme-v02/variant-01.pt" --profile pi5 --embodiments "hexapod,car,drone,polymorph120" --scenario-profile hardy --runs-per-combo 4 --steps 110 --remap-every 12 --capability-profile bio-tech-v1 --capability-score-weight 0.20 --prelife-profile dense-vs-control-v1 --prelife-score-weight 0.25 --autopoiesis-score-weight 0.15 --enable-convergence-gates --symbio-min-threshold 0.45 --autopoiesis-min-threshold 0.55 --convergence-thresholds-output artifacts/convergence-thresholds.json --output artifacts/cross-eval-convergence-v2.json
 ~/.local/bin/uv run add-cross-report --input-path artifacts/cross-eval-convergence-v2.json --markdown-out artifacts/cross-eval-convergence-v2.md --csv-out artifacts/cross-eval-convergence-v2.csv
 ```
 
@@ -247,7 +249,7 @@ Convergence gates + autopoiesis-weighted ranking:
 Balanced threshold-ratchet cycles (multi-cycle convergence run):
 
 ```bash
-~/.local/bin/uv run add-cross-eval --checkpoints-list "artifacts/model-core-champion-v04.pt,artifacts/parallel-cuda-noisecurr-v01/variant-00.pt,artifacts/parallel-cuda-noisecurr-v01/variant-01.pt" --profile pi5 --embodiments "hexapod,car,drone,polymorph120" --scenario-profile hardy --runs-per-combo 2 --steps 90 --remap-every 12 --capability-profile bio-tech-v1 --capability-score-weight 0.20 --prelife-profile dense-vs-control-v1 --prelife-score-weight 0.25 --autopoiesis-score-weight 0.15 --enable-convergence-gates --symbio-min-threshold 0.47 --autopoiesis-min-threshold 0.38 --enable-threshold-ratchet --ratchet-max-cycles 4 --ratchet-symbio-step 0.02 --ratchet-autopoiesis-step 0.03 --ratchet-summary-output artifacts/convergence-ratchet-summary.json --output artifacts/cross-eval-convergence-ratchet.json
+~/.local/bin/uv run add-cross-eval --checkpoints-list "artifacts/model-core-champion-v09.pt,artifacts/model-core-champion-v08.pt,artifacts/parallel-extreme-v02/variant-01.pt" --profile pi5 --embodiments "hexapod,car,drone,polymorph120" --scenario-profile hardy --runs-per-combo 2 --steps 90 --remap-every 12 --capability-profile bio-tech-v1 --capability-score-weight 0.20 --prelife-profile dense-vs-control-v1 --prelife-score-weight 0.25 --autopoiesis-score-weight 0.15 --enable-convergence-gates --symbio-min-threshold 0.47 --autopoiesis-min-threshold 0.38 --enable-threshold-ratchet --ratchet-max-cycles 4 --ratchet-symbio-step 0.02 --ratchet-autopoiesis-step 0.03 --ratchet-summary-output artifacts/convergence-ratchet-summary.json --output artifacts/cross-eval-convergence-ratchet.json
 ~/.local/bin/uv run add-cross-report --input-path artifacts/cross-eval-convergence-ratchet.json --markdown-out artifacts/cross-eval-convergence-ratchet.md --csv-out artifacts/cross-eval-convergence-ratchet.csv
 ```
 
