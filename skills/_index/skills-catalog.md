@@ -16,7 +16,15 @@
   - universal-constructor model instantiation
   - pre-life emergence simulation tracks
   - autopoietic closure metrics interpretation
+  - long-horizon champion progression and extreme-regime stabilization
 - definition: `skills/ai-convergence-research/SKILL.md`
+- primary references:
+  - `skills/ai-convergence-research/references/session-lessons-latest.md`
+  - `skills/dynamic-diversity-research/references/session-lessons-latest.md`
+- primary scripts:
+  - `skills/ai-convergence-research/scripts/export_int8.py`
+  - `skills/ai-convergence-research/scripts/pi_bench.py`
+  - `skills/ai-convergence-research/scripts/symbio_audit.py`
 
 ## agent-management
 

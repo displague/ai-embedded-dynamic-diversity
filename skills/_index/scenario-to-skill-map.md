@@ -8,6 +8,14 @@
   - `SKILL.md`
   - `references/session-lessons-latest.md`
 
+1b. "Need to continue a newly promoted long-horizon champion line"
+- skill: `ai-convergence-research`
+- load first:
+  - `SKILL.md`
+  - `references/session-lessons-latest.md`
+  - `scripts/export_int8.py`
+  - `scripts/pi_bench.py`
+
 2. "Need updated gif package for embodiment evolution"
 - skill: `dynamic-diversity-research`
 - load first:
