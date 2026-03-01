@@ -490,6 +490,16 @@ def _resolve_noise_profile(profile: str) -> str:
     return normalized
 
 
+def _resolve_world_consistency_profile(profile: str) -> str:
+    normalized = profile.strip().lower()
+    if not normalized:
+        return "none"
+    allowed = {"none", "latent-v1"}
+    if normalized not in allowed:
+        raise ValueError(f"Unknown world consistency profile '{profile}'. Allowed: {', '.join(sorted(allowed))}")
+    return normalized
+
+
 _WORLD_PARAM_KEYS: tuple[str, ...] = (
     "decay",
     "actuation_delay_steps",
@@ -570,6 +580,26 @@ def _resolve_humanoid_embodiment_name(name: str) -> str:
     if not normalized:
         return "humanoid120"
     return normalized
+
+
+def _imagine_next_observation_latent_v1(
+    clean_obs: torch.Tensor,
+    *,
+    action_scalar: float,
+    controls_wind: torch.Tensor,
+    controls_force_strength: torch.Tensor,
+    controls_light_intensity: torch.Tensor,
+    step: int,
+) -> torch.Tensor:
+    signal_dim = clean_obs.shape[1]
+    idx = torch.linspace(0.0, 1.0, signal_dim, device=clean_obs.device)
+    basis = torch.sin((step + 1) * 0.11 + idx * 2.3) + 0.5 * torch.cos((step + 1) * 0.07 + idx * 1.1)
+    wind_mag = float(torch.norm(controls_wind[0]).item())
+    force_strength = float(controls_force_strength[0, 0].item())
+    light_intensity = float(controls_light_intensity[0, 0].item())
+    control_bias = 0.08 * float(action_scalar) + 0.04 * wind_mag + 0.04 * force_strength + 0.02 * light_intensity
+    imagined = torch.tanh(0.94 * clean_obs + control_bias * basis.view(1, signal_dim))
+    return imagined
 
 
 def _apply_observation_noise(obs: torch.Tensor, profile: str, seed: int, step: int) -> torch.Tensor:
@@ -787,6 +817,7 @@ def rollout_metrics(
     world_params: dict[str, float | int] | None,
     device: torch.device,
     capability_profile: str = "none",
+    world_consistency_profile: str = "none",
     noise_profile: str = "none",
 ) -> dict[str, float | int]:
     wx, wy, wz, resource_channels = world_dims
@@ -830,6 +861,7 @@ def rollout_metrics(
     threat_labels: list[int] = []
     threat_steps = 0
     evasion_success_steps = 0
+    world_consistency_errors: list[float] = []
 
     for step in range(steps):
         remap_code = torch.zeros(1, cfg.max_remap_groups, device=device)
@@ -883,7 +915,21 @@ def rollout_metrics(
             )
 
             action = applied.mean(dim=1, keepdim=True).repeat(1, wx * wy * wz)
+            action_scalar = float(applied.mean().item())
+            imagined_next_obs = None
+            if world_consistency_profile == "latent-v1":
+                imagined_next_obs = _imagine_next_observation_latent_v1(
+                    clean_obs,
+                    action_scalar=action_scalar,
+                    controls_wind=controls.wind,
+                    controls_force_strength=controls.force_strength,
+                    controls_light_intensity=controls.light_intensity,
+                    step=step,
+                )
             state = world.step(state, action, controls=controls)
+            if imagined_next_obs is not None:
+                observed_next = world.encode_observation(state, signal_dim=cfg.signal_dim)
+                world_consistency_errors.append(float(torch.mean((imagined_next_obs - observed_next) ** 2).item()))
             vitality_values.append(float(state.life.mean().item()))
             stress_values.append(float(state.stress.mean().item()))
             energy_values.append(float(out["energy"].mean().item()))
@@ -981,6 +1027,14 @@ def rollout_metrics(
                 "threat_steps": threat_steps,
             }
         )
+    if world_consistency_profile != "none":
+        mean_world_consistency_error = sum(world_consistency_errors) / max(1, len(world_consistency_errors))
+        metrics.update(
+            {
+                "world_consistency_error": float(mean_world_consistency_error),
+                "world_consistency_score": float(1.0 / (1.0 + mean_world_consistency_error)),
+            }
+        )
     return metrics
 
 
@@ -1008,6 +1062,7 @@ def _evaluate_ranked_checkpoints(
     symbio_min_threshold: float,
     autopoiesis_min_threshold: float,
     noise_profile_resolved: str,
+    world_consistency_profile_resolved: str,
     world_dims: tuple[int, int, int, int],
     world_params: dict[str, float | int],
     world_randomization_manifest: dict,
@@ -1052,6 +1107,7 @@ def _evaluate_ranked_checkpoints(
                         world_params=combo_world_params,
                         device=dev,
                         capability_profile=capability_profile_resolved,
+                        world_consistency_profile=world_consistency_profile_resolved,
                         noise_profile=noise_profile_resolved,
                     )
                     run_rows.append(
@@ -1096,6 +1152,17 @@ def _evaluate_ranked_checkpoints(
                     "resource_cycle_efficiency": float(sum(float(x["resource_cycle_efficiency"]) for x in subset) / max(1, len(subset))),
                 }
             )
+            if world_consistency_profile_resolved != "none":
+                by_embodiment[emb_name].update(
+                    {
+                        "world_consistency_error": float(
+                            sum(float(x["world_consistency_error"]) for x in subset) / max(1, len(subset))
+                        ),
+                        "world_consistency_score": float(
+                            sum(float(x["world_consistency_score"]) for x in subset) / max(1, len(subset))
+                        ),
+                    }
+                )
 
         base_transfer_weighted = _weighted_transfer_score(
             by_embodiment=by_embodiment,
@@ -1112,6 +1179,11 @@ def _evaluate_ranked_checkpoints(
             # Blended mean across all capability proxies
             overall_capability_score = float(sum(float(row["capability_score"]) for row in run_rows) / max(1, len(run_rows)))
         overall_autopoiesis_score = float(sum(float(row["autopoiesis_score"]) for row in run_rows) / max(1, len(run_rows)))
+        overall_world_consistency_score = (
+            float(sum(float(row["world_consistency_score"]) for row in run_rows) / max(1, len(run_rows)))
+            if world_consistency_profile_resolved != "none"
+            else 0.0
+        )
         humanoid_compliance = None
         if enable_humanoid_compliance:
             hum_name = humanoid_embodiment_name.strip().lower()
@@ -1158,6 +1230,7 @@ def _evaluate_ranked_checkpoints(
                             world_params=std_world_params,
                             device=dev,
                             capability_profile="none",
+                            world_consistency_profile=world_consistency_profile_resolved,
                             noise_profile=noise_profile_resolved,
                         )
                         std_rows.append({"embodiment": emb_name, **std_metrics})
@@ -1223,6 +1296,8 @@ def _evaluate_ranked_checkpoints(
                 "ranking_component_prelife": prelife_score_weight * overall_prelife_score,
                 "ranking_component_autopoiesis": autopoiesis_score_weight * overall_autopoiesis_score,
                 "ranking_component_optimism_penalty": ranking_component_optimism_penalty,
+                "overall_world_consistency_score": overall_world_consistency_score,
+                "world_consistency_profile": world_consistency_profile_resolved,
                 "humanoid_compliance": humanoid_compliance if humanoid_compliance is not None else {},
                 "humanoid_compliance_enabled": enable_humanoid_compliance,
                 "humanoid_compliance_profile": humanoid_compliance_profile_name,
@@ -1293,6 +1368,7 @@ def run(
     ratchet_summary_output: str = "artifacts/convergence-ratchet-summary.json",
     convergence_thresholds_output: str = "artifacts/convergence-thresholds.json",
     noise_profile: str = "none",
+    world_consistency_profile: str = "none",
     storyboard_manifest: str = "",
     world_x: int = 20,
     world_y: int = 20,
@@ -1351,6 +1427,10 @@ def run(
         raise typer.BadParameter(str(exc)) from exc
     try:
         noise_profile_resolved = _resolve_noise_profile(noise_profile)
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    try:
+        world_consistency_profile_resolved = _resolve_world_consistency_profile(world_consistency_profile)
     except ValueError as exc:
         raise typer.BadParameter(str(exc)) from exc
     humanoid_name_resolved = _resolve_humanoid_embodiment_name(humanoid_embodiment_name)
@@ -1445,6 +1525,7 @@ def run(
             symbio_min_threshold=current_symbio_threshold,
             autopoiesis_min_threshold=current_autopoiesis_threshold,
             noise_profile_resolved=noise_profile_resolved,
+            world_consistency_profile_resolved=world_consistency_profile_resolved,
             world_dims=world_dims,
             world_params=world_params,
             world_randomization_manifest=world_randomization_manifest_resolved,
@@ -1487,6 +1568,7 @@ def run(
                 "symbio_min_threshold": current_symbio_threshold,
                 "autopoiesis_min_threshold": current_autopoiesis_threshold,
                 "noise_profile": noise_profile_resolved,
+                "world_consistency_profile": world_consistency_profile_resolved,
                 "world_profile": world_profile,
                 "world_randomization_manifest": world_randomization_manifest,
                 "enable_humanoid_compliance": enable_humanoid_compliance,

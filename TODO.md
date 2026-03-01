@@ -67,7 +67,7 @@
 - [x] Integrate pre-life convergence term into `cross-eval`/`cross-report` ranking so transfer/hardiness/capability/replication are evaluated in a unified promotion pipeline.
 - [x] Add embodied autopoietic closure metrics and convergence gates (symbiogenesis + autopoiesis dual-role) to promotion pipeline with progressive threshold artifact.
 - [ ] Add large-scene environment dataset loader for calibration runs (terrain diversity, lighting/weather sweeps, dynamic obstacles) to reduce sim optimism.
-- [ ] Add world-state latent rollouts and consistency checks (short-horizon imagination vs simulated truth) for environment harness validation.
+- [x] Add world-state latent rollouts and consistency checks (short-horizon imagination vs simulated truth) for environment harness validation.
 - [ ] Add contact-rich locomotion/manipulation stress suites (uneven terrain, slips, perturbation recovery) with deterministic seed bundles.
 - [x] Add scenario-level domain randomization manifests (sensor latency/dropout/fault envelopes) and keep cross-eval world profile parity checks.
 

@@ -21,6 +21,7 @@ from ai_embedded_dynamic_diversity.train.cross_eval_cli import (
     _resolve_prelife_seeds,
     _resolve_noise_profile,
     _resolve_humanoid_embodiment_name,
+    _resolve_world_consistency_profile,
     _resolve_world_randomization_manifest,
     _sample_world_params_for_run,
     _resolve_subset_embodiments,
@@ -162,6 +163,13 @@ def test_resolve_noise_profile_accepts_known_values() -> None:
         _resolve_noise_profile("bad-profile")
 
 
+def test_resolve_world_consistency_profile_accepts_known_values() -> None:
+    assert _resolve_world_consistency_profile("none") == "none"
+    assert _resolve_world_consistency_profile("latent-v1") == "latent-v1"
+    with pytest.raises(ValueError):
+        _resolve_world_consistency_profile("bad-world-consistency")
+
+
 def test_apply_observation_noise_changes_tensor_for_noise_profile() -> None:
     obs = torch.linspace(-1.0, 1.0, 16).view(1, 16)
     out = _apply_observation_noise(obs, profile="dropout-quant-v1", seed=3, step=2)
@@ -265,6 +273,49 @@ def test_rollout_metrics_capability_profile_returns_proxy_metrics() -> None:
     assert 0.5 <= float(metrics["signal_detection_auc"]) <= 1.0
     assert 0.0 <= float(metrics["evasion_success"]) <= 1.0
     assert int(metrics["threat_steps"]) >= 1
+
+
+def test_rollout_metrics_world_consistency_profile_returns_consistency_metrics() -> None:
+    cfg = ModelConfig(
+        signal_dim=16,
+        hidden_dim=24,
+        edge_nodes=20,
+        memory_slots=8,
+        memory_dim=12,
+        io_channels=6,
+        max_remap_groups=4,
+    )
+    model = ModelCore(**cfg.__dict__)
+    scenario = ScenarioSpec(
+        name="gust",
+        wind=(0.45, 0.1, 0.0),
+        wind_variation=0.25,
+        light_pos=(-0.3, 0.0, 0.3),
+        light_drift=(0.002, 0.0, 0.0),
+        light_intensity=0.8,
+        force_vector=(0.6, 0.0, 0.0),
+        force_strength=0.7,
+        force_start=6,
+        force_duration=10,
+        force_pattern="pulse",
+    )
+    metrics = rollout_metrics(
+        model=model,
+        cfg=cfg,
+        embodiment_name="humanoid120",
+        scenario=scenario,
+        steps=20,
+        remap_every=5,
+        seed=23,
+        world_dims=(8, 8, 4, 3),
+        world_params={},
+        device=model.passive.edge_projection.weight.device,
+        world_consistency_profile="latent-v1",
+    )
+    assert "world_consistency_error" in metrics
+    assert "world_consistency_score" in metrics
+    assert float(metrics["world_consistency_error"]) >= 0.0
+    assert 0.0 <= float(metrics["world_consistency_score"]) <= 1.0
 
 
 def test_resolve_prelife_profile_and_seeds() -> None:

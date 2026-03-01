@@ -37,6 +37,8 @@ def run(
     humanoid_compliance_enabled = bool(cfg.get("enable_humanoid_compliance", False))
     humanoid_compliance_embodiment = str(cfg.get("humanoid_embodiment_name", "humanoid120")).strip().lower()
     humanoid_compliance_profile = str(cfg.get("humanoid_compliance_profile", "human_rigid_v1")).strip().lower()
+    world_consistency_profile = str(cfg.get("world_consistency_profile", "none")).strip().lower()
+    world_consistency_enabled = world_consistency_profile != "none"
     noise_profile = str(cfg.get("noise_profile", "none")).strip().lower()
     ratchet = payload.get("ratchet", {}) if isinstance(payload.get("ratchet", {}), dict) else {}
     ratchet_cycles = ratchet.get("cycles", []) if isinstance(ratchet.get("cycles", []), list) else []
@@ -77,6 +79,7 @@ def run(
             "overall_transfer_score_calibrated_large": float(item.get("overall_transfer_score_calibrated_large", transfer_weighted)),
             "sim_optimism_gap": float(item.get("sim_optimism_gap", 0.0)),
             "ranking_component_optimism_penalty": float(item.get("ranking_component_optimism_penalty", 0.0)),
+            "overall_world_consistency_score": float(item.get("overall_world_consistency_score", 0.0)),
             "humanoid_compliance_score": float(item.get("humanoid_compliance", {}).get("overall_score", 0.0)),
             "humanoid_compliance_pass": bool(item.get("humanoid_compliance", {}).get("pass", False)),
             "checkmate_pass_all": bool(item.get("checkmate_pass_all", False)),
@@ -165,6 +168,9 @@ def run(
     if humanoid_compliance_enabled:
         md_lines.append(f"Humanoid compliance profile: `{humanoid_compliance_profile}`")
         md_lines.append(f"Humanoid compliance embodiment: `{humanoid_compliance_embodiment}`")
+        md_lines.append("")
+    if world_consistency_enabled:
+        md_lines.append(f"World consistency profile: `{world_consistency_profile}`")
         md_lines.append("")
     if ratchet.get("enabled", False):
         md_lines.append("Convergence ratchet: `enabled`")
@@ -264,6 +270,18 @@ def run(
             md_lines.append(
                 "| "
                 + f"{row['rank']} | `{row['checkpoint']}` | {_fmt(float(row.get('humanoid_compliance_score', 0.0)))} | {bool(row.get('humanoid_compliance_pass', False))} |"
+            )
+
+    if world_consistency_enabled:
+        md_lines.append("")
+        md_lines.append("## World Consistency (Top 10)")
+        md_lines.append("")
+        md_lines.append("| Rank | Checkpoint | Consistency Score |")
+        md_lines.append("|---|---|---:|")
+        for row in rows[:10]:
+            md_lines.append(
+                "| "
+                + f"{row['rank']} | `{row['checkpoint']}` | {_fmt(float(row.get('overall_world_consistency_score', 0.0)))} |"
             )
 
     if ratchet_cycles:

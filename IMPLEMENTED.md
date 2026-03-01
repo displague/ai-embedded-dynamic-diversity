@@ -444,6 +444,11 @@
   - `--world-randomization-manifest <json>`
   - global and scenario-specific sampling envelopes for world realism parameters (`decay`, latencies, dropout burst probability, friction scale, disturbance horizon)
   - per-run sampled `world_params` persisted in run rows for auditability
+- Added world-consistency harness in `add-cross-eval` (`--world-consistency-profile latent-v1`):
+  - short-horizon latent imagination vs simulated next-observation error
+  - metrics: `world_consistency_error`, `world_consistency_score`
+  - aggregated checkpoint field: `overall_world_consistency_score`
+  - surfaced in `add-cross-report` via World Consistency table
 - Added optional humanoid-form compliance evaluation path (report-only, no rank impact):
   - `add-cross-eval` flags: `--enable-humanoid-compliance`, `--humanoid-embodiment-name`, `--humanoid-compliance-profile`
   - strict/relaxed profiles: `human_rigid_v1`, `human_rigid_relaxed_v1`
