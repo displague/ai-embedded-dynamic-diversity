@@ -15,6 +15,7 @@ from ai_embedded_dynamic_diversity.sim.autopoiesis import autopoietic_metrics
 from ai_embedded_dynamic_diversity.sim.embodiments import device_map_for_embodiment, get_embodiment
 from ai_embedded_dynamic_diversity.sim.prelife_cli import run_prelife_simulation
 from ai_embedded_dynamic_diversity.sim.world import DynamicDiversityWorld
+from ai_embedded_dynamic_diversity.train.device import choose_device
 
 app = typer.Typer(add_completion=False)
 
@@ -1063,6 +1064,7 @@ def run(
     world_z: int = 10,
     resource_channels: int = 5,
     device: str = "cpu",
+    strict_device: bool = True,
     seed: int = 31,
     output: str = "artifacts/cross-eval-summary.json",
 ) -> None:
@@ -1130,7 +1132,7 @@ def run(
     if ratchet_autopoiesis_step <= 0.0:
         raise typer.BadParameter("ratchet_autopoiesis_step must be > 0.0")
 
-    dev = torch.device(device)
+    dev = choose_device(device, strict=strict_device)
     world_dims = (world_x, world_y, world_z, resource_channels)
 
     current_symbio_threshold = symbio_min_threshold
@@ -1197,6 +1199,8 @@ def run(
                 "autopoiesis_min_threshold": current_autopoiesis_threshold,
                 "noise_profile": noise_profile_resolved,
                 "storyboard_manifest": storyboard_manifest,
+                "device": str(dev),
+                "strict_device": strict_device,
                 "enable_threshold_ratchet": enable_threshold_ratchet,
                 "ratchet_max_cycles": ratchet_max_cycles,
                 "ratchet_symbio_step": ratchet_symbio_step,

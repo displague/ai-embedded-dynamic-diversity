@@ -22,42 +22,9 @@ from ai_embedded_dynamic_diversity.train.losses import loss_fn
 from ai_embedded_dynamic_diversity.train.quantization import prepare_qat_model
 from ai_embedded_dynamic_diversity.models.memory_bank import GeneticMemoryBank
 from ai_embedded_dynamic_diversity.train.curriculum import AdaptiveLossController
+from ai_embedded_dynamic_diversity.train.device import choose_device
 
 app = typer.Typer(add_completion=False)
-
-
-def choose_device(preferred: str, strict: bool = True) -> torch.device:
-    normalized = preferred.strip().lower()
-    if normalized == "cuda":
-        if not torch.cuda.is_available():
-            import os
-            import sys
-            print({"debug_child_env": {
-                "sys.executable": sys.executable,
-                "sys.path": sys.path[:5],
-                "PATH_prefix": os.environ.get("PATH", "")[:200],
-                "VIRTUAL_ENV": os.environ.get("VIRTUAL_ENV")
-            }})
-        if torch.cuda.is_available():
-            return torch.device("cuda")
-
-        if strict:
-            raise typer.BadParameter(
-                "CUDA was requested but is unavailable in this environment. "
-                "Check that the active Python environment has a CUDA-enabled PyTorch build."
-            )
-        return torch.device("cpu")
-    if normalized == "mps":
-        if torch.backends.mps.is_available():
-            return torch.device("mps")
-        if strict:
-            raise typer.BadParameter("MPS was requested but is unavailable in this environment.")
-        return torch.device("cpu")
-    if normalized == "cpu":
-        return torch.device("cpu")
-    if strict:
-        raise typer.BadParameter(f"Unknown device '{preferred}'. Expected one of: cpu, cuda, mps.")
-    return torch.device("cpu")
 
 
 def _make_grad_scaler(enabled: bool):

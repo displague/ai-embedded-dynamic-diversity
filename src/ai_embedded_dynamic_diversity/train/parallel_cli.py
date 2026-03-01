@@ -14,6 +14,7 @@ import typer
 from rich import print
 
 from ai_embedded_dynamic_diversity.config import model_config_for_profile
+from ai_embedded_dynamic_diversity.train.device import choose_device, device_runtime_snapshot
 
 app = typer.Typer(add_completion=False)
 
@@ -39,6 +40,7 @@ def run(
     lr: float = 2e-4,
     profile: str = "base",
     device: str = "cuda",
+    strict_device: bool = True,
     coevolution: bool = True,
     population_size: int = 4,
     embodiments: str = "hexapod,car,drone,polymorph120",
@@ -79,6 +81,7 @@ def run(
 ) -> None:
     output_path = Path(out_dir)
     output_path.mkdir(parents=True, exist_ok=True)
+    resolved_device = choose_device(device, strict=strict_device)
 
     variant_cmds = []
     
@@ -123,6 +126,7 @@ def run(
             "--save-path", str(variant_output),
             "--metrics-path", str(variant_metrics),
         ]
+        cmd.append("--strict-device" if strict_device else "--no-strict-device")
 
         if coevolution:
             cmd.append("--coevolution")
@@ -154,7 +158,17 @@ def run(
 
         variant_cmds.append((cmd, output_path / f"variant-{i:02d}.log"))
 
-    print(f"[bold cyan]Launching {variants} variants with max_workers={max_workers}...[/bold cyan]")
+    print(
+        {
+            "launch": "parallel-variants",
+            "variants": variants,
+            "max_workers": max_workers,
+            "requested_device": device,
+            "resolved_device": str(resolved_device),
+            "strict_device": strict_device,
+            "runtime": device_runtime_snapshot(),
+        }
+    )
     start_time = time.perf_counter()
 
     with ProcessPoolExecutor(max_workers=max_workers) as executor:

@@ -16,8 +16,8 @@ from ai_embedded_dynamic_diversity.train.cli import (
     _resolve_model_config,
     _resolve_noise_profile,
     _transfer_mismatch_loss,
-    choose_device,
 )
+from ai_embedded_dynamic_diversity.train.device import choose_device
 
 
 def test_resolve_embodiments_deduplicates_and_validates() -> None:

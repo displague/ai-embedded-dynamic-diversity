@@ -87,14 +87,20 @@ def run(
             rel_vals: list[float] = []
             auc_vals: list[float] = []
             evasion_vals: list[float] = []
+            mimicry_vals: list[float] = []
+            conjoining_vals: list[float] = []
             for emb in emb_names:
                 emb_stats = item.get("by_embodiment", {}).get(emb, {})
                 rel_vals.append(float(emb_stats.get("signal_reliability", 0.0)))
                 auc_vals.append(float(emb_stats.get("signal_detection_auc", 0.0)))
                 evasion_vals.append(float(emb_stats.get("evasion_success", 0.0)))
+                mimicry_vals.append(float(emb_stats.get("mimicry_reliability", 0.0)))
+                conjoining_vals.append(float(emb_stats.get("conjoining_gain", 0.0)))
             row["overall_signal_reliability"] = sum(rel_vals) / max(1, len(rel_vals))
             row["overall_signal_detection_auc"] = sum(auc_vals) / max(1, len(auc_vals))
             row["overall_evasion_success"] = sum(evasion_vals) / max(1, len(evasion_vals))
+            row["overall_mimicry_reliability"] = sum(mimicry_vals) / max(1, len(mimicry_vals))
+            row["overall_conjoining_gain"] = sum(conjoining_vals) / max(1, len(conjoining_vals))
         for emb in emb_names:
             emb_stats = item.get("by_embodiment", {}).get(emb, {})
             best_stats = best.get("by_embodiment", {}).get(emb, {})
@@ -105,6 +111,8 @@ def run(
                 row[f"{emb}_signal_reliability"] = emb_stats.get("signal_reliability", 0.0)
                 row[f"{emb}_signal_detection_auc"] = emb_stats.get("signal_detection_auc", 0.0)
                 row[f"{emb}_evasion_success"] = emb_stats.get("evasion_success", 0.0)
+                row[f"{emb}_mimicry_reliability"] = emb_stats.get("mimicry_reliability", 0.0)
+                row[f"{emb}_conjoining_gain"] = emb_stats.get("conjoining_gain", 0.0)
         rows.append(row)
 
     Path(csv_out).parent.mkdir(parents=True, exist_ok=True)
@@ -197,12 +205,12 @@ def run(
         md_lines.append("")
         md_lines.append("## Capability Proxies (Top 5)")
         md_lines.append("")
-        md_lines.append("| Rank | Checkpoint | Capability | Signal Reliability | Signal Detection AUC | Evasion Success |")
-        md_lines.append("|---|---|---:|---:|---:|---:|")
+        md_lines.append("| Rank | Checkpoint | Capability | Signal Reliability | Signal Detection AUC | Evasion Success | Mimicry Reliability | Conjoining Gain |")
+        md_lines.append("|---|---|---:|---:|---:|---:|---:|---:|")
         for row in rows[:5]:
             md_lines.append(
                 "| "
-                + f"{row['rank']} | `{row['checkpoint']}` | {_fmt(row['overall_capability_score'])} | {_fmt(row.get('overall_signal_reliability', 0.0))} | {_fmt(row.get('overall_signal_detection_auc', 0.0))} | {_fmt(row.get('overall_evasion_success', 0.0))} |"
+                + f"{row['rank']} | `{row['checkpoint']}` | {_fmt(row['overall_capability_score'])} | {_fmt(row.get('overall_signal_reliability', 0.0))} | {_fmt(row.get('overall_signal_detection_auc', 0.0))} | {_fmt(row.get('overall_evasion_success', 0.0))} | {_fmt(row.get('overall_mimicry_reliability', 0.0))} | {_fmt(row.get('overall_conjoining_gain', 0.0))} |"
             )
 
     if prelife_enabled:
