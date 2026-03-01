@@ -602,6 +602,7 @@ def run(
     transfer_fitness_weight: float = 0.08,
     enable_autopoietic_objective: bool = False,
     autopoietic_loss_weight: float = 0.10,
+    autopoietic_fitness_gain: float = 0.15,
     autopoietic_self_repair_weight: float = 0.35,
     autopoietic_closure_weight: float = 0.45,
     autopoietic_resource_cycle_weight: float = 0.20,
