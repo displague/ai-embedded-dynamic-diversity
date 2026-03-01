@@ -13,6 +13,7 @@ from ai_embedded_dynamic_diversity.train.cli import (
     _apply_observation_noise,
     _build_transfer_states,
     _inject_force_curriculum_controls,
+    _parse_init_weights_cycle,
     _resolve_embodiments,
     _resolve_force_curriculum_mode,
     _resolve_model_config,
@@ -26,6 +27,11 @@ from ai_embedded_dynamic_diversity.sim.world import DynamicDiversityWorld
 def test_resolve_embodiments_deduplicates_and_validates() -> None:
     names = _resolve_embodiments("hexapod, car, polymorph120, car")
     assert names == ["hexapod", "car", "polymorph120"]
+
+
+def test_parse_init_weights_cycle_deduplicates() -> None:
+    cycle = _parse_init_weights_cycle("a.pt, b.pt; a.pt")
+    assert cycle == ["a.pt", "b.pt"]
 
 
 def test_build_transfer_states_matches_dims() -> None:

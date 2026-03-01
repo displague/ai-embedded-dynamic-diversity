@@ -556,6 +556,17 @@ def _load_checkpoint_weights(model: ModelCore, init_weights: str, dev: torch.dev
     return ckpt
 
 
+def _parse_init_weights_cycle(cycle_csv: str) -> list[str]:
+    if not cycle_csv.strip():
+        return []
+    items = [x.strip() for x in cycle_csv.replace(";", ",").split(",") if x.strip()]
+    dedup: list[str] = []
+    for item in items:
+        if item not in dedup:
+            dedup.append(item)
+    return dedup
+
+
 def _resolve_model_config(
     profile: str,
     constructor_tape_path: str,
@@ -626,6 +637,7 @@ def run(
     strict_device: bool = True,
     constructor_tape_path: str = "",
     init_weights: str = "",
+    init_weights_cycle: str = "",
     memory_bank_path: str = "",
     seed: int = 7,
     metrics_path: str = "",
@@ -774,6 +786,7 @@ def run(
         "compile_model": compile_model,
         "strict_device": strict_device,
         "init_weights": init_weights,
+        "init_weights_cycle": _parse_init_weights_cycle(init_weights_cycle),
         "memory_bank_path": memory_bank_path,
         "constructor_tape_path": constructor_tape_path,
         "constructor_tape_version": None if constructor_tape is None else constructor_tape.version,
@@ -994,7 +1007,33 @@ def run(
         print({"saved": save_path})
         return
 
-    if init_weights:
+    init_cycle = _parse_init_weights_cycle(init_weights_cycle)
+    if init_cycle and not coevolution:
+        raise typer.BadParameter("init_weights_cycle is only supported in coevolution mode")
+    if init_cycle and init_weights:
+        raise typer.BadParameter("Provide either init_weights or init_weights_cycle, not both")
+
+    if init_cycle:
+        inherited_tape_payload = None
+        pop = []
+        for ckpt_path in init_cycle:
+            seeded_model = ModelCore(**asdict(mcfg)).to(dev)
+            try:
+                ckpt = _load_checkpoint_weights(seeded_model, ckpt_path, dev)
+            except (ValueError, RuntimeError) as exc:
+                raise typer.BadParameter(str(exc)) from exc
+            if inherited_tape_payload is None:
+                inherited_tape_payload = ckpt.get("constructor_tape")
+            pop.append(seeded_model)
+        if not pop:
+            raise typer.BadParameter("init_weights_cycle resolved empty")
+        while len(pop) < population_size:
+            parent_idx = len(pop) % len(init_cycle)
+            parent = pop[parent_idx]
+            pop.append(mutate_from_parent(parent, mutation_std).to(dev))
+        if len(pop) > population_size:
+            pop = pop[:population_size]
+    elif init_weights:
         seed_model = ModelCore(**asdict(mcfg)).to(dev)
         inherited_tape_payload = None
         try:
