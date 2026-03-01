@@ -314,6 +314,9 @@ def test_rollout_metrics_world_consistency_profile_returns_consistency_metrics()
     )
     assert "world_consistency_error" in metrics
     assert "world_consistency_score" in metrics
+    assert "world_consistency_score_h1" in metrics
+    assert "world_consistency_score_h2" in metrics
+    assert "world_consistency_score_h3" in metrics
     assert float(metrics["world_consistency_error"]) >= 0.0
     assert 0.0 <= float(metrics["world_consistency_score"]) <= 1.0
 

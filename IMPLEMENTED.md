@@ -445,8 +445,10 @@
   - global and scenario-specific sampling envelopes for world realism parameters (`decay`, latencies, dropout burst probability, friction scale, disturbance horizon)
   - per-run sampled `world_params` persisted in run rows for auditability
 - Added world-consistency harness in `add-cross-eval` (`--world-consistency-profile latent-v1`):
-  - short-horizon latent imagination vs simulated next-observation error
+  - latent imagination vs simulated observation consistency over horizons `k=1..3`
   - metrics: `world_consistency_error`, `world_consistency_score`
+  - horizon metrics: `world_consistency_score_h1`, `world_consistency_score_h2`, `world_consistency_score_h3`
+  - scenario spread metric: `world_consistency_scenario_std` + `world_consistency_by_scenario`
   - aggregated checkpoint field: `overall_world_consistency_score`
   - surfaced in `add-cross-report` via World Consistency table
 - Added optional humanoid-form compliance evaluation path (report-only, no rank impact):

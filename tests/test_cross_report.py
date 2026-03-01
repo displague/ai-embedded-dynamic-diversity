@@ -52,6 +52,19 @@ def test_cross_report_includes_mimicry_and_conjoining_columns() -> None:
                     "pass": True,
                 },
                 "overall_world_consistency_score": 0.88,
+                "overall_world_consistency_score_h1": 0.90,
+                "overall_world_consistency_score_h2": 0.88,
+                "overall_world_consistency_score_h3": 0.86,
+                "world_consistency_scenario_std": 0.01,
+                "world_consistency_by_scenario": {
+                    "gust": {
+                        "mean_score": 0.89,
+                        "std_score": 0.01,
+                        "mean_score_h1": 0.91,
+                        "mean_score_h2": 0.89,
+                        "mean_score_h3": 0.87,
+                    }
+                },
                 "checkmate_pass_all": True,
                 "checkmate_pass_heldout": True,
                 "checkmate_min_effectiveness": 0.9,
@@ -99,9 +112,12 @@ def test_cross_report_includes_mimicry_and_conjoining_columns() -> None:
     assert "humanoid_compliance_score" in csv_text
     assert "humanoid_compliance_pass" in csv_text
     assert "overall_world_consistency_score" in csv_text
+    assert "overall_world_consistency_score_h3" in csv_text
+    assert "world_consistency_scenario_std" in csv_text
 
     md_text = markdown_out.read_text(encoding="utf-8")
     assert "Mimicry Reliability" in md_text
     assert "Conjoining Gain" in md_text
     assert "Humanoid Compliance" in md_text
     assert "World Consistency" in md_text
+    assert "World Consistency by Scenario (Best)" in md_text

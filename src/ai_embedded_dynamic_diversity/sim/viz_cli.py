@@ -65,6 +65,7 @@ def _resolve_storyboard_scenarios(scenario_profile: str, scenarios_csv: str) -> 
         "standard": ["gust", "force"],
         "hardy": ["storm", "crosswind", "blackout"],
         "extreme": ["storm", "crosswind", "blackout"],
+        "calibrated_large_v1": ["storm", "crosswind", "blackout", "latency-storm", "friction-shift", "persistent-gust"],
     }
     if normalized not in profiles:
         allowed = ", ".join(sorted(profiles))
@@ -582,6 +583,69 @@ def _scenario_viz_overrides(name: str) -> dict:
             "light_intensity": 0.65,
             "light_drift_x": 0.0,
             "light_drift_y": -0.002,
+            "light_drift_z": 0.0,
+        }
+    if scenario == "latency-storm":
+        return {
+            "force_mode": "continuous-blow",
+            "force_start": 8,
+            "force_duration": 44,
+            "force_sustain": 1.2,
+            "force_x": 1.2,
+            "force_y": 0.35,
+            "force_z": 0.0,
+            "wind_x": 0.9,
+            "wind_y": 0.4,
+            "wind_z": 0.1,
+            "wind_variation": 0.55,
+            "light_x": -0.45,
+            "light_y": 0.0,
+            "light_z": 0.2,
+            "light_intensity": 0.45,
+            "light_drift_x": 0.004,
+            "light_drift_y": 0.001,
+            "light_drift_z": 0.0,
+        }
+    if scenario == "friction-shift":
+        return {
+            "force_mode": "thrust",
+            "force_start": 12,
+            "force_duration": 36,
+            "force_sustain": 1.0,
+            "force_x": 0.65,
+            "force_y": 0.95,
+            "force_z": 0.0,
+            "wind_x": 0.25,
+            "wind_y": 0.7,
+            "wind_z": 0.0,
+            "wind_variation": 0.35,
+            "light_x": -0.25,
+            "light_y": 0.2,
+            "light_z": 0.15,
+            "light_intensity": 0.55,
+            "light_drift_x": 0.0,
+            "light_drift_y": -0.002,
+            "light_drift_z": 0.0,
+        }
+    if scenario == "persistent-gust":
+        return {
+            "force_mode": "continuous-blow",
+            "force_start": 6,
+            "force_duration": 52,
+            "force_sustain": 1.05,
+            "force_x": 0.95,
+            "force_y": 0.25,
+            "force_z": 0.0,
+            "wind_x": 0.75,
+            "wind_y": 0.25,
+            "wind_z": 0.0,
+            "wind_variation": 0.4,
+            "light_x": -0.3,
+            "light_y": -0.1,
+            "light_z": 0.2,
+            "light_intensity": 0.6,
+            "light_drift_x": 0.002,
+            "light_drift_y": 0.001,
             "light_drift_z": 0.0,
         }
     raise ValueError(f"Unsupported storyboard scenario: {name}")

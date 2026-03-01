@@ -582,7 +582,7 @@ def _resolve_humanoid_embodiment_name(name: str) -> str:
     return normalized
 
 
-def _imagine_next_observation_latent_v1(
+def _imagine_future_observation_latent_v1(
     clean_obs: torch.Tensor,
     *,
     action_scalar: float,
@@ -590,15 +590,19 @@ def _imagine_next_observation_latent_v1(
     controls_force_strength: torch.Tensor,
     controls_light_intensity: torch.Tensor,
     step: int,
+    horizon: int,
 ) -> torch.Tensor:
     signal_dim = clean_obs.shape[1]
     idx = torch.linspace(0.0, 1.0, signal_dim, device=clean_obs.device)
-    basis = torch.sin((step + 1) * 0.11 + idx * 2.3) + 0.5 * torch.cos((step + 1) * 0.07 + idx * 1.1)
+    future_step = step + max(1, horizon)
+    basis = torch.sin((future_step + 1) * 0.11 + idx * 2.3) + 0.5 * torch.cos((future_step + 1) * 0.07 + idx * 1.1)
     wind_mag = float(torch.norm(controls_wind[0]).item())
     force_strength = float(controls_force_strength[0, 0].item())
     light_intensity = float(controls_light_intensity[0, 0].item())
-    control_bias = 0.08 * float(action_scalar) + 0.04 * wind_mag + 0.04 * force_strength + 0.02 * light_intensity
-    imagined = torch.tanh(0.94 * clean_obs + control_bias * basis.view(1, signal_dim))
+    horizon_decay = 1.0 / (1.0 + 0.25 * float(horizon - 1))
+    control_bias = (0.08 * float(action_scalar) + 0.04 * wind_mag + 0.04 * force_strength + 0.02 * light_intensity) * horizon_decay
+    drift = 0.015 * float(horizon) * torch.sin(idx * (1.7 + 0.2 * horizon))
+    imagined = torch.tanh((0.94 - 0.02 * float(horizon - 1)) * clean_obs + control_bias * basis.view(1, signal_dim) + drift.view(1, signal_dim))
     return imagined
 
 
@@ -664,6 +668,14 @@ def _safe_corr(a: list[float], b: list[float]) -> float:
     cov = sum(x * y for x, y in zip(da, db)) / len(a)
     corr = cov / math.sqrt((var_a / len(a)) * (var_b / len(b)))
     return max(-1.0, min(1.0, corr))
+
+
+def _mean_std(values: list[float]) -> tuple[float, float]:
+    if not values:
+        return 0.0, 0.0
+    mean = sum(values) / len(values)
+    var = sum((x - mean) ** 2 for x in values) / len(values)
+    return float(mean), float(math.sqrt(max(0.0, var)))
 
 
 def _binary_auc(scores: list[float], labels: list[int]) -> float:
@@ -861,7 +873,9 @@ def rollout_metrics(
     threat_labels: list[int] = []
     threat_steps = 0
     evasion_success_steps = 0
-    world_consistency_errors: list[float] = []
+    world_consistency_horizons = (1, 2, 3)
+    world_consistency_errors_by_h: dict[int, list[float]] = {h: [] for h in world_consistency_horizons}
+    pending_world_consistency: dict[int, list[tuple[int, torch.Tensor]]] = {h: [] for h in world_consistency_horizons}
 
     for step in range(steps):
         remap_code = torch.zeros(1, cfg.max_remap_groups, device=device)
@@ -900,6 +914,16 @@ def rollout_metrics(
 
         with torch.no_grad():
             clean_obs = world.encode_observation(state, signal_dim=cfg.signal_dim)
+            if world_consistency_profile == "latent-v1":
+                for horizon in world_consistency_horizons:
+                    next_pending: list[tuple[int, torch.Tensor]] = []
+                    for target_step, imagined_obs in pending_world_consistency[horizon]:
+                        if target_step == step:
+                            err = float(torch.mean((imagined_obs - clean_obs) ** 2).item())
+                            world_consistency_errors_by_h[horizon].append(err)
+                        else:
+                            next_pending.append((target_step, imagined_obs))
+                    pending_world_consistency[horizon] = next_pending
             obs = _apply_observation_noise(clean_obs, profile=noise_profile, seed=seed, step=step)
             out = model(obs, memory, remap_code)
             memory = out["memory"]
@@ -916,20 +940,21 @@ def rollout_metrics(
 
             action = applied.mean(dim=1, keepdim=True).repeat(1, wx * wy * wz)
             action_scalar = float(applied.mean().item())
-            imagined_next_obs = None
             if world_consistency_profile == "latent-v1":
-                imagined_next_obs = _imagine_next_observation_latent_v1(
-                    clean_obs,
-                    action_scalar=action_scalar,
-                    controls_wind=controls.wind,
-                    controls_force_strength=controls.force_strength,
-                    controls_light_intensity=controls.light_intensity,
-                    step=step,
-                )
+                for horizon in world_consistency_horizons:
+                    target_step = step + horizon
+                    if target_step < steps:
+                        imagined_obs = _imagine_future_observation_latent_v1(
+                            clean_obs,
+                            action_scalar=action_scalar,
+                            controls_wind=controls.wind,
+                            controls_force_strength=controls.force_strength,
+                            controls_light_intensity=controls.light_intensity,
+                            step=step,
+                            horizon=horizon,
+                        )
+                        pending_world_consistency[horizon].append((target_step, imagined_obs))
             state = world.step(state, action, controls=controls)
-            if imagined_next_obs is not None:
-                observed_next = world.encode_observation(state, signal_dim=cfg.signal_dim)
-                world_consistency_errors.append(float(torch.mean((imagined_next_obs - observed_next) ** 2).item()))
             vitality_values.append(float(state.life.mean().item()))
             stress_values.append(float(state.stress.mean().item()))
             energy_values.append(float(out["energy"].mean().item()))
@@ -1028,11 +1053,23 @@ def rollout_metrics(
             }
         )
     if world_consistency_profile != "none":
-        mean_world_consistency_error = sum(world_consistency_errors) / max(1, len(world_consistency_errors))
+        horizon_errors = {
+            h: float(sum(world_consistency_errors_by_h[h]) / max(1, len(world_consistency_errors_by_h[h])))
+            for h in world_consistency_horizons
+        }
+        horizon_scores = {h: float(1.0 / (1.0 + horizon_errors[h])) for h in world_consistency_horizons}
+        mean_world_consistency_error = float(sum(horizon_errors.values()) / len(world_consistency_horizons))
+        mean_world_consistency_score = float(sum(horizon_scores.values()) / len(world_consistency_horizons))
         metrics.update(
             {
-                "world_consistency_error": float(mean_world_consistency_error),
-                "world_consistency_score": float(1.0 / (1.0 + mean_world_consistency_error)),
+                "world_consistency_error": mean_world_consistency_error,
+                "world_consistency_score": mean_world_consistency_score,
+                "world_consistency_error_h1": horizon_errors[1],
+                "world_consistency_error_h2": horizon_errors[2],
+                "world_consistency_error_h3": horizon_errors[3],
+                "world_consistency_score_h1": horizon_scores[1],
+                "world_consistency_score_h2": horizon_scores[2],
+                "world_consistency_score_h3": horizon_scores[3],
             }
         )
     return metrics
@@ -1161,6 +1198,15 @@ def _evaluate_ranked_checkpoints(
                         "world_consistency_score": float(
                             sum(float(x["world_consistency_score"]) for x in subset) / max(1, len(subset))
                         ),
+                        "world_consistency_score_h1": float(
+                            sum(float(x["world_consistency_score_h1"]) for x in subset) / max(1, len(subset))
+                        ),
+                        "world_consistency_score_h2": float(
+                            sum(float(x["world_consistency_score_h2"]) for x in subset) / max(1, len(subset))
+                        ),
+                        "world_consistency_score_h3": float(
+                            sum(float(x["world_consistency_score_h3"]) for x in subset) / max(1, len(subset))
+                        ),
                     }
                 )
 
@@ -1184,6 +1230,47 @@ def _evaluate_ranked_checkpoints(
             if world_consistency_profile_resolved != "none"
             else 0.0
         )
+        overall_world_consistency_score_h1 = (
+            float(sum(float(row["world_consistency_score_h1"]) for row in run_rows) / max(1, len(run_rows)))
+            if world_consistency_profile_resolved != "none"
+            else 0.0
+        )
+        overall_world_consistency_score_h2 = (
+            float(sum(float(row["world_consistency_score_h2"]) for row in run_rows) / max(1, len(run_rows)))
+            if world_consistency_profile_resolved != "none"
+            else 0.0
+        )
+        overall_world_consistency_score_h3 = (
+            float(sum(float(row["world_consistency_score_h3"]) for row in run_rows) / max(1, len(run_rows)))
+            if world_consistency_profile_resolved != "none"
+            else 0.0
+        )
+        world_consistency_by_scenario: dict[str, dict[str, float]] = {}
+        world_consistency_scenario_std = 0.0
+        if world_consistency_profile_resolved != "none":
+            scenario_mean_scores: list[float] = []
+            for scen in scenario_specs:
+                scen_rows = [row for row in run_rows if row["scenario"] == scen.name]
+                scen_scores = [float(row["world_consistency_score"]) for row in scen_rows]
+                scen_scores_h1 = [float(row["world_consistency_score_h1"]) for row in scen_rows]
+                scen_scores_h2 = [float(row["world_consistency_score_h2"]) for row in scen_rows]
+                scen_scores_h3 = [float(row["world_consistency_score_h3"]) for row in scen_rows]
+                mean_score, std_score = _mean_std(scen_scores)
+                mean_h1, std_h1 = _mean_std(scen_scores_h1)
+                mean_h2, std_h2 = _mean_std(scen_scores_h2)
+                mean_h3, std_h3 = _mean_std(scen_scores_h3)
+                scenario_mean_scores.append(mean_score)
+                world_consistency_by_scenario[scen.name] = {
+                    "mean_score": mean_score,
+                    "std_score": std_score,
+                    "mean_score_h1": mean_h1,
+                    "std_score_h1": std_h1,
+                    "mean_score_h2": mean_h2,
+                    "std_score_h2": std_h2,
+                    "mean_score_h3": mean_h3,
+                    "std_score_h3": std_h3,
+                }
+            _, world_consistency_scenario_std = _mean_std(scenario_mean_scores)
         humanoid_compliance = None
         if enable_humanoid_compliance:
             hum_name = humanoid_embodiment_name.strip().lower()
@@ -1297,6 +1384,11 @@ def _evaluate_ranked_checkpoints(
                 "ranking_component_autopoiesis": autopoiesis_score_weight * overall_autopoiesis_score,
                 "ranking_component_optimism_penalty": ranking_component_optimism_penalty,
                 "overall_world_consistency_score": overall_world_consistency_score,
+                "overall_world_consistency_score_h1": overall_world_consistency_score_h1,
+                "overall_world_consistency_score_h2": overall_world_consistency_score_h2,
+                "overall_world_consistency_score_h3": overall_world_consistency_score_h3,
+                "world_consistency_scenario_std": world_consistency_scenario_std,
+                "world_consistency_by_scenario": world_consistency_by_scenario,
                 "world_consistency_profile": world_consistency_profile_resolved,
                 "humanoid_compliance": humanoid_compliance if humanoid_compliance is not None else {},
                 "humanoid_compliance_enabled": enable_humanoid_compliance,

@@ -80,6 +80,10 @@ def run(
             "sim_optimism_gap": float(item.get("sim_optimism_gap", 0.0)),
             "ranking_component_optimism_penalty": float(item.get("ranking_component_optimism_penalty", 0.0)),
             "overall_world_consistency_score": float(item.get("overall_world_consistency_score", 0.0)),
+            "overall_world_consistency_score_h1": float(item.get("overall_world_consistency_score_h1", 0.0)),
+            "overall_world_consistency_score_h2": float(item.get("overall_world_consistency_score_h2", 0.0)),
+            "overall_world_consistency_score_h3": float(item.get("overall_world_consistency_score_h3", 0.0)),
+            "world_consistency_scenario_std": float(item.get("world_consistency_scenario_std", 0.0)),
             "humanoid_compliance_score": float(item.get("humanoid_compliance", {}).get("overall_score", 0.0)),
             "humanoid_compliance_pass": bool(item.get("humanoid_compliance", {}).get("pass", False)),
             "checkmate_pass_all": bool(item.get("checkmate_pass_all", False)),
@@ -276,13 +280,26 @@ def run(
         md_lines.append("")
         md_lines.append("## World Consistency (Top 10)")
         md_lines.append("")
-        md_lines.append("| Rank | Checkpoint | Consistency Score |")
-        md_lines.append("|---|---|---:|")
+        md_lines.append("| Rank | Checkpoint | Consistency Score | H1 | H2 | H3 | Scenario Std |")
+        md_lines.append("|---|---|---:|---:|---:|---:|---:|")
         for row in rows[:10]:
             md_lines.append(
                 "| "
-                + f"{row['rank']} | `{row['checkpoint']}` | {_fmt(float(row.get('overall_world_consistency_score', 0.0)))} |"
+                + f"{row['rank']} | `{row['checkpoint']}` | {_fmt(float(row.get('overall_world_consistency_score', 0.0)))} | {_fmt(float(row.get('overall_world_consistency_score_h1', 0.0)))} | {_fmt(float(row.get('overall_world_consistency_score_h2', 0.0)))} | {_fmt(float(row.get('overall_world_consistency_score_h3', 0.0)))} | {_fmt(float(row.get('world_consistency_scenario_std', 0.0)))} |"
             )
+        best_consistency = best.get("world_consistency_by_scenario", {})
+        if isinstance(best_consistency, dict) and best_consistency:
+            md_lines.append("")
+            md_lines.append("### World Consistency by Scenario (Best)")
+            md_lines.append("")
+            md_lines.append("| Scenario | Mean | Std | H1 Mean | H2 Mean | H3 Mean |")
+            md_lines.append("|---|---:|---:|---:|---:|---:|")
+            for scen_name in sorted(best_consistency):
+                vals = best_consistency.get(scen_name, {})
+                md_lines.append(
+                    "| "
+                    + f"{scen_name} | {_fmt(float(vals.get('mean_score', 0.0)))} | {_fmt(float(vals.get('std_score', 0.0)))} | {_fmt(float(vals.get('mean_score_h1', 0.0)))} | {_fmt(float(vals.get('mean_score_h2', 0.0)))} | {_fmt(float(vals.get('mean_score_h3', 0.0)))} |"
+                )
 
     if ratchet_cycles:
         md_lines.append("")

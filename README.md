@@ -302,6 +302,7 @@ Optional world randomization manifest (deterministic by seed):
 ```
 
 Pass with `--world-randomization-manifest artifacts/world-randomization.json` to jitter realism parameters per run while preserving reproducibility.
+Use `--world-consistency-profile latent-v1` to emit world-consistency diagnostics (`overall_world_consistency_score`, horizon `H1/H2/H3`, and per-scenario spread).
 
 Humanoid-form compliance evaluation (report-only, ranking unchanged):
 
