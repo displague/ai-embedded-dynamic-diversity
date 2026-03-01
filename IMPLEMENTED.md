@@ -2,6 +2,21 @@
 
 ## Completed
 
+- Added coevolution warm-start cycling via `--init-weights-cycle` (multi-checkpoint seeding with dedupe + compatibility guards) so leading models can co-train in the same run before mutation expansion.
+- Ran a shared-environment 1200-generation extreme coevolution cycle with all five embodiments (`hexapod,car,drone,polymorph120,humanoid120`) in `large_v1_extreme`:
+  - checkpoint: `artifacts/model-core-coevo-1200-shared-extreme-v03.pt`
+  - metrics: `artifacts/model-core-coevo-1200-shared-extreme-v03.metrics.json`
+  - generation completion: `records=1200`, `last_gen=1200`, `max_best_fitness=0.091645`.
+- Ran calibrated large/extreme cross-eval including `v03`, `v02`, `v07`, `v09`, and signal-focused fine-tune:
+  - artifact: `artifacts/cross-eval-shared1200-v03-v02-v07-v09-signalft-calib-extreme-r3.json`
+  - report: `artifacts/cross-eval-shared1200-v03-v02-v07-v09-signalft-calib-extreme-r3.md`
+  - result: `v07` remained top-ranked; `v03` improved weighted transfer (`0.439319`) but regressed capability (`0.394878`) due lower signal reliability/conjoining gain.
+- Generated full large-world storyboard comparison package for champion vs new shared-environment candidate:
+  - compare set: `v07` vs `v03`
+  - artifacts: `artifacts/viz-storyboard-v07-v03-calib-large-v1/*` (30 scenario x embodiment compare GIFs + montage)
+  - montage: `artifacts/viz-storyboard-v07-v03-calib-large-v1/convergence-storyboard.gif`
+  - quantitative summary: `artifacts/viz-storyboard-v07-v03-calib-large-v1/compare-summary.md`.
+
 - Added Pi-oriented model profile (`pi5`) with smaller core dimensions for edge deployment.
 - Added co-evolution training mode with elite selection and mutation.
 - Added curriculum schedules for remap severity and environment volatility in training.

@@ -12,12 +12,15 @@ Date: 2026-03-01
 6. **New champion line** established at `artifacts/model-core-champion-v09.pt` with reported `0.8111` score after a `1200`-generation run.
 7. **Adaptive Loss-Weighting Controller** prevented signaling collapse in extended extreme training, enabling the v09 breakthrough.
 8. **Extreme-stress behavior evidence** captured in `artifacts/v09-vs-v08-car-storm.gif` and summarized in `artifacts/report-extreme-v02-cap.md`.
+9. **Shared-environment 1200-generation retrain (v03)** completed with all five embodiments in `large_v1_extreme`, seeded from leading checkpoints; this improved weighted transfer but reduced blended capability score.
+10. **Failure mode identified:** transfer gains can hide capability collapse when `signal_reliability` and `conjoining_gain` decay under aggressive objective weighting.
+11. **Storyboard evidence expanded** with 30 compare GIFs + montage (`artifacts/viz-storyboard-v07-v03-calib-large-v1`) showing strongest v03 regressions in `latency-storm/storm` for `hexapod`, `car`, and `drone`.
 
 ## Immediate Handoff Continuation
 
-1. Quantize v09 to INT8 and capture Pi 5 jitter metrics.
-2. Validate v09 against SMBus2 I2C HIL path.
-3. Expand symbiogenesis proxy checks for competitive multi-agent environments.
+1. Add capability-preserving guardrails in coevolution (explicit floors/penalties for `signal_reliability` and `conjoining_gain`) and rerun a constrained shared-environment training cycle.
+2. Add periodic capability probe checkpoints during training and terminate/ratchet when capability decays while transfer rises.
+3. Run targeted curriculum pass for `latency-storm` and `storm` (especially `hexapod`, `car`, `drone`) before next 1200-generation promotion attempt.
 
 ## Reuse Tags
 
@@ -29,3 +32,6 @@ Date: 2026-03-01
 - `v09-champion`
 - `1200-gen-run`
 - `adaptive-loss-success`
+- `shared-env-v03-regression`
+- `capability-guardrail-needed`
+- `storyboard-v07-v03-calib-large`
