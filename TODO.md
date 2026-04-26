@@ -74,8 +74,8 @@
 - [ ] Add periodic in-training capability probes (small fixed eval bundle every N generations) and early-stop/ratchet triggers when capability drops while transfer rises.
 - [ ] Add scenario-targeted remediation curriculum for `latency-storm` and `storm` in `hexapod/car/drone` where `v03` regressed vs `v07` in storyboard deltas.
 - [ ] Align in-training capability proxies with cross-eval capability metrics (signal reliability/conjoining calibration mismatch) so guardrail penalties predict ranking outcomes.
-- [ ] Recover transfer after guardrail capability gains (`v04/v05`) by rebalancing transfer-loss/fitness and capability penalties without sacrificing restored capability.
-- [ ] Push `v06` beyond champion line (`v07/v09`) by targeting remaining score gap through scenario-weighted transfer recovery on `car`/`hexapod` without dropping capability floor.
+- [x] ~~Recover transfer after guardrail capability gains (v04/v05)~~ — superseded by champion-new-env-v1 (new baseline as of v0.2.0)
+- [x] ~~Push v06 past champion line~~ — superseded; champion-new-env-v1 is the new bar (v0.2.0)
 
 ## Hardware-In-The-Loop
 
