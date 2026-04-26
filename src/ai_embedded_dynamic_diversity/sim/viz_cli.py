@@ -164,6 +164,10 @@ def _clone_state(state: WorldState) -> WorldState:
         stress=state.stress.clone(),
         object_pos=state.object_pos.clone(),
         object_vel=state.object_vel.clone(),
+        occlusion_mask=state.occlusion_mask.clone(),
+        phys_pos=state.phys_pos.clone(),
+        phys_vel=state.phys_vel.clone(),
+        phys_height=state.phys_height.clone(),
     )
 
 
