@@ -14,13 +14,13 @@ from torch import nn
 
 from ai_embedded_dynamic_diversity.config import TrainConfig, WorldConfig, model_config_for_profile, world_config_for_profile
 from ai_embedded_dynamic_diversity.models import ModelCore, UniversalConstructor, load_constructor_tape
-from ai_embedded_dynamic_diversity.sim.embodiments import device_map_for_embodiment, get_embodiment
+from ai_embedded_dynamic_diversity.sim.embodiments import device_map_for_embodiment, get_embodiment, dof_spatial_map
 from ai_embedded_dynamic_diversity.sim.autopoiesis import autopoietic_metrics
 from ai_embedded_dynamic_diversity.sim.world import DynamicDiversityWorld
 from ai_embedded_dynamic_diversity.sim.signaling import SignalingWorld
-from ai_embedded_dynamic_diversity.sim.population_metrics import genetic_diversity_index
+from ai_embedded_dynamic_diversity.sim.population_metrics import genetic_diversity_index, dof_coordination_metrics
 from ai_embedded_dynamic_diversity.models.world_predictor import LatentWorldPredictor
-from ai_embedded_dynamic_diversity.train.losses import loss_fn, world_prediction_loss
+from ai_embedded_dynamic_diversity.train.losses import loss_fn, world_prediction_loss, io_differentiation_loss, dof_coverage_loss as _dof_coverage_loss
 from ai_embedded_dynamic_diversity.train.quantization import prepare_qat_model
 from ai_embedded_dynamic_diversity.models.memory_bank import GeneticMemoryBank
 from ai_embedded_dynamic_diversity.train.curriculum import AdaptiveLossController
@@ -271,6 +271,21 @@ def _capability_guardrail_penalty(
     return penalty_weight * (signal_deficit + conjoining_deficit)
 
 
+def _build_action_field(
+    io: torch.Tensor,
+    mapping: torch.Tensor,
+    world: "DynamicDiversityWorld",
+    spatial_map: torch.Tensor | None,
+) -> torch.Tensor:
+    """Build action field from IO output, using DOF spatial projection when available."""
+    applied = io.float() @ mapping          # [batch, control_dim]
+    if spatial_map is not None:
+        # spatial_map: [control_dim, z*y*x] — each DOF influences its anatomical region
+        return applied @ spatial_map        # [batch, z*y*x]
+    # Fallback: scalar broadcast
+    return applied.mean(dim=1, keepdim=True).repeat(1, world.x * world.y * world.z)
+
+
 @torch.no_grad()
 def _collect_io_trace(
     model: ModelCore,
@@ -372,7 +387,21 @@ def run_gradient_epoch(
     paging_loss_weight: float = 0.01,
     force_curriculum_mode: str = "none",
     force_curriculum_strength: float = 0.0,
+    io_diff_weight: float = 0.02,
+    dof_coverage_weight: float = 0.01,
+    primary_embodiment_name: str = "",
 ) -> tuple[float, torch.Tensor, float, float, float, float, float, float, float, float, float, float, float]:
+    # Resolve primary embodiment for DOF spatial coupling
+    _primary_emb_name = primary_embodiment_name
+    if not _primary_emb_name and transfer_states:
+        _primary_emb_name = next(iter(transfer_states))
+    _spatial_map: torch.Tensor | None = None
+    _primary_mapping: torch.Tensor | None = None
+    if _primary_emb_name:
+        _emb = get_embodiment(_primary_emb_name)
+        _spatial_map = dof_spatial_map(_emb, world.z, world.y, world.x, dev)
+        _primary_mapping = device_map_for_embodiment(mcfg.io_channels, _emb, device=dev, permutation_seed=42)
+
     state = world.init(tcfg.batch_size)
     if genetic_memory is None:
         memory = model.init_memory(tcfg.batch_size, mcfg.memory_slots, mcfg.memory_dim, dev)
@@ -430,6 +459,11 @@ def run_gradient_epoch(
                 ],
                 dim=1,
             )
+            _applied_for_loss = (
+                (out["io"].float() @ _primary_mapping).detach()
+                if _primary_mapping is not None
+                else None
+            )
             base_loss, logs = loss_fn(
                 out,
                 target,
@@ -444,6 +478,9 @@ def run_gradient_epoch(
                 memory_persistence_loss_weight=memory_persistence_loss_weight,
                 initial_memory=initial_memory_prior,
                 paging_loss_weight=paging_loss_weight,
+                io_diff_weight=io_diff_weight,
+                dof_coverage_weight=dof_coverage_weight,
+                applied_signal=_applied_for_loss,
             )
             remap_loss_total += logs["remap_loss"]
             detection_loss_total += logs["detection_loss"]
@@ -480,8 +517,12 @@ def run_gradient_epoch(
             
             transfer_mismatch_total += transfer_mismatch
 
-            # Apply actions to world
-            action_field = out["io"].detach().float().mean(dim=1, keepdim=True).repeat(1, world.x * world.y * world.z)
+            # Apply actions to world — use DOF spatial projection when available
+            action_field = _build_action_field(
+                out["io"].detach(), _primary_mapping if _primary_mapping is not None
+                else torch.ones(mcfg.io_channels, 1, device=dev) / mcfg.io_channels,
+                world, _spatial_map,
+            )
             controls = world.random_controls(tcfg.batch_size, volatility=env_volatility, step_index=step_index)
             _inject_force_curriculum_controls(
                 controls=controls,
@@ -565,7 +606,19 @@ def evaluate_fitness(
     genetic_memory_persistence_weight: float = 0.0,
     force_curriculum_mode: str = "none",
     force_curriculum_strength: float = 0.0,
+    primary_embodiment_name: str = "",
 ) -> float:
+    # Resolve DOF spatial coupling
+    _eval_emb_name = primary_embodiment_name
+    if not _eval_emb_name and transfer_states:
+        _eval_emb_name = next(iter(transfer_states))
+    _eval_spatial_map: torch.Tensor | None = None
+    _eval_mapping: torch.Tensor | None = None
+    if _eval_emb_name:
+        _eval_emb = get_embodiment(_eval_emb_name)
+        _eval_spatial_map = dof_spatial_map(_eval_emb, wcfg.z, wcfg.y, wcfg.x, dev)
+        _eval_mapping = device_map_for_embodiment(mcfg.io_channels, _eval_emb, device=dev, permutation_seed=42)
+
     model.eval()
     state = world.init(batch)
     memory = model.init_memory(batch, mcfg.memory_slots, mcfg.memory_dim, dev)
@@ -606,7 +659,12 @@ def evaluate_fitness(
                 remap_probability=0.3,
             )
             transfer_mismatch_total += transfer_mismatch
-        action_field = out["io"].float().mean(dim=1, keepdim=True).repeat(1, wcfg.x * wcfg.y * wcfg.z)
+        action_field = _build_action_field(
+            out["io"],
+            _eval_mapping if _eval_mapping is not None
+            else torch.ones(mcfg.io_channels, 1, device=dev) / mcfg.io_channels,
+            world, _eval_spatial_map,
+        )
         controls = world.random_controls(batch, env_volatility, step_index=step_index)
         _inject_force_curriculum_controls(
             controls=controls,
@@ -1391,6 +1449,7 @@ def run(
             )
 
         gdi_metrics = genetic_diversity_index(pop, io_traces, lineage_history)
+        dof_coord = dof_coordination_metrics(io_traces, mcfg.io_channels)
 
         mean_world_pred_loss = 0.0
         if coev_predictor is not None and coev_pred_opt is not None:
@@ -1464,6 +1523,8 @@ def run(
             "behavior_div": round(gdi_metrics["behavior_div"], 4),
             "lineage_entropy": round(gdi_metrics["lineage_entropy"], 4),
             "species_count": gdi_metrics["species_count"],
+            "dof_channel_entropy": round(dof_coord["channel_entropy"], 4),
+            "dof_coverage_frac": round(dof_coord["coverage_fraction"], 4),
             "mean_world_pred_loss": mean_world_pred_loss,
         })
         metrics_records.append(
@@ -1483,6 +1544,9 @@ def run(
                 "lineage_entropy": gdi_metrics["lineage_entropy"],
                 "species_count": gdi_metrics["species_count"],
                 "species_frac": gdi_metrics["species_frac"],
+                "dof_channel_entropy": dof_coord["channel_entropy"],
+                "dof_coverage_frac": dof_coord["coverage_fraction"],
+                "dof_co_activation_top5": dof_coord["co_activation_top5"],
                 "mean_world_pred_loss": mean_world_pred_loss,
                 "remap_probability": remap_probability,
                 "env_volatility": env_volatility,

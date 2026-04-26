@@ -7,6 +7,7 @@ import torch
 
 if TYPE_CHECKING:
     from ai_embedded_dynamic_diversity.models.core import ModelCore
+    from ai_embedded_dynamic_diversity.sim.embodiments import Embodiment
 
 
 def _pairwise_cosine_distances(vecs: list[torch.Tensor]) -> float:
@@ -134,4 +135,86 @@ def genetic_diversity_index(
         "species_count": species,
         "species_frac": species_frac,
         "gdi": gdi,
+    }
+
+
+def dof_coordination_metrics(
+    io_traces: list[torch.Tensor],
+    io_channels: int,
+    activation_threshold: float = 0.05,
+) -> dict:
+    """
+    Population-level DOF coordination metrics computed from IO traces.
+
+    Args:
+        io_traces:   list of Tensors [T, io_channels] — one per agent.
+        io_channels: expected number of IO channels (for shape validation).
+        activation_threshold: minimum mean |activation| to count a channel as active.
+
+    Returns dict with:
+        per_channel_firing_rate  — [io_channels] mean |activation| across agents & time
+        channel_entropy          — Shannon entropy of per-channel mean activations (normalised)
+        co_activation_top5       — top-5 correlated channel pairs [(i, j, pearson_r)]
+        coverage_fraction        — fraction of channels exceeding activation_threshold
+    """
+    if not io_traces:
+        return {
+            "per_channel_firing_rate": [0.0] * io_channels,
+            "channel_entropy": 0.0,
+            "co_activation_top5": [],
+            "coverage_fraction": 0.0,
+        }
+
+    # Stack all traces: [N*T, io_channels]
+    stacked = torch.cat(
+        [t.float() if t.ndim == 2 else t.float().unsqueeze(0) for t in io_traces],
+        dim=0,
+    )
+    if stacked.shape[1] != io_channels:
+        # Truncate or pad to expected channels
+        if stacked.shape[1] > io_channels:
+            stacked = stacked[:, :io_channels]
+        else:
+            pad = torch.zeros(stacked.shape[0], io_channels - stacked.shape[1], device=stacked.device)
+            stacked = torch.cat([stacked, pad], dim=1)
+
+    per_channel = stacked.abs().mean(dim=0)  # [io_channels]
+    per_channel_list = per_channel.tolist()
+
+    # Shannon entropy of normalised per-channel activations
+    total = per_channel.sum().clamp(min=1e-8)
+    probs = per_channel / total
+    entropy = float(-(probs * (probs + 1e-8).log()).sum().item())
+    max_entropy = math.log(max(2, io_channels))
+    channel_entropy = min(1.0, entropy / max_entropy)
+
+    # Coverage: fraction of channels active above threshold
+    coverage_fraction = float((per_channel > activation_threshold).float().mean().item())
+
+    # Top-5 Pearson correlations between channel pairs
+    if stacked.shape[0] > 1:
+        mean = stacked.mean(dim=0, keepdim=True)
+        centred = stacked - mean
+        std = centred.std(dim=0).clamp(min=1e-8)
+        normed = centred / std           # [N*T, io_channels]
+        cov = (normed.T @ normed) / max(1, stacked.shape[0] - 1)  # [C, C]
+        # Zero out diagonal
+        cov.fill_diagonal_(0.0)
+        flat = cov.flatten()
+        top_vals, top_idx = flat.abs().topk(min(5, flat.numel()))
+        pairs = []
+        C = io_channels
+        for val, idx in zip(top_vals.tolist(), top_idx.tolist()):
+            i, j = divmod(int(idx), C)
+            if i < j:
+                pairs.append((i, j, round(float(cov[i, j].item()), 4)))
+        co_activation_top5 = pairs[:5]
+    else:
+        co_activation_top5 = []
+
+    return {
+        "per_channel_firing_rate": [round(v, 5) for v in per_channel_list],
+        "channel_entropy": round(channel_entropy, 4),
+        "co_activation_top5": co_activation_top5,
+        "coverage_fraction": round(coverage_fraction, 4),
     }

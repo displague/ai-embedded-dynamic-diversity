@@ -12,6 +12,7 @@ from ai_embedded_dynamic_diversity.config import model_config_for_profile
 from ai_embedded_dynamic_diversity.models import ModelCore
 from ai_embedded_dynamic_diversity.sim.embodiments import device_map_for_embodiment, get_embodiment
 from ai_embedded_dynamic_diversity.sim.world import DynamicDiversityWorld, EnvironmentControls, WorldState
+from ai_embedded_dynamic_diversity.sim.embodiments import dof_spatial_map
 
 app = typer.Typer(add_completion=False)
 
@@ -188,6 +189,7 @@ def _simulate(
 
     embodiment = get_embodiment(embodiment_name)
     mapping = device_map_for_embodiment(cfg.io_channels, embodiment, device=device, permutation_seed=seed_offset)
+    spatial_map = dof_spatial_map(embodiment, world.z, world.y, world.x, device)
 
     life_frames = []
     mismatch_values = []
@@ -196,6 +198,7 @@ def _simulate(
     force_values = []
     remap_steps = []
     object_trajectories = []
+    io_frames = []
 
     for step in range(params.steps):
         remap_code = torch.zeros(1, cfg.max_remap_groups, device=device)
@@ -214,7 +217,7 @@ def _simulate(
             applied = out["io"] @ mapping
             mismatch_values.append(float(torch.mean((applied - desired) ** 2).item()))
 
-            action = applied.mean(dim=1, keepdim=True).repeat(1, world.x * world.y * world.z)
+            action = applied @ spatial_map             # [1, z*y*x] — DOF-spatially coupled
             state = world.step(state, action, controls=controls)
             vitality_values.append(float(state.life.mean().item()))
             wind_values.append(float(torch.norm(controls.wind, dim=1).mean().item()))
@@ -223,6 +226,7 @@ def _simulate(
 
             frame = state.life[0, 0, world.z // 2].detach().cpu().numpy()
             life_frames.append(frame)
+            io_frames.append(out["io"].detach().cpu().mean(dim=0).numpy())
 
     return {
         "life_frames": life_frames,
@@ -232,6 +236,7 @@ def _simulate(
         "force_values": force_values,
         "remap_steps": remap_steps,
         "object_pos": object_trajectories,
+        "io_frames": io_frames,
     }
 
 
@@ -362,13 +367,24 @@ def _save_single(output: str, result: dict, title: str) -> None:
     line_force, = ax_env.plot([], [], color="tab:orange", label="force strength")
     ax_env.legend(loc="upper right")
 
-    # Task 3: Trajectory Overlay
-    ax_obj.set_title("Object Trajectory (X-Y)")
-    ax_obj.set_xlim(-1.1, 1.1)
-    ax_obj.set_ylim(-1.1, 1.1)
-    ax_obj.grid(True, alpha=0.3)
-    line_traj, = ax_obj.plot([], [], color="magenta", lw=1.5, label="path")
-    point_obj, = ax_obj.plot([], [], "o", color="red")
+    # Panel 4: IO channel activity heatmap (channels × steps)
+    ax_obj.set_title("IO Channel Activity")
+    ax_obj.set_xlabel("step")
+    ax_obj.set_ylabel("channel")
+    import numpy as _np
+    io_matrix = _np.zeros((1, 1))  # placeholder; filled on first update
+    if result.get("io_frames"):
+        io_matrix = _np.stack(result["io_frames"], axis=1)  # [io_channels, T]
+    io_heat = ax_obj.imshow(
+        io_matrix[:, :1],
+        aspect="auto",
+        cmap="RdBu_r",
+        vmin=-1.0,
+        vmax=1.0,
+        interpolation="nearest",
+    )
+    for rs in result["remap_steps"]:
+        ax_obj.axvline(rs, color="yellow", alpha=0.4, lw=0.8)
 
     fig.suptitle(title)
 
@@ -378,9 +394,9 @@ def _save_single(output: str, result: dict, title: str) -> None:
         line_vitality.set_data([], [])
         line_wind.set_data([], [])
         line_force.set_data([], [])
-        line_traj.set_data([], [])
-        point_obj.set_data([], [])
-        return (heat, line_mismatch, line_vitality, line_wind, line_force, line_traj, point_obj)
+        if result.get("io_frames"):
+            io_heat.set_data(io_matrix[:, :1])
+        return (heat, line_mismatch, line_vitality, line_wind, line_force, io_heat)
 
     def _update(i: int):
         xs = list(range(i + 1))
@@ -389,15 +405,10 @@ def _save_single(output: str, result: dict, title: str) -> None:
         line_vitality.set_data(xs, result["vitality_values"][: i + 1])
         line_wind.set_data(xs, result["wind_values"][: i + 1])
         line_force.set_data(xs, result["force_values"][: i + 1])
-        
-        if result["object_pos"]:
-            path_xy = result["object_pos"][: i + 1]
-            px = [p[0] for p in path_xy]
-            py = [p[1] for p in path_xy]
-            line_traj.set_data(px, py)
-            point_obj.set_data([px[-1]], [py[-1]])
-            
-        return (heat, line_mismatch, line_vitality, line_wind, line_force, line_traj, point_obj)
+        if result.get("io_frames") and i > 0:
+            io_heat.set_data(io_matrix[:, : i + 1])
+            io_heat.set_extent([0, i + 1, io_matrix.shape[0], 0])
+        return (heat, line_mismatch, line_vitality, line_wind, line_force, io_heat)
 
     anim = animation.FuncAnimation(fig, _update, init_func=_init, frames=len(result["life_frames"]), interval=70, blit=True)
 
