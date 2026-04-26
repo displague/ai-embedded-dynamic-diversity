@@ -40,9 +40,9 @@ class HazardZoneConfig:
 
 @dataclass
 class WorldConfig:
-    x: int = 40
-    y: int = 40
-    z: int = 20
+    x: int = 20
+    y: int = 20
+    z: int = 10
     resource_channels: int = 5
     decay: float = 0.03
     actuation_delay_steps: int = 0

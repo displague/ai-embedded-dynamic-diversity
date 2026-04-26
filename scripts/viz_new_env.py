@@ -43,7 +43,7 @@ from ai_embedded_dynamic_diversity.sim.viz_cli import (
 OUT = Path("artifacts/new-env-evolution")
 OUT.mkdir(parents=True, exist_ok=True)
 
-DEVICE = torch.device("cuda")
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 STEPS = 120
 REMAP_EVERY = 18
 SEED = 42
