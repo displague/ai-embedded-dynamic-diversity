@@ -30,20 +30,41 @@ class WorldState:
         stress: torch.Tensor,
         object_pos: torch.Tensor,
         object_vel: torch.Tensor,
-        occlusion_mask: torch.Tensor,
-        phys_pos: torch.Tensor,
-        phys_vel: torch.Tensor,
-        phys_height: torch.Tensor,
+        occlusion_mask: torch.Tensor | None = None,
+        phys_pos: torch.Tensor | None = None,
+        phys_vel: torch.Tensor | None = None,
+        phys_height: torch.Tensor | None = None,
     ):
         self.life = life
         self.resources = resources
         self.stress = stress
         self.object_pos = object_pos
         self.object_vel = object_vel
-        self.occlusion_mask = occlusion_mask   # [B, 1, Z, Y, X] binary, permanent
-        self.phys_pos = phys_pos               # [B, N, 3] normalised [-1,1]
-        self.phys_vel = phys_vel               # [B, N, 3]
-        self.phys_height = phys_height         # [B, N, 1] stack height (≥1.0)
+
+        # Backward-compatible defaults for new fields
+        batch_size = life.size(0)
+        device = life.device
+        z, y, x = life.size(2), life.size(3), life.size(4)
+
+        if occlusion_mask is None:
+            self.occlusion_mask = torch.zeros(batch_size, 1, z, y, x, device=device)
+        else:
+            self.occlusion_mask = occlusion_mask
+
+        if phys_pos is None:
+            self.phys_pos = torch.zeros(batch_size, 0, 3, device=device)
+        else:
+            self.phys_pos = phys_pos
+
+        if phys_vel is None:
+            self.phys_vel = torch.zeros(batch_size, 0, 3, device=device)
+        else:
+            self.phys_vel = phys_vel
+
+        if phys_height is None:
+            self.phys_height = torch.zeros(batch_size, 0, 1, device=device)
+        else:
+            self.phys_height = phys_height
 
 
 class DynamicDiversityWorld:
@@ -372,6 +393,10 @@ class DynamicDiversityWorld:
     def step(self, state: WorldState, action_field: torch.Tensor, controls: EnvironmentControls | None = None) -> WorldState:
         if controls is None:
             controls = self.default_controls(action_field.size(0))
+
+        # Store the controls for use in encode_observation
+        self._prev_controls = controls
+
         if self.actuation_noise_std > 0.0:
             action_field = action_field + self.actuation_noise_std * torch.randn_like(action_field)
         if self.actuation_delay_steps > 0:
@@ -463,8 +488,15 @@ class DynamicDiversityWorld:
 
     def encode_observation(self, state: WorldState, signal_dim: int) -> torch.Tensor:
         # Aggregate anonymous signal channels; do not encode modality identity.
-        light_mean = self._light_field(self.default_controls(state.life.size(0))).mean(dim=(2, 3, 4))  # [B,1]
-        wind_mag = torch.zeros(state.life.size(0), 1, device=self.device)  # placeholder; populated from controls in step
+        # Use the last applied controls if available, otherwise fall back to defaults
+        if self._prev_controls is not None:
+            light_mean = self._light_field(self._prev_controls).mean(dim=(2, 3, 4))  # [B,1]
+            wind_mag = torch.norm(self._prev_controls.wind, dim=1, keepdim=True)  # [B,1]
+        else:
+            # Fallback for initial observation before first step
+            default_ctrl = self.default_controls(state.life.size(0))
+            light_mean = self._light_field(default_ctrl).mean(dim=(2, 3, 4))  # [B,1]
+            wind_mag = torch.zeros(state.life.size(0), 1, device=self.device)  # [B,1]
 
         # Hazard hint channels: pooled light field and step-phase sine
         step_phase = torch.full((state.life.size(0), 1), math.sin(2.0 * math.pi * self._step_index / 16.0), device=self.device)

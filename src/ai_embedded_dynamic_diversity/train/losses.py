@@ -97,6 +97,6 @@ def world_prediction_loss(
     """
     mse = F.mse_loss(pred_latent, actual_latent.detach())
     # SIGReg: penalise low variance across batch to prevent collapse
-    sigreg = sigreg_weight * torch.relu(1.0 - actual_latent.var(dim=0).mean())
+    sigreg = sigreg_weight * torch.relu(1.0 - pred_latent.var(dim=0).mean())
     return mse + sigreg
 

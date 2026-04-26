@@ -1378,19 +1378,21 @@ def run(
             memory_persistence_loss_weight = new_weights["memory_persistence_loss_weight"]
             paging_loss_weight = new_weights["paging_loss_weight"]
 
-        # Collect IO traces for GDI and train world predictor (both optional overhead)
+        # Collect IO traces for GDI and diversity bonus only when needed
+        # This can be expensive (extra rollouts + diversity computation)
         io_traces: list[torch.Tensor] = []
-        for idx, model in enumerate(pop):
-            io_traces.append(
-                _collect_io_trace(
-                    model, world, mcfg, dev,
-                    steps=max(4, tcfg.unroll_steps // 2),
-                    batch=max(2, tcfg.batch_size // 4),
-                    env_volatility=env_volatility,
+        gdi_metrics = {"gdi": 0.0, "weight_div": 0.0, "behavior_div": 0.0, "lineage_entropy": 0.0, "species_count": 0}
+        if diversity_selection_bonus > 0.0:
+            for idx, model in enumerate(pop):
+                io_traces.append(
+                    _collect_io_trace(
+                        model, world, mcfg, dev,
+                        steps=max(4, tcfg.unroll_steps // 2),
+                        batch=max(2, tcfg.batch_size // 4),
+                        env_volatility=env_volatility,
+                    )
                 )
-            )
-
-        gdi_metrics = genetic_diversity_index(pop, io_traces, lineage_history)
+            gdi_metrics = genetic_diversity_index(pop, io_traces, lineage_history)
 
         mean_world_pred_loss = 0.0
         if coev_predictor is not None and coev_pred_opt is not None:
@@ -1434,18 +1436,23 @@ def run(
                     conjoining_gain_floor=conjoining_gain_floor,
                     penalty_weight=capability_guardrail_penalty_weight,
                 )
-            # Optional diversity bonus: reward agents that are behaviourally distant from elites
-            # Computed against best-yet IO trace (agent 0 in io_traces)
-            diversity_bonus = 0.0
-            if diversity_selection_bonus > 0.0 and len(io_traces) > 1:
-                ref = io_traces[0].float().mean(dim=0)
+            scores.append(raw_score - penalty)
+            score_penalties.append(penalty)
+
+        # Compute diversity bonus relative to current best agent (after scoring)
+        if diversity_selection_bonus > 0.0 and len(io_traces) > 1:
+            best_idx = max(range(len(scores)), key=lambda i: scores[i])
+            ref = io_traces[best_idx].float().mean(dim=0)
+            ref_n = ref.norm().clamp(min=1e-8)
+            for idx in range(len(pop)):
+                if idx == best_idx:
+                    continue  # No bonus for comparing to self
                 agent_trace = io_traces[idx].float().mean(dim=0)
-                ref_n = ref.norm().clamp(min=1e-8)
                 agent_n = agent_trace.norm().clamp(min=1e-8)
                 cos_dist = 1.0 - float(((ref / ref_n).dot(agent_trace / agent_n)).item())
                 diversity_bonus = diversity_selection_bonus * cos_dist
-            scores.append(raw_score - penalty + diversity_bonus)
-            score_penalties.append(penalty)
+                scores[idx] += diversity_bonus
+
         rank = sorted(range(len(pop)), key=lambda i: scores[i], reverse=True)
         elites = rank[:elite_count]
         best_idx = elites[0]

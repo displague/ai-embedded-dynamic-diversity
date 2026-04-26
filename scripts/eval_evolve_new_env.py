@@ -26,12 +26,10 @@ sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 from ai_embedded_dynamic_diversity.config import (
     ModelConfig,
     WorldConfig,
-    HazardZoneConfig,
     world_config_for_profile,
 )
 from ai_embedded_dynamic_diversity.models import ModelCore
 from ai_embedded_dynamic_diversity.sim.signaling import SignalingWorld
-from ai_embedded_dynamic_diversity.sim.population_metrics import genetic_diversity_index
 from ai_embedded_dynamic_diversity.train.cli import evaluate_fitness, _build_transfer_states, run
 from ai_embedded_dynamic_diversity.train.device import choose_device
 
