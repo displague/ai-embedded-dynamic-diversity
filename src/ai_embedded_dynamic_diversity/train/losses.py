@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import torch
+import torch.nn.functional as F
 from torch import nn
 
 
@@ -76,4 +77,26 @@ def loss_fn(
         "paging_loss": paging_loss.item(),
     }
     return total, logs
+
+
+def world_prediction_loss(
+    pred_latent: torch.Tensor,
+    actual_latent: torch.Tensor,
+    sigreg_weight: float = 0.1,
+) -> torch.Tensor:
+    """
+    JEPA-style world-prediction loss (LeWM-inspired).
+
+    MSE between predicted and actual next latent, plus SIGReg variance
+    regularisation to prevent representational collapse.
+
+    Args:
+        pred_latent:   predicted next-step latent [B, D]
+        actual_latent: actual next-step latent     [B, D]  (detached from model graph)
+        sigreg_weight: weight for variance regularisation term
+    """
+    mse = F.mse_loss(pred_latent, actual_latent.detach())
+    # SIGReg: penalise low variance across batch to prevent collapse
+    sigreg = sigreg_weight * torch.relu(1.0 - actual_latent.var(dim=0).mean())
+    return mse + sigreg
 

@@ -18,7 +18,9 @@ from ai_embedded_dynamic_diversity.sim.embodiments import device_map_for_embodim
 from ai_embedded_dynamic_diversity.sim.autopoiesis import autopoietic_metrics
 from ai_embedded_dynamic_diversity.sim.world import DynamicDiversityWorld
 from ai_embedded_dynamic_diversity.sim.signaling import SignalingWorld
-from ai_embedded_dynamic_diversity.train.losses import loss_fn
+from ai_embedded_dynamic_diversity.sim.population_metrics import genetic_diversity_index
+from ai_embedded_dynamic_diversity.models.world_predictor import LatentWorldPredictor
+from ai_embedded_dynamic_diversity.train.losses import loss_fn, world_prediction_loss
 from ai_embedded_dynamic_diversity.train.quantization import prepare_qat_model
 from ai_embedded_dynamic_diversity.models.memory_bank import GeneticMemoryBank
 from ai_embedded_dynamic_diversity.train.curriculum import AdaptiveLossController
@@ -267,6 +269,75 @@ def _capability_guardrail_penalty(
     signal_deficit = max(0.0, signal_reliability_floor - signal_reliability)
     conjoining_deficit = max(0.0, conjoining_gain_floor - conjoining_gain)
     return penalty_weight * (signal_deficit + conjoining_deficit)
+
+
+@torch.no_grad()
+def _collect_io_trace(
+    model: ModelCore,
+    world: DynamicDiversityWorld,
+    mcfg,
+    dev: torch.device,
+    steps: int = 8,
+    batch: int = 4,
+    env_volatility: float = 0.3,
+) -> torch.Tensor:
+    """Run a short rollout and return IO trace [T, io_channels] (batch-mean per step)."""
+    model.eval()
+    state = world.init(batch)
+    memory = model.init_memory(batch, mcfg.memory_slots, mcfg.memory_dim, dev)
+    traces: list[torch.Tensor] = []
+    for step_index in range(steps):
+        obs = world.encode_observation(state, signal_dim=mcfg.signal_dim)
+        remap = torch.zeros(batch, mcfg.max_remap_groups, device=dev)
+        out = model(obs, memory, remap)
+        memory = out["memory"]
+        traces.append(out["io"].detach().mean(dim=0))
+        action_field = out["io"].float().mean(dim=1, keepdim=True).repeat(1, world.x * world.y * world.z)
+        controls = world.random_controls(batch, env_volatility, step_index=step_index)
+        state = world.step(state, action_field, controls)
+    return torch.stack(traces, dim=0)  # [T, io_channels]
+
+
+def _train_world_predictor(
+    predictor: LatentWorldPredictor,
+    pred_opt: torch.optim.Optimizer,
+    model: ModelCore,
+    world: DynamicDiversityWorld,
+    mcfg,
+    tcfg: TrainConfig,
+    dev: torch.device,
+    env_volatility: float = 0.3,
+    steps: int = 8,
+    pred_loss_weight: float = 0.05,
+) -> float:
+    """Train the world predictor for one epoch; returns mean prediction loss."""
+    model.eval()
+    predictor.train()
+    state = world.init(tcfg.batch_size)
+    memory = model.init_memory(tcfg.batch_size, mcfg.memory_slots, mcfg.memory_dim, dev)
+    prev_obs: torch.Tensor | None = None
+    prev_action: torch.Tensor | None = None
+    pred_opt.zero_grad()
+    total_pred_loss = 0.0
+    for step_index in range(steps):
+        obs = world.encode_observation(state, signal_dim=mcfg.signal_dim)
+        remap = torch.zeros(tcfg.batch_size, mcfg.max_remap_groups, device=dev)
+        with torch.no_grad():
+            out = model(obs, memory, remap)
+            memory = out["memory"].detach()
+        if prev_obs is not None and prev_action is not None:
+            pred_latent = predictor(prev_obs, prev_action)
+            loss_val = world_prediction_loss(pred_latent, obs) * pred_loss_weight
+            loss_val.backward()
+            total_pred_loss += float(loss_val.item())
+        prev_obs = obs.detach()
+        prev_action = out["io"].detach()
+        action_field = out["io"].detach().float().mean(dim=1, keepdim=True).repeat(1, world.x * world.y * world.z)
+        controls = world.random_controls(tcfg.batch_size, env_volatility, step_index=step_index)
+        state = world.step(state, action_field, controls)
+    nn.utils.clip_grad_norm_(predictor.parameters(), 1.0)
+    pred_opt.step()
+    return total_pred_loss / max(1, steps - 1)
 
 
 def run_gradient_epoch(
@@ -689,6 +760,9 @@ def run(
     seed: int = 7,
     metrics_path: str = "",
     save_path: str = "artifacts/model-core.pt",
+    diversity_selection_bonus: float = 0.0,
+    enable_world_predictor: bool = False,
+    world_pred_loss_weight: float = 0.05,
 ) -> None:
     random.seed(seed)
     torch.manual_seed(seed)
@@ -764,6 +838,12 @@ def run(
         sensor_dropout_burst_prob=wcfg.sensor_dropout_burst_prob,
         surface_friction_scale=wcfg.surface_friction_scale,
         disturbance_correlation_horizon=wcfg.disturbance_correlation_horizon,
+        num_occlusion_objects=wcfg.num_occlusion_objects,
+        occlusion_seed=wcfg.occlusion_seed,
+        num_physics_objects=wcfg.num_physics_objects,
+        phys_mass=wcfg.phys_mass,
+        phys_friction=wcfg.phys_friction,
+        hazard_zones=wcfg.hazard_zones,
     )
     
     bank = None
@@ -847,6 +927,12 @@ def run(
         "memory_bank_path": memory_bank_path,
         "constructor_tape_path": constructor_tape_path,
         "constructor_tape_version": None if constructor_tape is None else constructor_tape.version,
+        "diversity_selection_bonus": diversity_selection_bonus,
+        "enable_world_predictor": enable_world_predictor,
+        "world_pred_loss_weight": world_pred_loss_weight,
+        "num_occlusion_objects": wcfg.num_occlusion_objects,
+        "num_physics_objects": wcfg.num_physics_objects,
+        "num_hazard_zones": len(wcfg.hazard_zones),
     }
 
     if not coevolution:
@@ -886,6 +972,13 @@ def run(
                 },
                 alpha=adaptive_loss_alpha
             )
+
+        predictor = None
+        pred_opt = None
+        if enable_world_predictor:
+            predictor = LatentWorldPredictor(mcfg.signal_dim, mcfg.io_channels).to(dev)
+            pred_opt = torch.optim.AdamW(predictor.parameters(), lr=tcfg.lr)
+            print({"info": "LatentWorldPredictor enabled"})
 
         for epoch in range(tcfg.epochs):
             if enable_curriculum:
@@ -976,6 +1069,14 @@ def run(
 
             if genetic_memory is not None:
                 genetic_memory = genetic_memory_decay * genetic_memory + (1.0 - genetic_memory_decay) * memory_snapshot
+            mean_world_pred_loss = 0.0
+            if predictor is not None and pred_opt is not None:
+                mean_world_pred_loss = _train_world_predictor(
+                    predictor, pred_opt, model, world, mcfg, tcfg, dev,
+                    env_volatility=env_volatility,
+                    steps=max(4, tcfg.unroll_steps // 2),
+                    pred_loss_weight=world_pred_loss_weight,
+                )
             fitness = evaluate_fitness(
                 model,
                 world,
@@ -1012,6 +1113,7 @@ def run(
                     "autopoietic_loss_component": mean_autopoietic_loss,
                     "mean_signal_reliability": mean_signal_reliability,
                     "mean_conjoining_gain": mean_conjoining_gain,
+                    "mean_world_pred_loss": mean_world_pred_loss,
                     "remap_probability": remap_probability,
                     "env_volatility": env_volatility,
                     "noise_strength": noise_strength,
@@ -1036,6 +1138,7 @@ def run(
                     "autopoietic_loss_component": mean_autopoietic_loss,
                     "mean_signal_reliability": mean_signal_reliability,
                     "mean_conjoining_gain": mean_conjoining_gain,
+                    "mean_world_pred_loss": mean_world_pred_loss,
                     "device": str(dev),
                     "profile": profile,
                     "remap_probability": remap_probability,
@@ -1129,6 +1232,15 @@ def run(
             },
             alpha=adaptive_loss_alpha
         )
+
+    coev_predictor = None
+    coev_pred_opt = None
+    if enable_world_predictor:
+        coev_predictor = LatentWorldPredictor(mcfg.signal_dim, mcfg.io_channels).to(dev)
+        coev_pred_opt = torch.optim.AdamW(coev_predictor.parameters(), lr=tcfg.lr)
+        print({"info": "LatentWorldPredictor enabled (coevolution)"})
+
+    lineage_history: list[int] = list(range(population_size))  # initial: each agent is its own parent
 
     elite_count = max(1, int(population_size * elite_fraction))
     for generation in range(tcfg.epochs):
@@ -1266,6 +1378,30 @@ def run(
             memory_persistence_loss_weight = new_weights["memory_persistence_loss_weight"]
             paging_loss_weight = new_weights["paging_loss_weight"]
 
+        # Collect IO traces for GDI and train world predictor (both optional overhead)
+        io_traces: list[torch.Tensor] = []
+        for idx, model in enumerate(pop):
+            io_traces.append(
+                _collect_io_trace(
+                    model, world, mcfg, dev,
+                    steps=max(4, tcfg.unroll_steps // 2),
+                    batch=max(2, tcfg.batch_size // 4),
+                    env_volatility=env_volatility,
+                )
+            )
+
+        gdi_metrics = genetic_diversity_index(pop, io_traces, lineage_history)
+
+        mean_world_pred_loss = 0.0
+        if coev_predictor is not None and coev_pred_opt is not None:
+            # Train shared predictor using agent 0 (representative; no extra fitness eval needed)
+            mean_world_pred_loss = _train_world_predictor(
+                coev_predictor, coev_pred_opt, pop[0], world, mcfg, tcfg, dev,
+                env_volatility=env_volatility,
+                steps=max(4, tcfg.unroll_steps // 2),
+                pred_loss_weight=world_pred_loss_weight,
+            )
+
         scores: list[float] = []
         score_penalties: list[float] = []
         for idx, model in enumerate(pop):
@@ -1298,21 +1434,37 @@ def run(
                     conjoining_gain_floor=conjoining_gain_floor,
                     penalty_weight=capability_guardrail_penalty_weight,
                 )
-            scores.append(raw_score - penalty)
+            # Optional diversity bonus: reward agents that are behaviourally distant from elites
+            # Computed against best-yet IO trace (agent 0 in io_traces)
+            diversity_bonus = 0.0
+            if diversity_selection_bonus > 0.0 and len(io_traces) > 1:
+                ref = io_traces[0].float().mean(dim=0)
+                agent_trace = io_traces[idx].float().mean(dim=0)
+                ref_n = ref.norm().clamp(min=1e-8)
+                agent_n = agent_trace.norm().clamp(min=1e-8)
+                cos_dist = 1.0 - float(((ref / ref_n).dot(agent_trace / agent_n)).item())
+                diversity_bonus = diversity_selection_bonus * cos_dist
+            scores.append(raw_score - penalty + diversity_bonus)
             score_penalties.append(penalty)
         rank = sorted(range(len(pop)), key=lambda i: scores[i], reverse=True)
         elites = rank[:elite_count]
         best_idx = elites[0]
         print({
-            "generation": generation + 1, 
-            "best_agent": best_idx, 
-            "best_fitness": scores[best_idx], 
+            "generation": generation + 1,
+            "best_agent": best_idx,
+            "best_fitness": scores[best_idx],
             "mean_fitness": sum(scores) / len(scores),
             "best_fitness_penalty": score_penalties[best_idx] if score_penalties else 0.0,
             "mean_signal_reliability": mean_signal_reliability_acc / max(1, len(pop)),
             "mean_conjoining_gain": mean_conjoining_gain_acc / max(1, len(pop)),
             "remap_loss_w": round(remap_loss_weight, 4),
             "detect_loss_w": round(detection_loss_weight, 4),
+            "gdi": round(gdi_metrics["gdi"], 4),
+            "weight_div": round(gdi_metrics["weight_div"], 4),
+            "behavior_div": round(gdi_metrics["behavior_div"], 4),
+            "lineage_entropy": round(gdi_metrics["lineage_entropy"], 4),
+            "species_count": gdi_metrics["species_count"],
+            "mean_world_pred_loss": mean_world_pred_loss,
         })
         metrics_records.append(
             {
@@ -1325,6 +1477,13 @@ def run(
                 "mean_transfer_mismatch": mean_transfer_mismatch_acc / max(1, len(pop)),
                 "mean_signal_reliability": mean_signal_reliability_acc / max(1, len(pop)),
                 "mean_conjoining_gain": mean_conjoining_gain_acc / max(1, len(pop)),
+                "gdi": gdi_metrics["gdi"],
+                "weight_div": gdi_metrics["weight_div"],
+                "behavior_div": gdi_metrics["behavior_div"],
+                "lineage_entropy": gdi_metrics["lineage_entropy"],
+                "species_count": gdi_metrics["species_count"],
+                "species_frac": gdi_metrics["species_frac"],
+                "mean_world_pred_loss": mean_world_pred_loss,
                 "remap_probability": remap_probability,
                 "env_volatility": env_volatility,
                 "noise_strength": noise_strength,
@@ -1336,12 +1495,15 @@ def run(
 
         next_pop = [copy.deepcopy(pop[i]).to(dev) for i in elites]
         next_transfer_states = [copy.deepcopy(transfer_states_by_agent[i]) for i in elites]
+        next_lineage: list[int] = list(elites)
         while len(next_pop) < population_size:
             parent_idx = random.choice(elites)
             parent = pop[parent_idx]
             child = mutate_from_parent(parent, mutation_std).to(dev)
             next_pop.append(child)
             next_transfer_states.append(copy.deepcopy(transfer_states_by_agent[parent_idx]))
+            next_lineage.append(parent_idx)
+        lineage_history = next_lineage
         pop = next_pop
         transfer_states_by_agent = next_transfer_states
         opts = [torch.optim.AdamW(model.parameters(), lr=tcfg.lr) for model in pop]
