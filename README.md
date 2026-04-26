@@ -172,6 +172,37 @@ Noisy-signal curriculum training (optional):
 - `--noise-strength-start 0.25`
 - `--noise-strength-end 1.0`
 
+Rich environment features (optional, configured via world profile or WorldConfig):
+
+World profiles:
+- `base` / `default`: 20×20×10 toroidal grid (circular-padding convolution, no hard walls)
+- `pi5` / `edge`: 20×20×10 (memory-constrained; same as old base default)
+- `new_env_v1`: 40×40×20 toroidal + 3 T-shape occlusion objects + 3 physics objects + 3 hazard zones (light_triggered, airflow, periodic)
+- `large_v1`: 56×56×28 with actuation/sensor realism
+- `large_v1_extreme`: 64×64×32 extreme realism
+
+Structural environment objects (anonymous — function discovered through interaction):
+- **Occlusion** (`--num-occlusion-objects N`): T-shaped binary masks block life propagation, cast light shadows used as hazard-safety cues
+- **Physics objects** (`--num-physics-objects N`): push/pull/stack/bridge via action-field proximity; agents discover affordances without labels
+- **Hazard zones** (`hazard_zones` in `WorldConfig`): `light_triggered` (shadow=safe), `airflow` (wind precedes activation), `periodic` (light-phase correlated)
+
+JEPA latent world predictor (optional):
+
+- `--enable-world-predictor`: attach a `LatentWorldPredictor` alongside `ModelCore`
+- `--world-pred-loss-weight 0.05`: MSE + SIGReg weight
+
+Genetic Diversity Index (coevolution, optional):
+
+- `--diversity-selection-bonus 0.1`: add behavioural-distance bonus relative to current best agent
+- GDI fields appear in generation logs: `gdi`, `weight_div`, `behavior_div`, `lineage_entropy`, `species_count`, `dof_channel_entropy`, `dof_coverage_frac`
+- IO trace collection is gated behind `diversity_selection_bonus > 0` to avoid overhead when not needed
+
+Articulation differentiation losses (optional):
+
+- `--io-diff-weight 0.02`: penalise near-uniform IO outputs across channels (channel collapse)
+- `--dof-coverage-weight 0.01`: penalise permanently-silent control channels
+- Per-DOF named profiling: `add-sim profiler` now returns `io_profile.per_dof` with `dof_name`, `usage`, `firing_frac`, `mismatch_contribution` per joint
+
 ## Run simulator rollout
 
 ```bash
@@ -185,7 +216,8 @@ Noisy-signal curriculum training (optional):
 - runtime memory (`state_mb`, `memory_tensor_mb`, `peak_gpu_alloc_mb`)
 - effectiveness/dynamism proxies (`mean_mismatch`, `channel_firing_fraction`, `readiness_sparsity`, `memory_weight_entropy`)
 - autopoietic closure metrics (`closure_resilience`, `organizational_persistence`, `self_repair_response`, `resource_cycle_efficiency`, `autopoietic_score`)
-- low/high usage control-channel indices for embodiment bottleneck analysis.
+- per-DOF named profiling: `io_profile.per_dof` with `dof_name`, `usage`, `firing_frac`, `mismatch_contribution` per control (e.g. `"dof_name": "leg_front_l"`)
+- DOF coordination: `channel_entropy`, `co_activation_top5`, `coverage_fraction`
 
 Visualization is independent of training loop execution and can use any checkpoint:
 
