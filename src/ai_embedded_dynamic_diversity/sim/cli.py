@@ -10,7 +10,7 @@ import typer
 from ai_embedded_dynamic_diversity.config import ModelConfig, WorldConfig, model_config_for_profile
 from ai_embedded_dynamic_diversity.models import ModelCore, UniversalConstructor, load_constructor_tape
 from ai_embedded_dynamic_diversity.sim.autopoiesis import autopoietic_metrics
-from ai_embedded_dynamic_diversity.sim.embodiments import embodiment_dof_table, device_map_for_embodiment, get_embodiment
+from ai_embedded_dynamic_diversity.sim.embodiments import embodiment_dof_table, device_map_for_embodiment, get_embodiment, dof_spatial_map
 from ai_embedded_dynamic_diversity.sim.world import DynamicDiversityWorld
 
 app = typer.Typer(add_completion=False)
@@ -113,6 +113,7 @@ def profile_embodiment_metrics(
 
     mapping_seed = seed + 37
     mapping = device_map_for_embodiment(cfg.io_channels, emb, device=dev, permutation_seed=mapping_seed)
+    spatial_map = dof_spatial_map(emb, world_z, world_y, world_x, dev)
 
     step_latency_ms: list[float] = []
     mismatch_values: list[float] = []
@@ -127,6 +128,8 @@ def profile_embodiment_metrics(
     remap_events = 0
     remap_steps: list[int] = []
     channel_usage_acc = torch.zeros(control_dim, device=dev)
+    channel_mismatch_acc = torch.zeros(control_dim, device=dev)
+    channel_firing_acc = torch.zeros(control_dim, device=dev)
     resource_values: list[float] = []
 
     if dev.type == "cuda":
@@ -153,7 +156,7 @@ def profile_embodiment_metrics(
             mismatch = torch.mean((applied - desired) ** 2)
             mismatch_values.append(float(mismatch.item()))
 
-            action_field = applied.mean(dim=1, keepdim=True).repeat(1, world_x * world_y * world_z)
+            action_field = applied @ spatial_map      # [batch, z*y*x] — DOF-spatially coupled
             state = world.step(state, action_field, controls=controls)
             vitality_values.append(float(state.life.mean().item()))
             stress_values.append(float(state.stress.mean().item()))
@@ -172,12 +175,17 @@ def profile_embodiment_metrics(
             memory_entropy_values.append(float(entropy.mean().item()))
 
             channel_usage_acc += torch.abs(applied).mean(dim=0)
+            per_dof_sq_err = ((applied - desired) ** 2).mean(dim=0)  # [control_dim]
+            channel_mismatch_acc += per_dof_sq_err
+            channel_firing_acc += (torch.abs(applied) > firing_threshold).float().mean(dim=0)
 
         if dev.type == "cuda":
             torch.cuda.synchronize(dev)
         step_latency_ms.append((time.perf_counter() - t0) * 1000.0)
 
     channel_usage = (channel_usage_acc / max(1, steps)).detach().cpu().tolist()
+    channel_mismatch = (channel_mismatch_acc / max(1, steps)).detach().cpu().tolist()
+    channel_firing = (channel_firing_acc / max(1, steps)).detach().cpu().tolist()
     low_count = min(8, len(channel_usage))
     low_usage_indices = sorted(range(len(channel_usage)), key=lambda i: channel_usage[i])[:low_count]
     high_usage_indices = sorted(range(len(channel_usage)), key=lambda i: channel_usage[i], reverse=True)[:low_count]
@@ -242,8 +250,24 @@ def profile_embodiment_metrics(
             **auto_metrics,
         },
         "io_profile": {
-            "low_usage_channels": [{"index": int(i), "usage": float(channel_usage[i])} for i in low_usage_indices],
-            "high_usage_channels": [{"index": int(i), "usage": float(channel_usage[i])} for i in high_usage_indices],
+            "per_dof": [
+                {
+                    "index": i,
+                    "dof_name": emb.controls[i] if i < len(emb.controls) else f"dof_{i:03d}",
+                    "usage": float(channel_usage[i]),
+                    "firing_frac": float(channel_firing[i]),
+                    "mismatch_contribution": float(channel_mismatch[i]),
+                }
+                for i in range(control_dim)
+            ],
+            "low_usage_dofs": [
+                {"index": int(i), "dof_name": emb.controls[i] if i < len(emb.controls) else f"dof_{i:03d}", "usage": float(channel_usage[i])}
+                for i in low_usage_indices
+            ],
+            "high_usage_dofs": [
+                {"index": int(i), "dof_name": emb.controls[i] if i < len(emb.controls) else f"dof_{i:03d}", "usage": float(channel_usage[i])}
+                for i in high_usage_indices
+            ],
         },
     }
 

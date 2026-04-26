@@ -1,7 +1,27 @@
 from __future__ import annotations
 
 import torch
+import torch.nn.functional as F
 from torch import nn
+
+
+def io_differentiation_loss(io: torch.Tensor, margin: float = 0.15) -> torch.Tensor:
+    """Penalise near-uniform IO outputs across channels (channel collapse).
+
+    Computes per-sample std across io_channels and penalises when it falls
+    below `margin`. Zero gradient once std exceeds the margin.
+    """
+    channel_std = io.std(dim=1)                    # [batch]
+    return torch.relu(margin - channel_std).mean()
+
+
+def dof_coverage_loss(applied: torch.Tensor, threshold: float = 0.05) -> torch.Tensor:
+    """Penalise any control channel whose mean absolute activation is below threshold.
+
+    Ensures no DOF is permanently silent across the batch.
+    """
+    mean_activation = applied.abs().mean(dim=0)    # [control_dim]
+    return torch.relu(threshold - mean_activation).mean()
 
 
 def loss_fn(
@@ -18,6 +38,9 @@ def loss_fn(
     memory_persistence_loss_weight: float = 0.05,
     initial_memory: torch.Tensor | None = None,
     paging_loss_weight: float = 0.01,
+    io_diff_weight: float = 0.02,
+    dof_coverage_weight: float = 0.01,
+    applied_signal: torch.Tensor | None = None,
 ) -> tuple[torch.Tensor, dict[str, float]]:
     io = outputs["io"]
     readiness = outputs["readiness"]
@@ -51,6 +74,16 @@ def loss_fn(
     # Paging loss: encourage using fewer memory slots per sample (L1 sparsity)
     paging_loss = torch.mean(torch.sum(torch.abs(memory_weights), dim=-1))
 
+    # IO channel differentiation: penalise near-uniform outputs across channels
+    io_diff = io_differentiation_loss(io) if io_diff_weight > 0.0 else io.new_zeros(())
+
+    # DOF coverage: penalise permanently-silent control channels
+    dof_cov = (
+        dof_coverage_loss(applied_signal)
+        if dof_coverage_weight > 0.0 and applied_signal is not None
+        else io.new_zeros(())
+    )
+
     time_consistency = torch.mean(torch.abs(outputs["memory"][:, 1:] - outputs["memory"][:, :-1]))
     total = (
         recon
@@ -62,6 +95,8 @@ def loss_fn(
         + emergent_signal_loss_weight * emergent_signal_loss
         + memory_persistence_loss_weight * memory_persistence_loss
         + paging_loss_weight * paging_loss
+        + io_diff_weight * io_diff
+        + dof_coverage_weight * dof_cov
     )
     logs = {
         "loss": total.item(),
@@ -74,6 +109,30 @@ def loss_fn(
         "emergent_signal_loss": emergent_signal_loss.item(),
         "memory_persistence_loss": memory_persistence_loss.item(),
         "paging_loss": paging_loss.item(),
+        "io_diff_loss": io_diff.item(),
+        "dof_coverage_loss": dof_cov.item(),
     }
     return total, logs
+
+
+def world_prediction_loss(
+    pred_latent: torch.Tensor,
+    actual_latent: torch.Tensor,
+    sigreg_weight: float = 0.1,
+) -> torch.Tensor:
+    """
+    JEPA-style world-prediction loss (LeWM-inspired).
+
+    MSE between predicted and actual next latent, plus SIGReg variance
+    regularisation to prevent representational collapse.
+
+    Args:
+        pred_latent:   predicted next-step latent [B, D]
+        actual_latent: actual next-step latent     [B, D]  (detached from model graph)
+        sigreg_weight: weight for variance regularisation term
+    """
+    mse = F.mse_loss(pred_latent, actual_latent.detach())
+    # SIGReg: penalise low variance across batch to prevent collapse
+    sigreg = sigreg_weight * torch.relu(1.0 - pred_latent.var(dim=0).mean())
+    return mse + sigreg
 

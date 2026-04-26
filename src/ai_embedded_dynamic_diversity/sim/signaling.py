@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+from typing import List
+
 import torch
+from ai_embedded_dynamic_diversity.config import HazardZoneConfig
 from ai_embedded_dynamic_diversity.sim.world import DynamicDiversityWorld, WorldState, EnvironmentControls
 
 class SignalingWorld(DynamicDiversityWorld):
     """Extends world with explicit signal injection for detection tasks."""
-    
+
     def __init__(
         self,
         x: int,
@@ -20,6 +23,12 @@ class SignalingWorld(DynamicDiversityWorld):
         sensor_dropout_burst_prob: float = 0.0,
         surface_friction_scale: float = 1.0,
         disturbance_correlation_horizon: int = 0,
+        num_occlusion_objects: int = 0,
+        occlusion_seed: int = 0,
+        num_physics_objects: int = 0,
+        phys_mass: float = 1.0,
+        phys_friction: float = 0.85,
+        hazard_zones: List[HazardZoneConfig] | None = None,
     ):
         super().__init__(
             x,
@@ -34,6 +43,12 @@ class SignalingWorld(DynamicDiversityWorld):
             sensor_dropout_burst_prob=sensor_dropout_burst_prob,
             surface_friction_scale=surface_friction_scale,
             disturbance_correlation_horizon=disturbance_correlation_horizon,
+            num_occlusion_objects=num_occlusion_objects,
+            occlusion_seed=occlusion_seed,
+            num_physics_objects=num_physics_objects,
+            phys_mass=phys_mass,
+            phys_friction=phys_friction,
+            hazard_zones=hazard_zones,
         )
         # Signal types: 0=none, 1=peer, 2=environment, 3=threat
         self.signal_types = 4

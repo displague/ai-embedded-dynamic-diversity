@@ -20,6 +20,14 @@
 - Generated guardrail storyline visual package (`v04` vs `v02`) in large calibrated world:
   - `artifacts/viz-storyboard-v04-v02-calib-large-v1/convergence-storyboard.gif`
   - delta summary: `artifacts/viz-storyboard-v04-v02-calib-large-v1/compare-summary.md`.
+- Ran transfer-recovery calibration line from `v05`:
+  - checkpoint: `artifacts/model-core-coevo-guardrail-transfercal-v06.pt`
+  - metrics: `artifacts/model-core-coevo-guardrail-transfercal-v06.metrics.json`
+  - calibrated cross-eval: `artifacts/cross-eval-guardrail-v06-v05-v02-v07-v09-calib-extreme-r3.json`
+  - result: `v06` moved to rank 3, surpassing `v02` overall (`0.564079 > 0.561211`) with capability gain (`0.476272`) and near-baseline transfer (`0.434984`).
+- Added new targeted compare GIFs for ongoing visual evidence:
+  - `artifacts/v06-vs-v02-car-latency-storm-ish.gif`
+  - `artifacts/v07-vs-v06-drone-storm-ish.gif`.
 - Ran a shared-environment 1200-generation extreme coevolution cycle with all five embodiments (`hexapod,car,drone,polymorph120,humanoid120`) in `large_v1_extreme`:
   - checkpoint: `artifacts/model-core-coevo-1200-shared-extreme-v03.pt`
   - metrics: `artifacts/model-core-coevo-1200-shared-extreme-v03.metrics.json`
@@ -305,6 +313,69 @@
   - generated comparison viz:
     - `artifacts/noisecurr-v01-v04-vs-v03-car-crosswind-thrust.gif`
     - `artifacts/noisecurr-v01-v04-vs-v03-polymorph-storm.gif`
+
+- Added rich environment v1 (`new_env_v1` world profile) — 40×40×20 toroidal world with three new environment object types, all anonymous (function/usage discovered through interaction, not labeled):
+  - **Toroidal boundary**: `F.pad(..., mode='circular')` circular-padding convolution replaces zero-padding; no hard walls; life, resources, and stress wrap continuously. `torch.roll`-based wind flow already wrapped; now consistent.
+  - **T-shape occlusion objects** (`num_occlusion_objects`, `occlusion_seed`): permanent binary spatial masks generated at `world.init()`; block life-field propagation across walls; attenuate resource flow (×0.4 through occlusion); cast shadow (`light_field < 0.05 × occlusion`) used as hazard-safety cue by hazard system.
+  - **Physics objects** (`num_physics_objects`, `phys_mass`, `phys_friction`): N moveable objects with `phys_pos/vel/height` in `WorldState`; agents push/pull via action-field proximity force (sign of force dot product determines direction — no label); objects stack (height increments when two converge in XY); bridge hazard zones (reduce local stress proportional to height × span).
+  - **Hazard zones** (`hazard_zones: list[HazardZoneConfig]`): three kinds with correlated hint channels so agents can anticipate before activation:
+    - `light_triggered`: active when light field intensity > threshold; shadow-safe regions (occlusion casts safety zones); agents sense `light_field_mean` anonymously.
+    - `airflow`: active when wind magnitude > threshold; wind channel rises before activation (temporal hint); agents sense `wind_magnitude` anonymously.
+    - `periodic`: active when `sin(2π·t/period) > threshold`; light intensity cycles at same period — correlated signal hints at timing.
+  - Added `HazardZoneConfig` dataclass to `config.py`.
+  - Added `_build_hazard_mask()`, `_compute_hazard_stress()`, hazard-zone pre-built masks in `DynamicDiversityWorld.__init__()`.
+  - `WorldState` fields made backward-compatible (`occlusion_mask`, `phys_pos/vel/height` default to zeros when not provided).
+  - `encode_observation()` extended with anonymous hint channels: `light_mean`, `wind_mag`, `step_phase_sin`, per-object proximity distances.
+  - `SignalingWorld` passes through all new `WorldConfig` fields.
+  - `world_config_for_profile("new_env_v1")` returns 40×40×20 with 3 occlusion objects, 3 physics objects, 3 hazard zones (one of each kind).
+  - World config default grid remains 20×20×10 for backward compatibility; `base` profile unchanged.
+  - Files: `config.py`, `sim/world.py`, `sim/signaling.py`.
+
+- Added cross-world champion evaluation and evolution under `new_env_v1`:
+  - `scripts/eval_evolve_new_env.py`: Phase-1 benchmarks top 5 champions on 3 world configs (legacy 20×20×10, base 40×40×20, `new_env_v1`); Phase-2 coevolution seeds from top-3 `new_env_v1` performers.
+  - Phase-1 key finding: models that scored poorly on legacy flat world (v09: −0.097) ranked highest in the rich structured environment (v09: +0.034) — the affordances expose previously-latent strategies.
+  - Phase-2: 40 generations, pop=6, seeded from champion-v09+v08+guardrail-v04; peak fitness +0.0506 at gen 7; signal reliability 82% at gen 40.
+  - New champion: `artifacts/new-env-evolution/champion-new-env-v1.pt` (pi5 profile, multi-scale gating, world predictor enabled).
+  - Visualizations: `viz-new-env-champion-storm.gif`, `viz-new-env-compare-storm/blackout.gif`, `viz-new-env-champion-hazard-sweep.gif`, `viz-training-progress.png`, `viz-phase1-eval.png`.
+
+- Added population-level Genetic Diversity Index (GDI) — external metric, not fed to agents as a reward signal:
+  - `sim/population_metrics.py`: `genetic_diversity_index(population, io_traces, lineage)` → `{weight_div, behavior_div, lineage_entropy, species_count, species_frac, gdi}`.
+    - `weight_div`: mean pairwise cosine distance of flattened model parameter vectors.
+    - `behavior_div`: mean pairwise cosine distance of per-agent IO-trace mean vectors.
+    - `lineage_entropy`: Shannon entropy of parent-assignment frequencies (normalised).
+    - `species_count`: single-linkage cluster count on IO traces at cosine-distance threshold 0.3.
+    - `gdi` composite: 0.35×weight + 0.35×behavior + 0.20×lineage + 0.10×species_frac.
+  - `dof_coordination_metrics(io_traces, io_channels)` → `{per_channel_firing_rate, channel_entropy, co_activation_top5, coverage_fraction}`.
+  - GDI and DOF coordination fields logged every coevolution generation (`gdi`, `weight_div`, `behavior_div`, `lineage_entropy`, `species_count`, `dof_channel_entropy`, `dof_coverage_frac`).
+  - IO trace collection and GDI computation gated behind `diversity_selection_bonus > 0.0` to avoid expensive rollouts when not needed.
+  - `diversity_selection_bonus` flag adds behavioural-distance bonus relative to current best agent (computed post-scoring, correct best reference).
+
+- Added JEPA-style latent world predictor (LeWM-inspired):
+  - `models/world_predictor.py`: `LatentWorldPredictor(latent_dim, action_dim, hidden_dim=64)` — 2-layer MLP, `(latent + action) → latent`, GELU activation.
+  - `train/losses.py`: `world_prediction_loss(pred_latent, actual_latent, sigreg_weight=0.1)` — MSE against detached target + SIGReg (relu(1 − pred_latent.var(dim=0).mean())) to prevent representational collapse. SIGReg uses predicted latent variance for correct gradient flow.
+  - `train/cli.py`: `--enable-world-predictor` flag; `_train_world_predictor()` helper runs a short rollout per epoch to train the predictor; shared predictor in coevolution mode (uses representative agent); separate AdamW optimizer.
+  - `--world-pred-loss-weight 0.05` controls MSE+SIGReg contribution.
+  - World predictor loss logged as `mean_world_pred_loss` per epoch/generation.
+
+- Added DOF spatial coupling — closes the causal loop between DOF articulation and world simulation:
+  - **Root cause**: all IO channels were collapsed to a single scalar before `world.step()` (`applied.mean(dim=1).repeat(1, z*y*x)`), meaning every joint produced identical world effects with no incentive to differentiate.
+  - `sim/embodiments.py`: `dof_spatial_map(embodiment, z, y, x, device)` → `[control_dim, z*y*x]` Gaussian influence tensor. Each DOF gets an anatomical centre position in normalised [-1,1]³ and sigma; rows L1-normalised. Predefined for all 5 embodiments:
+    - hexapod: 6 legs → 6 ground-contact clusters (z=−0.7, XY quadrants); 4 arms → upper-centre
+    - car: throttle/brake → forward/back; steer → lateral; suspension/gear/camera → centre
+    - drone: 4 rotors → 4 XY quadrant top-Z; pitch/roll/yaw → tilt asymmetry; thrust → full Z-column
+    - polymorph120/humanoid120: grouped by locomotion (ground ring) / manipulator (mid-height) / spine (central axis) / thruster/head (top hemisphere)
+  - Replaces scalar broadcast with `applied @ spatial_map` at all 4 action-field sites: `run_gradient_epoch()`, `evaluate_fitness()`, `sim/cli.py:profile_embodiment_metrics()`, `sim/viz_cli.py:_simulate()`.
+  - Falls back to scalar broadcast when embodiment unavailable (non-transfer rollouts).
+  - Map is anonymous to the model — the permutation remapping (io_channels → control_dim) still applies; model must discover which channel affects which region through interaction.
+  - `_build_action_field(io, mapping, world, spatial_map)` helper in `train/cli.py`.
+
+- Added articulation differentiation losses and per-DOF observability:
+  - `train/losses.py`: `io_differentiation_loss(io, margin=0.15)` — `relu(margin − io.std(dim=1)).mean()`; penalises near-uniform IO outputs across channels (channel collapse); zero gradient once channels exceed margin.
+  - `train/losses.py`: `dof_coverage_loss(applied, threshold=0.05)` — `relu(threshold − applied.abs().mean(dim=0)).mean()`; penalises permanently-silent control channels.
+  - Both wired into `loss_fn()` as `io_diff_weight=0.02`, `dof_coverage_weight=0.01`; logged as `io_diff_loss`, `dof_coverage_loss`.
+  - `sim/cli.py`: per-DOF profiling: `io_profile.per_dof` entries with `dof_name`, `usage`, `firing_frac`, `mismatch_contribution` per control index (e.g. `"dof_name": "leg_front_l"`); accumulates `channel_mismatch_acc` and `channel_firing_acc` per-step.
+  - `sim/viz_cli.py`: `_simulate()` now returns `io_frames` `[T, io_channels]`; `_save_single()` replaces trajectory panel with IO channel activity heatmap (RdBu_r diverging, channels × steps, remap event lines overlaid) — channel collapse shows as uniform block; differentiation shows as varied bands.
+  - `WorldState._clone_state()` updated to include new fields (was missing occlusion/physics fields, caused viz crash).
 
 ## Lessons Learned
 

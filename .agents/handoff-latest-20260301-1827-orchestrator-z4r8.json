@@ -1,0 +1,107 @@
+{
+  "session_id": "20260301-1827-orchestrator-z4r8",
+  "parent_session_id": "20260301-1100-orchestrator-z4r8",
+  "agent_role": "orchestrator",
+  "timestamp_utc": "2026-03-01T18:27:13Z",
+  "state": "HANDOFF_READY",
+  "goal": "Advance shared-environment convergence with capability guardrails while preserving transfer and keep release continuity intact.",
+  "in_scope": [
+    "Add capability guardrail controls to coevolution training",
+    "Run long CUDA shared-world retrains and calibrated cross-evals",
+    "Generate storyboard GIF evidence for regression/survival tradeoffs",
+    "Publish v0.1.0 tag/release with latest model artifacts"
+  ],
+  "out_of_scope": [
+    "Pi 5 physical hardware validation",
+    "SMBus2 live hardware loop execution"
+  ],
+  "constraints": [
+    "Use cross-eval artifacts (not train fitness) for promotion decisions",
+    "Keep anonymous-channel adaptation and cross-embodiment transfer priorities",
+    "No physical-device assumptions"
+  ],
+  "changes": [
+    {
+      "file": "src/ai_embedded_dynamic_diversity/train/cli.py",
+      "reason": "Added capability guardrail proxy/penalty path and CLI controls for coevolution selection."
+    },
+    {
+      "file": "tests/test_train_transfer.py",
+      "reason": "Added guardrail penalty unit coverage."
+    },
+    {
+      "file": "IMPLEMENTED.md",
+      "reason": "Captured v03/v04/v05 convergence outcomes and artifact references."
+    },
+    {
+      "file": "TODO.md",
+      "reason": "Added next tasks for proxy calibration and transfer recovery under guardrails."
+    },
+    {
+      "file": "skills/dynamic-diversity-research/references/session-lessons-latest.md",
+      "reason": "Recorded reusable lessons and handoff continuation priorities."
+    }
+  ],
+  "validation": {
+    "commands": [
+      ".venv\\Scripts\\python.exe -m pytest -q tests/test_train_transfer.py",
+      ".venv\\Scripts\\python.exe -m ai_embedded_dynamic_diversity.train.cross_eval_cli --checkpoints-list \"artifacts/model-core-coevo-guardrail-shared-extreme-v05.pt,artifacts/model-core-coevo-guardrail-shared-extreme-v04.pt,artifacts/model-core-coevo-1200-shared-extreme-v02.pt,artifacts/model-core-champion-v07.pt,artifacts/model-core-champion-v09.pt\" ...",
+      "gh release view v0.1.0 --json tagName,name,url,assets"
+    ],
+    "key_results": [
+      "Guardrail v05 completed full 1200 generations (records=1200).",
+      "Guardrail line improved capability over v02 but still trails in weighted transfer.",
+      "v0.1.0 tag and release published with model checkpoint and metrics assets."
+    ],
+    "artifacts": [
+      "artifacts/model-core-coevo-guardrail-shared-extreme-v05.pt",
+      "artifacts/model-core-coevo-guardrail-shared-extreme-v05.metrics.json",
+      "artifacts/cross-eval-guardrail-v05-v04-v02-v07-v09-calib-extreme-r3.json",
+      "artifacts/cross-eval-guardrail-v05-v04-v02-v07-v09-calib-extreme-r3.md",
+      "artifacts/viz-storyboard-v04-v02-calib-large-v1/convergence-storyboard.gif",
+      "artifacts/viz-storyboard-v07-v03-calib-large-v1/convergence-storyboard.gif"
+    ]
+  },
+  "risks": [
+    "Training-time guardrail proxies are not yet tightly calibrated to cross-eval capability metrics.",
+    "Transfer-capability tradeoff remains unresolved under current penalty weights."
+  ],
+  "assumptions": [
+    "Champion promotion remains blocked until cross-eval rank surpasses v07/v09 with stable transfer and capability.",
+    "Hardware-in-the-loop tasks remain deferred by user preference."
+  ],
+  "next_actions": [
+    "Calibrate guardrail proxy targets against cross-eval capability components using a short sweep from v05.",
+    "Run transfer-recovery retrain from v05 with adjusted transfer loss/fitness versus capability penalty balance.",
+    "Cross-evaluate against v07/v09/v02 and regenerate storyboard deltas for the same calibrated-large scenarios."
+  ],
+  "return_trigger": "Cross-eval shows guardrail line beating v02 on both capability and weighted transfer without regressing storyboard-critical latency-storm/storm tracks.",
+  "return_trigger_status": "pending",
+  "lesson_tags": [
+    "guardrail-v04-v05",
+    "proxy-calibration-gap",
+    "shared-env-1200",
+    "calibrated-large-storyboard",
+    "release-v0.1.0"
+  ],
+  "scenario_class": "common",
+  "reusable_artifacts": [
+    "scripts/analyze_storyboard_metrics.py",
+    "artifacts/world-randomization-calibrated-v1.json",
+    "skills/agent-management/scripts/validate_handoff_packet.py"
+  ],
+  "portability_notes": [
+    "Guardrail training path validated on CUDA torch 2.10.0+cu130.",
+    "Cross-eval/storyboard runs remain CPU-compatible for analysis pass."
+  ],
+  "reference_subset_recommended": [
+    "AGENTS.md",
+    ".agents/handoff-protocol.md",
+    ".agents/handoff-packet-template.md",
+    "IMPLEMENTED.md",
+    "TODO.md",
+    "skills/agent-management/SKILL.md",
+    "skills/dynamic-diversity-research/SKILL.md",
+    "skills/dynamic-diversity-research/references/session-lessons-latest.md"
+  ]
+}

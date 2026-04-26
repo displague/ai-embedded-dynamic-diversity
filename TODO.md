@@ -75,6 +75,7 @@
 - [ ] Add scenario-targeted remediation curriculum for `latency-storm` and `storm` in `hexapod/car/drone` where `v03` regressed vs `v07` in storyboard deltas.
 - [ ] Align in-training capability proxies with cross-eval capability metrics (signal reliability/conjoining calibration mismatch) so guardrail penalties predict ranking outcomes.
 - [ ] Recover transfer after guardrail capability gains (`v04/v05`) by rebalancing transfer-loss/fitness and capability penalties without sacrificing restored capability.
+- [ ] Push `v06` beyond champion line (`v07/v09`) by targeting remaining score gap through scenario-weighted transfer recovery on `car`/`hexapod` without dropping capability floor.
 
 ## Hardware-In-The-Loop
 
@@ -87,3 +88,24 @@
 - [x] Add metric export (`csv/json`) from visualization runs (integrated in `viz_cli.py`).
 - [x] Add batch rendering scripts for multiple force modes (`poke`, `press`, `push`, `continuous-blow`, `thrust`, `move`) via `add-viz batch-force`.
 - [x] Add object trajectory overlays to comparison visualizations.
+- [x] Add toroidal world boundary (circular-padding `F.pad` convolution replaces zero-padding; life/resources/stress wrap continuously).
+- [x] Add structural T-shape occlusion objects with shadow casting (anonymous affordance discovery).
+- [x] Add anonymous physics objects with push/pull/stack/bridge dynamics.
+- [x] Add environmental hazard zones with temporal hint channels (light_triggered, airflow, periodic).
+- [x] Add `new_env_v1` world profile (40×40×20, 3 occlusion, 3 physics, 3 hazard zones).
+- [x] Add population-level Genetic Diversity Index (GDI) as external metric (weight_div, behavior_div, lineage_entropy, species_count).
+- [x] Add DOF coordination metrics (channel_entropy, co_activation_top5, coverage_fraction).
+- [x] Add JEPA-style latent world predictor (`LatentWorldPredictor`, SIGReg, `--enable-world-predictor`).
+- [x] Add DOF spatial coupling — close the causal loop between articulation and world effects (`dof_spatial_map()`, anatomical Gaussian influence maps for all 5 embodiments).
+- [x] Add articulation differentiation losses (`io_differentiation_loss`, `dof_coverage_loss`) to prevent channel collapse.
+- [x] Add per-DOF named profiling to `sim profiler` (`dof_name`, `usage`, `firing_frac`, `mismatch_contribution`).
+- [x] Add IO channel activity heatmap panel to `viz run` single-model visualization.
+- [x] Evaluate and evolve top champions under new_env_v1; produce `champion-new-env-v1.pt`.
+- [ ] Staged new-env curriculum: occlusion-only → physics → hazards (fitness peaked gen-7 then declined; staged phases would sustain improvement).
+- [ ] Diversity budget: stronger GDI selection pressure (species=1 throughout 40-gen run; explore diversity-weighted tournament selection).
+- [ ] Learned/procedural DOF spatial maps (hardcoded Gaussian anatomy works; could be learned from embodiment topology graph).
+- [ ] Multi-channel action field in world.step() (currently sums to [B, z*y*x]; [B, control_dim, z*y*x] would enable richer differential effects).
+- [ ] Per-embodiment GDI breakdown (GDI is population-wide; per-embodiment diversity shows specialisation vs generalism).
+- [ ] Hazard-aware signal injection in SignalingWorld (signal types none/peer/env/threat don't connect to 3 hazard zone kinds).
+- [ ] CI pipeline: smoke tests + profiler on PR (no .github/workflows; add basic pytest + sim profiler run on push).
+- [ ] World predictor: per-embodiment prediction heads (single shared predictor misses embodiment-specific dynamics).
