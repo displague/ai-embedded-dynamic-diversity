@@ -36,7 +36,7 @@ jobs:
 
       - name: Mini training smoke
         run: |
-          uv run python -m ai_embedded_dynamic_diversity.train.cli run \
+          uv run add-train \
             --epochs 1 \
             --batch-size 2 \
             --unroll-steps 3 \
@@ -48,7 +48,7 @@ jobs:
 
       - name: Profiler smoke
         run: |
-          uv run python -m ai_embedded_dynamic_diversity.sim.cli profiler \
+          uv run add-sim profiler \
             --embodiment hexapod \
             --steps 5 \
             --batch-size 2 \
