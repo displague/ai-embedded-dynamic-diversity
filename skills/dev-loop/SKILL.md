@@ -98,30 +98,49 @@ EOF
 ### REVIEWING
 **Entry:** PR is open, review comments exist.
 
+**Step 1 — Fetch inline comment IDs** (Copilot inline comments don't appear in `gh pr view --comments`; use the API):
+
 ```bash
-# Copilot's inline comments don't show in gh pr view --comments.
-# Fetch them explicitly:
-gh api "repos/displague/ai-embedded-dynamic-diversity/pulls/<N>/comments" \
-  | python -c "import sys,json; [print(f'[{c[\"path\"]}:{c.get(\"line\",\"?\")}] {c[\"body\"][:200]}') for c in json.load(sys.stdin)]"
+REPO="displague/ai-embedded-dynamic-diversity"
+PR=<N>
+
+# List all inline comments with their IDs
+gh api "repos/$REPO/pulls/$PR/comments" | python -c "
+import sys, json
+for c in json.load(sys.stdin):
+    print(f'id={c[\"id\"]}  [{c[\"path\"]}:{c.get(\"line\",\"?\")}]')
+    print(f'  {c[\"body\"][:160]}')
+    print()
+"
 ```
+
+**Step 2 — Resolve each comment and reply directly to its thread:**
+
+```bash
+# Reply to a specific review comment thread (NOT a general PR comment)
+gh api "repos/$REPO/pulls/comments/<comment_id>/replies" \
+  -f body="Fixed in <commit_sha>: <one-sentence explanation of what changed and why>"
+```
+
+**Do NOT use `gh pr comment` for review feedback** — that posts a general comment disconnected from the code context. Always use the `/pulls/comments/<id>/replies` endpoint to keep the conversation threaded.
 
 **Decision tree for each comment:**
 
 | Comment type | Action |
 |---|---|
-| Bug / correctness | Fix inline, commit, push, reply with commit SHA |
-| Unused import/param | Remove immediately (1-line fix) |
+| Bug / correctness | Fix inline, commit, push; reply with commit SHA |
+| Unused import/param | Remove immediately (1-line fix); reply with commit SHA |
 | Hardcoded value / configurability | Add env var or CLI flag with sensible default |
 | Dead/contradictory code/docs | Remove or rewrite |
 | Scope creep / enhancement | `gh issue create`, reply "tracked as #M" |
-| Style nit | Fix if trivial (< 5 min); dismiss with one-sentence rationale if not worth it |
+| Style nit | Fix if trivial (< 5 min); dismiss with one-sentence rationale |
 | Regression concern | Run targeted eval, post result as reply |
 
-**After all comments resolved:** Reply on the PR with a single comment listing every issue number and its fix commit. Then merge.
+**Step 3 — After all threads replied to:** Optionally post a summary PR comment linking to all fix commits, then merge.
 
-**Note on `--frozen` flag for `uv sync` in CI:** Always use `uv sync --frozen` in GitHub Actions. Without `--frozen`, `uv` will update dependencies if the lockfile drifts from `pyproject.toml`, silently breaking reproducibility.
+**Note on `uv sync --frozen`:** Always use in GitHub Actions — fails CI if lockfile drifts from `pyproject.toml`.
 
-**Note on README/workflow consistency:** If the workflow trigger changes, update the README CI section to match. Reviewers catch this mismatch.
+**Note on README/workflow consistency:** If the workflow trigger changes, update the README CI section to match. Reviewers will catch this mismatch.
 
 ### MERGED
 **Entry:** All blockers resolved.
