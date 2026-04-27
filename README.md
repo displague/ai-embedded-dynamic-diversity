@@ -29,6 +29,17 @@ List from CLI:
 - Deployment target: Raspberry Pi 5
 - Python package manager: `uv` at `~/.local/bin/uv`
 
+## CI
+
+Smoke tests run automatically on every pull request and on pushes to `master` via GitHub Actions (`.github/workflows/smoke.yml`). The pipeline:
+
+1. Installs Python 3.12 and `uv`, then runs `uv sync` (CPU torch; no CUDA in CI).
+2. **Import smoke**: verifies the package imports cleanly.
+3. **Mini training smoke**: runs 1 epoch of co-evolution (population 2, batch 2, 3 unroll steps) on CPU.
+4. **Profiler smoke**: runs the embodiment profiler for 5 steps on `hexapod` on CPU.
+
+All CI commands use `--device cpu`. If the import step fails, remaining steps are skipped.
+
 ## Setup
 
 ```bash
@@ -371,6 +382,30 @@ Focused comparison over an explicit checkpoint list:
 ~/.local/bin/uv run add-cross-eval --checkpoints-list \"artifacts/focused-variant03-long.pt,artifacts/parallel-long/variant-03.pt,artifacts/parallel-long/variant-02.pt\" --profile pi5 --embodiments 'hexapod,car,drone' --scenarios 'mild,gust,force' --runs-per-combo 2 --steps 90 --remap-every 15 --output artifacts/cross-eval-focused-vs-top.json
 ~/.local/bin/uv run add-cross-report --input-path artifacts/cross-eval-focused-vs-top.json --markdown-out artifacts/cross-eval-focused-vs-top.md --csv-out artifacts/cross-eval-focused-vs-top.csv
 ```
+
+## Staged curriculum training (new_env_v1)
+
+The flat 40-generation run in `eval_evolve_new_env.py` exposes all environment
+complexity from generation 1, causing fitness to peak early then regress.
+The staged curriculum script fixes this with three sequential phases, each
+seeding from the prior phase's best checkpoint:
+
+| Phase | Gens | World complexity | Output |
+|-------|------|-----------------|--------|
+| 1 | 30 | Occlusion only (no physics, no hazards) | `artifacts/staged/phase1-best.pt` |
+| 2 | 30 | Occlusion + physics objects | `artifacts/staged/phase2-best.pt` |
+| 3 | 40 | Full `new_env_v1` (+ all 3 hazard zones) | `artifacts/staged/phase3-best.pt` |
+
+All phases use `diversity_selection_bonus=0.15` (up from 0.05) to maintain
+`species_count > 1` throughout evolution.
+
+```bash
+python scripts/train_staged_curriculum.py
+```
+
+The script also runs a cross-phase evaluation at the end, writing
+`artifacts/staged/cross-phase-eval.json` with phase-1 vs phase-3 fitness
+on the full `new_env_v1` world to confirm curriculum benefit.
 
 ## Export for edge
 

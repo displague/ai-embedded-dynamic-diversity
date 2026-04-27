@@ -206,7 +206,7 @@ def phase2_evolve(seeds: list[str], dev: torch.device) -> None:
         "--enable-world-predictor",
         "--world-pred-loss-weight=0.04",
         # GDI diversity bonus
-        "--diversity-selection-bonus=0.05",
+        "--diversity-selection-bonus=0.15",
         # Architecture extras matching champions
         "--enable-multi-scale-gating",
         # AMP
