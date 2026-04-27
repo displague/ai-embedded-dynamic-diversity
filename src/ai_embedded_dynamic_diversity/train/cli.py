@@ -271,6 +271,46 @@ def _capability_guardrail_penalty(
     return penalty_weight * (signal_deficit + conjoining_deficit)
 
 
+@torch.no_grad()
+def _run_capability_probe(
+    model: ModelCore,
+    world: DynamicDiversityWorld,
+    mcfg,
+    wcfg: WorldConfig,
+    dev: torch.device,
+    steps: int = 8,
+    batch: int = 4,
+    remap_probability: float = 0.1,
+) -> dict[str, float]:
+    """Lightweight capability probe: run a short rollout and return signal_reliability and conjoining_gain."""
+    model.eval()
+    state = world.init(batch)
+    memory = model.init_memory(batch, mcfg.memory_slots, mcfg.memory_dim, dev)
+    sr_total = 0.0
+    cg_total = 0.0
+    for step_index in range(steps):
+        target_signal_type = torch.zeros(batch, dtype=torch.long, device=dev)
+        if isinstance(world, SignalingWorld):
+            target_signal_type = world.inject_signals(batch)
+            obs = world.encode_observation_with_signals(state, signal_dim=mcfg.signal_dim, labels=target_signal_type)
+        else:
+            obs = world.encode_observation(state, signal_dim=mcfg.signal_dim)
+        remap_code = torch.zeros(batch, mcfg.max_remap_groups, device=dev)
+        if random.random() < remap_probability:
+            remap_code[:, random.randrange(mcfg.max_remap_groups)] = 1.0
+        out = model(obs, memory, remap_code)
+        memory = out["memory"]
+        action_field = out["io"].float().mean(dim=1, keepdim=True).repeat(1, world.x * world.y * world.z)
+        state = world.step(state, action_field, world.random_controls(batch, 0.3, step_index=step_index))
+        sr, cg = _capability_step_proxies(out=out, state=state, target_signal_type=target_signal_type)
+        sr_total += sr
+        cg_total += cg
+    return {
+        "probe_signal_reliability": sr_total / max(1, steps),
+        "probe_conjoining_gain": cg_total / max(1, steps),
+    }
+
+
 def _build_action_field(
     io: torch.Tensor,
     mapping: torch.Tensor,
@@ -821,6 +861,7 @@ def run(
     diversity_selection_bonus: float = 0.0,
     enable_world_predictor: bool = False,
     world_pred_loss_weight: float = 0.05,
+    capability_probe_interval: int = 0,
 ) -> None:
     random.seed(seed)
     torch.manual_seed(seed)
@@ -1299,6 +1340,7 @@ def run(
         print({"info": "LatentWorldPredictor enabled (coevolution)"})
 
     lineage_history: list[int] = list(range(population_size))  # initial: each agent is its own parent
+    capability_probe_history: list[dict] = []
 
     elite_count = max(1, int(population_size * elite_fraction))
     for generation in range(tcfg.epochs):
@@ -1516,6 +1558,21 @@ def run(
         rank = sorted(range(len(pop)), key=lambda i: scores[i], reverse=True)
         elites = rank[:elite_count]
         best_idx = elites[0]
+
+        # Periodic capability probe on best agent
+        probe_results: dict = {}
+        if capability_probe_interval > 0 and (generation + 1) % capability_probe_interval == 0:
+            probe_results = _run_capability_probe(pop[best_idx], world, mcfg, wcfg, dev)
+            capability_probe_history.append({"generation": generation + 1, **probe_results})
+            if enable_capability_guardrail and len(capability_probe_history) >= 3:
+                recent = capability_probe_history[-3:]
+                if all(
+                    p["probe_signal_reliability"] < signal_reliability_floor
+                    and p["probe_conjoining_gain"] < conjoining_gain_floor
+                    for p in recent
+                ):
+                    print({"warning": "capability degradation sustained for 3 consecutive probes", **probe_results})
+
         print({
             "generation": generation + 1,
             "best_agent": best_idx,
@@ -1534,6 +1591,7 @@ def run(
             "dof_channel_entropy": round(dof_coord["channel_entropy"], 4),
             "dof_coverage_frac": round(dof_coord["coverage_fraction"], 4),
             "mean_world_pred_loss": mean_world_pred_loss,
+            **{k: round(v, 4) for k, v in probe_results.items()},
         })
         metrics_records.append(
             {
@@ -1556,6 +1614,8 @@ def run(
                 "dof_coverage_frac": dof_coord["coverage_fraction"],
                 "dof_co_activation_top5": dof_coord["co_activation_top5"],
                 "mean_world_pred_loss": mean_world_pred_loss,
+                **probe_results,
+                "capability_probe_history": [p for p in capability_probe_history if p["generation"] == generation + 1],
                 "remap_probability": remap_probability,
                 "env_volatility": env_volatility,
                 "noise_strength": noise_strength,
