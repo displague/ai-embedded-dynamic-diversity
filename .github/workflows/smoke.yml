@@ -1,0 +1,56 @@
+name: Smoke Tests
+
+on:
+  push:
+    branches:
+      - master
+      - "feat/*"
+  pull_request:
+    branches:
+      - master
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Import smoke
+        run: |
+          uv run python -c "import ai_embedded_dynamic_diversity; print('import OK')"
+
+      - name: Mini training smoke
+        run: |
+          uv run python -m ai_embedded_dynamic_diversity.train.cli run \
+            --epochs 1 \
+            --batch-size 2 \
+            --unroll-steps 3 \
+            --device cpu \
+            --no-strict-device \
+            --coevolution \
+            --population-size 2 \
+            --save-path /tmp/smoke.pt
+
+      - name: Profiler smoke
+        run: |
+          uv run python -m ai_embedded_dynamic_diversity.sim.cli profiler \
+            --embodiment hexapod \
+            --steps 5 \
+            --batch-size 2 \
+            --device cpu \
+            --output /tmp/smoke-profile.json
