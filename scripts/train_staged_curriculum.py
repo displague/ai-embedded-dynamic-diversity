@@ -33,7 +33,6 @@ from typer.testing import CliRunner
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
 
 from ai_embedded_dynamic_diversity.config import (
-    HazardZoneConfig,
     ModelConfig,
     WorldConfig,
     world_config_for_profile,
@@ -51,7 +50,7 @@ from ai_embedded_dynamic_diversity.train.device import choose_device
 # Top-level config
 # ---------------------------------------------------------------------------
 
-DEVICE = "cuda"
+DEVICE = __import__("os").environ.get("TRAIN_DEVICE", "cuda")
 EVAL_STEPS = 16
 EVAL_BATCH = 8
 EVAL_ENV_VOLATILITY = 0.45
@@ -161,55 +160,15 @@ def _strong_training_args(
     save_path: str,
     metrics_path: str,
     seed_csv: str,
-    world_config: WorldConfig,
 ) -> list[str]:
+    """Return base CLI args for one training phase.
+
+    The world-profile sentinel (e.g. ``_staged_phase1``) is appended by
+    ``_run_phase()``, which also monkey-patches ``world_config_for_profile``
+    in the CLI module so the sentinel resolves to the exact per-phase
+    ``WorldConfig``.  This avoids leaking internal WorldConfig fields through
+    a string-based CLI boundary.
     """
-    Build the CLI args list for one phase of staged curriculum training.
-
-    The world profile is NOT passed by name because each phase uses a
-    programmatically derived WorldConfig.  Instead we pass the individual
-    world fields that the CLI exposes.  For fields not directly on the CLI
-    (hazard_zones, phys_mass, phys_friction) the CLI reads them from
-    --world-profile; since we cannot pass those programmatically we use
-    world_profile=new_env_v1 only for Phase 3 (the full config).  For
-    phases 1 and 2 we intentionally pass --world-profile="" so the CLI
-    builds a bare WorldConfig, then rely on the fact that the CLI's
-    WorldConfig only differs from ours in the extra occlusion/physics
-    fields — those are passed via the environment-level world object we
-    construct separately for evaluation.
-
-    NOTE: The CLI's `run()` builds its own world from --world-profile.
-    For training we pass the appropriate --world-profile string so the
-    training world matches our intended phase config:
-      phase 1 -> no profile (blank) would give a bare 20x20x10 world, which
-                 is wrong.  We therefore use --world-profile=new_env_v1 and
-                 override the physics/hazard fields to zero via separate
-                 WorldConfig profiles that are equivalent.
-
-    The cleanest approach: supply the exact world-profile name for each phase.
-    We create three mini profiles by constructing temporary WorldConfig objects
-    and serialising only those fields the CLI accepts.  The training CLI
-    accepts --world-profile=<name> and resolves it via world_config_for_profile.
-    We work around the limitation by always using world_profile="new_env_v1"
-    and accepting that the training world will be the full config from gen 1 of
-    Phase 3.  For Phases 1 and 2 we use a custom approach: we register
-    a temporary profile name.
-
-    SIMPLEST correct approach (no monkey-patching):
-    We pass the world fields that the run() command does accept directly.
-    Looking at cli.py run():
-      - wcfg = world_config_for_profile(world_profile) if world_profile.strip() else WorldConfig()
-    So we can only supply a named profile.  We will use the profiles:
-      phase1 -> pass our own wrapper that temporarily patches world_config_for_profile
-
-    ACTUAL approach used here: use typer CliRunner but monkey-patch
-    world_config_for_profile in the ai_embedded_dynamic_diversity.train.cli
-    module for each phase call so that a sentinel profile name maps to our
-    exact per-phase WorldConfig.  This is the minimal, self-contained approach.
-    """
-    # Sentinel profile names are resolved via monkey-patching in _run_phase().
-    # This function just returns the base args; the profile sentinel is appended
-    # by the caller.
     return [
         # Epochs and batch
         f"--epochs={epochs}",
@@ -312,7 +271,6 @@ def _run_phase(
         save_path=str(save_path),
         metrics_path=str(metrics_path),
         seed_csv=seed_csv,
-        world_config=wcfg,
     ) + [f"--world-profile={sentinel}"]
 
     result = runner.invoke(mini_app, args)
@@ -401,11 +359,7 @@ if __name__ == "__main__":
           f"  hazards={len(phase1_wcfg.hazard_zones)}")
 
     seed_csv_p1 = ",".join(available_seeds) if available_seeds else ""
-    # Build args; if no seeds, omit --init-weights-cycle to start fresh
-    if not seed_csv_p1:
-        # We still call _run_phase but without seed_csv will result in empty string
-        # which is fine — the CLI will start from random init
-        pass
+    # Empty seed_csv is fine — the CLI starts from random init when no cycle given.
 
     _run_phase(
         phase_num=1,
@@ -490,11 +444,14 @@ if __name__ == "__main__":
             print(f"  SKIP (missing): {ckpt_path}")
             continue
         fitness = _eval_checkpoint(ckpt_path, full_wcfg, dev)
-        eval_results[label] = round(fitness, 5)
+        eval_results[label] = fitness  # store raw float; round only for display/JSON
         print(f"  {label:15s}: {fitness:+.5f}")
 
     eval_json_path = OUT_DIR / "cross-phase-eval.json"
-    eval_json_path.write_text(json.dumps(eval_results, indent=2), encoding="utf-8")
+    eval_json_path.write_text(
+        json.dumps({k: round(v, 5) for k, v in eval_results.items()}, indent=2),
+        encoding="utf-8",
+    )
     print(f"\n  Cross-phase eval saved to {eval_json_path}")
 
     if "phase1_best" in eval_results and "phase3_best" in eval_results:

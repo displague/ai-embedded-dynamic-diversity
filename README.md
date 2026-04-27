@@ -31,7 +31,7 @@ List from CLI:
 
 ## CI
 
-Smoke tests run automatically on every pull request and on pushes to `master` via GitHub Actions (`.github/workflows/smoke.yml`). The pipeline:
+Smoke tests run automatically on every pull request to `master` via GitHub Actions (`.github/workflows/smoke.yml`). The pipeline:
 
 1. Installs Python 3.12 and `uv`, then runs `uv sync` (CPU torch; no CUDA in CI).
 2. **Import smoke**: verifies the package imports cleanly.
