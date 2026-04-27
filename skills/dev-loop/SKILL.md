@@ -64,6 +64,18 @@ Rules:
 - Reference `Closes #N` in commit messages so issues auto-close on merge.
 - Run smoke tests before each push: `python -m ai_embedded_dynamic_diversity.train.cli run --epochs 1 --device cpu --coevolution --population-size 2`.
 
+### CI GOTCHAS
+
+**Single-command Typer apps:** Use the registered entry point (`uv run add-train`), not `python -m ... cli run`. Single-command Typer apps do not accept the command name as an argument — `run` becomes "unexpected extra argument". Check `pyproject.toml [project.scripts]` for the correct entry point names.
+
+**Parallel agent worktrees:** Agents cannot execute git/shell commands in CI-isolated sessions. They write files but cannot push. Always check `git worktree list` after agents complete; force-remove stale ones with `git worktree remove -f -f`. If the branch name is locked to a worktree, force-remove first then recreate the branch.
+
+**Pre-merge CI check:** Before opening a PR, verify the workflow command locally:
+```bash
+uv run add-train --epochs 1 --batch-size 2 --unroll-steps 3 --device cpu --no-strict-device --coevolution --population-size 2 --save-path /tmp/smoke.pt
+uv run add-sim profiler --embodiment hexapod --steps 5 --batch-size 2 --device cpu --output /tmp/smoke-profile.json
+```
+
 ### PR_OPEN
 **Entry:** Feature branch ready for review.
 
@@ -105,6 +117,32 @@ git checkout master && git pull origin master
 ```
 
 Squash merge preserves a clean master history with all context in the commit body.
+
+### POST-MERGE CLEANUP (do immediately after each merge)
+
+```bash
+# 1. Remove the feature branch locally if it still exists
+git branch -d feat/<name> 2>/dev/null || true
+
+# 2. Remove any lingering agent worktrees from this feature
+git worktree list          # find any .claude/worktrees/agent-* entries
+git worktree remove -f -f ".claude/worktrees/agent-<id>"  # for each one
+git branch -D worktree-agent-<id>                          # remove worktree branch
+
+# 3. Read any Copilot review comments that arrived AFTER merge
+gh pr view <N> --comments | grep -A 10 "copilot"
+# For each actionable comment: commit fix to master, comment on PR pointing to fix commit
+
+# 4. If CI failed AFTER merge (on master), fix immediately
+gh run list --branch master --limit 3
+# Fix → commit to master → push
+
+# 5. Update TODO.md: mark the issue(s) closed
+sed -i 's/^- \[ \] <issue text>/- [x] <issue text> (Closes #N)/' TODO.md
+git add TODO.md && git commit -m "docs(todo): mark #N closed"
+```
+
+**Copilot review timing:** Copilot reviews often arrive after merge. Always check `gh pr view <N> --comments` even on merged PRs. If actionable: fix on master, commit with message referencing the PR, comment on the PR with the commit SHA.
 
 ### TRAINING
 **Entry:** Feature merged; need to measure whether new environment/loss/coupling actually improves champions.
