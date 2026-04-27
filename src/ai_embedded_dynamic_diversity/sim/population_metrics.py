@@ -218,3 +218,68 @@ def dof_coordination_metrics(
         "co_activation_top5": co_activation_top5,
         "coverage_fraction": round(coverage_fraction, 4),
     }
+
+
+def embodiment_diversity_breakdown(
+    io_traces_by_embodiment: dict[str, list[torch.Tensor]],
+    activation_threshold: float = 0.05,
+) -> dict:
+    """
+    Per-embodiment behavioural diversity and cross-embodiment consistency.
+
+    Args:
+        io_traces_by_embodiment: dict mapping embodiment name → list of [T, io_channels]
+            tensors (one per agent).
+        activation_threshold: minimum mean |activation| to count a channel as active.
+
+    Returns dict with:
+        per_embodiment — {name: {"behavior_div": float, "coverage_fraction": float}}
+        cross_embodiment_consistency — mean cosine similarity of per-embodiment mean
+            vectors across the population (high = agent behaves similarly across
+            embodiments, low = specialised)
+    """
+    per_embodiment: dict[str, dict] = {}
+    emb_means: list[torch.Tensor] = []
+
+    for emb_name, traces in io_traces_by_embodiment.items():
+        if not traces:
+            per_embodiment[emb_name] = {"behavior_div": 0.0, "coverage_fraction": 0.0}
+            continue
+        behavior_div = _pairwise_cosine_distances(traces)
+        stacked = torch.cat([t.float() if t.ndim == 2 else t.float().unsqueeze(0) for t in traces], dim=0)
+        per_channel = stacked.abs().mean(dim=0)
+        coverage = float((per_channel > activation_threshold).float().mean().item())
+        per_embodiment[emb_name] = {"behavior_div": round(behavior_div, 4), "coverage_fraction": round(coverage, 4)}
+        # Population mean for this embodiment (mean across all agents × all steps)
+        emb_means.append(stacked.mean(dim=0))
+
+    # Cross-embodiment consistency: how similar are per-embodiment mean activation vectors?
+    cross_consistency = 0.0
+    if len(emb_means) >= 2:
+        n = len(emb_means)
+        total, count = 0.0, 0
+        for i in range(n):
+            for j in range(i + 1, n):
+                ni = emb_means[i].norm().clamp(min=1e-8)
+                nj = emb_means[j].norm().clamp(min=1e-8)
+                sim = float(((emb_means[i] / ni).dot(emb_means[j] / nj)).item())
+                total += sim
+                count += 1
+        cross_consistency = round(total / max(1, count), 4)
+
+    return {"per_embodiment": per_embodiment, "cross_embodiment_consistency": cross_consistency}
+
+
+def dof_coverage_per_embodiment(
+    io_traces_by_embodiment: dict[str, list[torch.Tensor]],
+    activation_threshold: float = 0.05,
+) -> dict[str, list[float]]:
+    """Mean |io| per channel grouped by embodiment. Returns {name: [firing_rate_per_channel]}."""
+    result: dict[str, list[float]] = {}
+    for emb_name, traces in io_traces_by_embodiment.items():
+        if not traces:
+            result[emb_name] = []
+            continue
+        stacked = torch.cat([t.float() if t.ndim == 2 else t.float().unsqueeze(0) for t in traces], dim=0)
+        result[emb_name] = [round(v, 5) for v in stacked.abs().mean(dim=0).tolist()]
+    return result

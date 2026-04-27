@@ -52,13 +52,14 @@ class SignalingWorld(DynamicDiversityWorld):
         )
         # Signal types: 0=none, 1=peer, 2=environment, 3=threat
         self.signal_types = 4
-        # Threat agent position state (not in core WorldState yet, we'll manage it here for now)
-        self.threat_pos = None 
+        self.threat_pos = None
+        # Track which hazard zone kinds were active in the last step
+        self._active_hazard_kinds: set[str] = set()
 
     def init(self, batch_size: int) -> WorldState:
         state = super().init(batch_size)
-        # Initialize threat agent positions randomly at the edges
         self.threat_pos = torch.sign(torch.randn(batch_size, 3, device=self.device)) * 0.9
+        self._active_hazard_kinds = set()
         return state
 
     def step(self, state: WorldState, action_field: torch.Tensor, controls: EnvironmentControls) -> WorldState:
@@ -66,25 +67,42 @@ class SignalingWorld(DynamicDiversityWorld):
         if self.threat_pos is not None:
             direction = state.object_pos - self.threat_pos
             dist = torch.norm(direction, dim=1, keepdim=True).clamp_min(1e-6)
-            move = (direction / dist) * 0.05 # Speed
+            move = (direction / dist) * 0.05
             self.threat_pos = self.threat_pos + move
-            
-            # If threat agent is very close to object, it increases stress
             proximity = torch.norm(state.object_pos - self.threat_pos, dim=1)
             collision_mask = proximity < 0.15
             if collision_mask.any():
-                # Apply local stress at object position
-                # For simplicity, we just increase global stress component here
                 state.stress.add_(collision_mask.float().view(-1, 1, 1, 1, 1) * 0.1)
         
-        return super().step(state, action_field, controls)
+        new_state = super().step(state, action_field, controls)
+        # Infer which hazard kinds were active from the new stress field
+        self._active_hazard_kinds = set()
+        if self.hazard_zones:
+            for hz, hz_mask in zip(self.hazard_zones, self._hazard_masks):
+                zone_stress = (new_state.stress * hz_mask.to(new_state.stress.device)).mean()
+                if float(zone_stress.item()) > 0.05:
+                    self._active_hazard_kinds.add(hz.kind)
+        return new_state
 
-    def inject_signals(self, batch_size: int, p_peer: float = 0.1, p_env: float = 0.1, p_threat: float = 0.1) -> torch.Tensor:
-        """Generates a batch of signal labels and their anonymous representations."""
-        # labels: (B,)
+    def inject_signals(
+        self,
+        batch_size: int,
+        p_peer: float = 0.1,
+        p_env: float = 0.1,
+        p_threat: float = 0.1,
+        hazard_active_kinds: set[str] | None = None,
+    ) -> torch.Tensor:
+        """Generates signal labels, biased toward hazard-correlated types when hazards are active."""
+        # Bias probabilities based on active hazard kinds
+        active = hazard_active_kinds if hazard_active_kinds is not None else self._active_hazard_kinds
+        if "light_triggered" in active or "airflow" in active:
+            p_threat = min(0.4, p_threat * 1.5)
+        if "periodic" in active:
+            p_env = min(0.4, p_env * 1.5)
+
         labels = torch.zeros(batch_size, dtype=torch.long, device=self.device)
         r = torch.rand(batch_size, device=self.device)
-        
+
         peer_mask = r < p_peer
         env_mask = (r >= p_peer) & (r < p_peer + p_env)
         threat_mask = (r >= p_peer + p_env) & (r < p_peer + p_env + p_threat)
