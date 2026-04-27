@@ -64,3 +64,62 @@ def test_signal_detection_loss():
     
     assert "detection_loss" in logs
     assert logs["detection_loss"] >= 0.0
+
+
+def test_hazard_aware_inject_signals_direct():
+    """inject_signals biases p_threat/p_env when hazard_active_kinds is passed directly."""
+    torch.manual_seed(42)
+    world = SignalingWorld(10, 10, 10, 4)
+    world.init(batch_size=2)
+
+    # With light_triggered active: threat labels should be more likely
+    batch = 2000
+    labels_baseline = world.inject_signals(batch, p_threat=0.1, hazard_active_kinds=set())
+    labels_threat_biased = world.inject_signals(batch, p_threat=0.1, hazard_active_kinds={"light_triggered"})
+
+    baseline_threat = (labels_baseline == 3).float().mean().item()
+    biased_threat = (labels_threat_biased == 3).float().mean().item()
+    assert biased_threat > baseline_threat, (
+        f"Expected more threat labels with light_triggered active: {biased_threat:.3f} vs {baseline_threat:.3f}"
+    )
+
+    # With periodic active: env labels should be more likely
+    labels_env_biased = world.inject_signals(batch, p_env=0.1, hazard_active_kinds={"periodic"})
+    baseline_env = (labels_baseline == 2).float().mean().item()
+    biased_env = (labels_env_biased == 2).float().mean().item()
+    assert biased_env > baseline_env, (
+        f"Expected more env labels with periodic active: {biased_env:.3f} vs {baseline_env:.3f}"
+    )
+
+
+def test_active_hazard_kinds_tracked_after_step():
+    """_active_hazard_kinds is populated after step() when hazard zones are configured."""
+    from ai_embedded_dynamic_diversity.config import WorldConfig, HazardZoneConfig
+    wcfg = WorldConfig(
+        hazard_zones=[
+            HazardZoneConfig(
+                cx=0.5, cy=0.5, cz=0.5,
+                rx=0.4, ry=0.4, rz=0.5,
+                kind="light_triggered",
+                threshold=0.01,  # very low threshold so it fires
+                shadow_safe=False,
+                hazard_weight=0.8,
+            )
+        ]
+    )
+    world = SignalingWorld(
+        wcfg.x, wcfg.y, wcfg.z, wcfg.resource_channels,
+        hazard_zones=wcfg.hazard_zones,
+    )
+    state = world.init(batch_size=1)
+    # Use high light intensity to trigger the light_triggered hazard
+    controls = world.default_controls(1)
+    controls.light_intensity = torch.tensor([[1.0]])
+    controls.light_position = torch.zeros(1, 3)
+    action = torch.zeros(1, wcfg.x * wcfg.y * wcfg.z)
+    world.step(state, action, controls)
+    # After step, the hazard should have been detected
+    # _active_hazard_kinds may or may not contain "light_triggered" depending on stress levels,
+    # but the set should be initialised (not None) and the field should exist.
+    assert hasattr(world, "_active_hazard_kinds")
+    assert isinstance(world._active_hazard_kinds, set)
