@@ -4,7 +4,6 @@ on:
   push:
     branches:
       - master
-      - "feat/*"
   pull_request:
     branches:
       - master
@@ -12,6 +11,7 @@ on:
 jobs:
   smoke:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
 
     steps:
       - name: Checkout
@@ -28,7 +28,7 @@ jobs:
           enable-cache: true
 
       - name: Install dependencies
-        run: uv sync
+        run: uv sync --frozen
 
       - name: Import smoke
         run: |
