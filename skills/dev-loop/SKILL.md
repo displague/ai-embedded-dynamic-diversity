@@ -99,14 +99,29 @@ EOF
 **Entry:** PR is open, review comments exist.
 
 ```bash
-gh pr view <N> --comments
+# Copilot's inline comments don't show in gh pr view --comments.
+# Fetch them explicitly:
+gh api "repos/displague/ai-embedded-dynamic-diversity/pulls/<N>/comments" \
+  | python -c "import sys,json; [print(f'[{c[\"path\"]}:{c.get(\"line\",\"?\")}] {c[\"body\"][:200]}') for c in json.load(sys.stdin)]"
 ```
 
-For each comment:
-- **Critical bug / correctness:** fix inline, commit, push.
-- **Out-of-scope enhancement:** `gh issue create` with context, reply "tracked as #M".
-- **Style / nit:** fix if trivial; dismiss with explanation if not worth scope.
-- **Regression concern:** run targeted eval before dismissing.
+**Decision tree for each comment:**
+
+| Comment type | Action |
+|---|---|
+| Bug / correctness | Fix inline, commit, push, reply with commit SHA |
+| Unused import/param | Remove immediately (1-line fix) |
+| Hardcoded value / configurability | Add env var or CLI flag with sensible default |
+| Dead/contradictory code/docs | Remove or rewrite |
+| Scope creep / enhancement | `gh issue create`, reply "tracked as #M" |
+| Style nit | Fix if trivial (< 5 min); dismiss with one-sentence rationale if not worth it |
+| Regression concern | Run targeted eval, post result as reply |
+
+**After all comments resolved:** Reply on the PR with a single comment listing every issue number and its fix commit. Then merge.
+
+**Note on `--frozen` flag for `uv sync` in CI:** Always use `uv sync --frozen` in GitHub Actions. Without `--frozen`, `uv` will update dependencies if the lockfile drifts from `pyproject.toml`, silently breaking reproducibility.
+
+**Note on README/workflow consistency:** If the workflow trigger changes, update the README CI section to match. Reviewers catch this mismatch.
 
 ### MERGED
 **Entry:** All blockers resolved.
