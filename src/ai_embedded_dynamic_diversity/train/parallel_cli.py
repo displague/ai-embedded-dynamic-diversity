@@ -20,15 +20,14 @@ app = typer.Typer(add_completion=False)
 
 
 def _run_variant(cmd: list[str], log_path: Path):
-    with open(log_path, "w") as f:
-        # We must inherit the current environment to ensure CUDA/venv visibility
-        env = os.environ.copy()
-        try:
-            return subprocess.run(cmd, check=True, stdout=f, stderr=subprocess.STDOUT, env=env)
-        except subprocess.CalledProcessError as e:
-            print(f"[bold red]Variant failed: {' '.join(cmd)}[/bold red]")
-            print(f"[red]Exit code: {e.returncode}[/red]")
-            return e
+    # We must inherit the current environment to ensure CUDA/venv visibility.
+    env = os.environ.copy()
+    result = subprocess.run(cmd, capture_output=True, text=True, env=env)
+    log_path.write_text((result.stdout or "") + (result.stderr or ""), encoding="utf-8")
+    if result.returncode != 0:
+        print(f"[bold red]Variant failed: {' '.join(cmd)}[/bold red]")
+        print(f"[red]Exit code: {result.returncode}[/red]")
+    return result
 
 
 @app.command()
@@ -80,6 +79,7 @@ def run(
     force_curriculum_strength_end: float = 1.0,
     enable_multi_scale_gating: bool = True,
     init_weights: str = "",
+    constructor_tape_cycle: str = "",
     out_dir: str = "artifacts/parallel",
     max_workers: int = 2,
     seed: int = 42,
@@ -93,6 +93,7 @@ def run(
     # Cycles: allow rotating parameters across variants
     auto_cycle = [float(x) for x in autopoietic_loss_weight_cycle.split(",") if x.strip()] if autopoietic_loss_weight_cycle else []
     curr_cycle = [float(x) for x in curriculum_power_cycle.split(",") if x.strip()] if curriculum_power_cycle else []
+    tape_cycle = [x.strip() for x in constructor_tape_cycle.split(",") if x.strip()] if constructor_tape_cycle else []
 
     for i in range(variants):
         variant_seed = seed + i * 1337
@@ -165,6 +166,8 @@ def run(
             cmd.append("--enable-multi-scale-gating")
         if init_weights:
             cmd.extend(["--init-weights", init_weights])
+        if tape_cycle:
+            cmd.extend(["--constructor-tape-path", tape_cycle[i % len(tape_cycle)]])
 
         variant_cmds.append((cmd, output_path / f"variant-{i:02d}.log"))
 
@@ -193,24 +196,27 @@ def run(
     print(f"[bold green]Parallel sweep complete in {duration:.2f}s[/bold green]")
 
     # Aggregate summary
-    summary = {
-        "variants": variants,
-        "duration_s": duration,
-        "results": []
-    }
+    summary = []
     for i in range(variants):
         m_path = output_path / f"variant-{i:02d}.metrics.json"
         if m_path.exists():
             data = json.loads(m_path.read_text())
             last_record = data["records"][-1] if data["records"] else {}
-            summary["results"].append({
+            flags = data.get("flags", {})
+            row = {
                 "variant": i,
                 "best_fitness": last_record.get("best_fitness") or last_record.get("fitness"),
                 "mean_transfer_mismatch": last_record.get("mean_transfer_mismatch"),
-                "metrics_file": str(m_path)
-            })
+                "metrics_file": str(m_path),
+                "duration_s": duration,
+                "flags": flags,
+            }
+            for key in ("constructor_tape_path", "constructor_tape_version"):
+                if key in flags:
+                    row[key] = flags[key]
+            summary.append(row)
 
-    summary["results"].sort(key=lambda x: x["best_fitness"] if x["best_fitness"] is not None else -1e9, reverse=True)
+    summary.sort(key=lambda x: x["best_fitness"] if x["best_fitness"] is not None else -1e9, reverse=True)
     (output_path / "summary.json").write_text(json.dumps(summary, indent=2))
     print(f"[bold yellow]Summary saved to {output_path / 'summary.json'}[/bold yellow]")
 

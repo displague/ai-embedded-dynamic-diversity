@@ -33,12 +33,12 @@ List from CLI:
 
 Smoke tests run automatically on every pull request to `master` via GitHub Actions (`.github/workflows/smoke.yml`). The pipeline:
 
-1. Installs Python 3.12 and `uv`, then runs `uv sync` (CPU torch; no CUDA in CI).
+1. Installs Python 3.12 and `uv`, then runs `uv sync --frozen`.
 2. **Import smoke**: verifies the package imports cleanly.
 3. **Mini training smoke**: runs 1 epoch of co-evolution (population 2, batch 2, 3 unroll steps) on CPU.
 4. **Profiler smoke**: runs the embodiment profiler for 5 steps on `hexapod` on CPU.
 
-All CI commands use `--device cpu`. If the import step fails, remaining steps are skipped.
+All CI commands use `--device cpu` and do not require a GPU. The lockfile pins PyTorch through the CUDA 13.0 index on Windows/Linux so local RTX training and CI resolve the same Torch family; CPU-only CI still runs the smoke commands on CPU.
 
 ## Setup
 
@@ -57,14 +57,14 @@ pip install -e .
 CUDA wheel setup for this project venv (PowerShell):
 
 ```powershell
-~/.local/bin/uv pip install --python .venv\Scripts\python.exe --torch-backend cu130 --reinstall torch torchvision torchaudio
+~/.local/bin/uv sync --frozen
 @'
 import torch
 print(torch.__version__, torch.cuda.is_available(), torch.version.cuda)
-'@ | .\.venv\Scripts\python -
+'@ | ~/.local/bin/uv run python -
 ```
 
-If `uv run` re-syncs CPU torch from lockfile, run training/eval via `.\.venv\Scripts\python -m ...` (or `uv run --no-sync` if your environment is already correct). Training now defaults to strict device selection, so `--device cuda` fails fast if CUDA is unavailable.
+The project pins `torch` to the explicit PyTorch `cu130` index on Windows/Linux, so `uv run add-train --device cuda` should preserve the CUDA wheel instead of re-syncing to the CPU-only Windows wheel. Training defaults to strict device selection, so `--device cuda` fails fast if CUDA is unavailable.
 
 External reference repositories (gitignored) can be synced for simulator calibration research:
 

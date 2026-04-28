@@ -2,6 +2,9 @@
 
 ## Completed
 
+- Standardized CUDA PyTorch resolution for the `uv` project workflow:
+  - `pyproject.toml` pins `torch` to the explicit PyTorch `cu130` index on Windows/Linux.
+  - README setup/CI notes now treat `uv sync --frozen` and `uv run` as the normal path for CUDA-capable local training while keeping CI smoke commands CPU-only.
 - Added coevolution warm-start cycling via `--init-weights-cycle` (multi-checkpoint seeding with dedupe + compatibility guards) so leading models can co-train in the same run before mutation expansion.
 - Added coevolution capability guardrails to reduce transfer-only overfitting:
   - `--enable-capability-guardrail`
