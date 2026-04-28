@@ -48,7 +48,7 @@ def loss_fn(
     memory_weights = outputs["memory_weights"]
     predicted_remap = outputs["predicted_remap"]
     predicted_signal_type = outputs["predicted_signal_type"]
-    emergent_signal = outputs["emergent_signal"]
+    emergent_signal = outputs.get("emergent_signal", io.new_zeros((io.shape[0], 1)))
     memory = outputs["memory"]
 
     recon = nn.functional.mse_loss(io, target_signal)
@@ -64,7 +64,7 @@ def loss_fn(
         detection_loss = nn.functional.cross_entropy(predicted_signal_type, target_signal_type)
 
     # Emergent signal loss: reward signal variance (avoiding constant/zero signals)
-    emergent_signal_loss = -torch.var(emergent_signal, dim=0).mean()
+    emergent_signal_loss = -torch.var(emergent_signal, dim=0, unbiased=False).mean()
 
     # Memory persistence loss: keep current memory close to initial genetic prior
     memory_persistence_loss = torch.tensor(0.0, device=io.device)
@@ -133,6 +133,6 @@ def world_prediction_loss(
     """
     mse = F.mse_loss(pred_latent, actual_latent.detach())
     # SIGReg: penalise low variance across batch to prevent collapse
-    sigreg = sigreg_weight * torch.relu(1.0 - pred_latent.var(dim=0).mean())
+    sigreg = sigreg_weight * torch.relu(1.0 - pred_latent.var(dim=0, unbiased=False).mean())
     return mse + sigreg
 

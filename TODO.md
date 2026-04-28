@@ -61,7 +61,7 @@
 
 - [x] Tune curriculum schedule for hardy-line gains (current curriculum run improved but did not beat non-curriculum focused run).
 - [x] Continue car-focused objective weighting/sampling in training (storm/crosswind emphasis) to push hardy car mismatch below `0.9`.
-- [ ] Make CUDA PyTorch install reproducible in `uv` lock workflow (strict-device guard is in place; remaining work is lock/index standardization so plain `uv run` keeps CUDA torch).
+- [x] Make CUDA PyTorch install reproducible in `uv` lock workflow (pins `torch` to the explicit PyTorch `cu130` index on Windows/Linux so plain `uv run` keeps the CUDA wheel). (Closes #14)
 - [x] Promote next champion after high-repeat validation (`runs_per_combo >= 6`) on both transfer-only and capability-weighted hardy profiles.
 - [x] Run capability-weighted (`bio-tech-v1`) high-repeat validation for `model-core-champion-v04` and decide blended-capability champion promotion.
 - [x] Integrate pre-life convergence term into `cross-eval`/`cross-report` ranking so transfer/hardiness/capability/replication are evaluated in a unified promotion pipeline.
