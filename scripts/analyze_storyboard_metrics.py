@@ -24,6 +24,13 @@ def _load_metrics(path: Path) -> list[dict]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def _split_scenario_embodiment(key: str) -> tuple[str, str]:
+    if "-" not in key:
+        return key, "unknown"
+    scenario, embodiment = key.rsplit("-", maxsplit=1)
+    return scenario, embodiment
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Summarize storyboard compare-left/compare-right metrics deltas.")
     parser.add_argument("--storyboard-dir", required=True, help="Directory containing *compare-left-metrics.json files.")
@@ -58,9 +65,7 @@ def main() -> int:
         l_vitality = [float(x.get("vitality", 0.0)) for x in left]
         r_vitality = [float(x.get("vitality", 0.0)) for x in right]
 
-        scen_emb = prefix.split("-", maxsplit=1)
-        scenario = scen_emb[0] if scen_emb else prefix
-        embodiment = scen_emb[1] if len(scen_emb) > 1 else "unknown"
+        scenario, embodiment = _split_scenario_embodiment(prefix)
 
         rows.append(
             {
