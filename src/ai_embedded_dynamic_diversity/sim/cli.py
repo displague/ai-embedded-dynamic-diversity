@@ -291,6 +291,24 @@ def embodiments() -> None:
 
 
 @app.command()
+def robot_tendon(steps: int = 100, policy: str = "hold", seed: int = 0, control_hz: float = 50.0,
+                 spec_output: str = "") -> None:
+    """Roll out the tendon-driven humanoid of the sibling displague/robot repository (needs mujoco and
+    ROBOT_REPO or ../robot) under a trivial policy: hold, random or zero. Prints standing fraction, power and
+    the worst line against its continuous rating; --spec-output writes the embodiment spec (controls and the
+    named sensor channels) as JSON for discover_from_spec and the constructor tape."""
+    from ai_embedded_dynamic_diversity.sim.robot_tendon import TendonHumanoid, smoke_rollout
+
+    result = smoke_rollout(steps=steps, policy=policy, seed=seed, control_hz=control_hz)
+    if spec_output:
+        env = TendonHumanoid(control_hz=control_hz)
+        Path(spec_output).parent.mkdir(parents=True, exist_ok=True)
+        Path(spec_output).write_text(json.dumps(env.spec(), indent=2))
+        result["spec_output"] = spec_output
+    print(json.dumps(result, indent=2))
+
+
+@app.command()
 def profiler(
     embodiment: str = "polymorph120",
     profile: str = "pi5",
