@@ -37,6 +37,7 @@ Smoke tests run automatically on every pull request to `master` via GitHub Actio
 2. **Import smoke**: verifies the package imports cleanly.
 3. **Mini training smoke**: runs 1 epoch of co-evolution (population 2, batch 2, 3 unroll steps) on CPU.
 4. **Profiler smoke**: runs the embodiment profiler for 5 steps on `hexapod` on CPU.
+5. **Unit tests**: `pytest -q` (the MuJoCo-backed tests skip without `mujoco` and a robot checkout).
 
 All CI commands use `--device cpu`. If the import step fails, remaining steps are skipped.
 
