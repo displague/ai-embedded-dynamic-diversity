@@ -80,6 +80,8 @@ def run(
     force_curriculum_strength_end: float = 1.0,
     enable_multi_scale_gating: bool = True,
     init_weights: str = "",
+    constructor_tape_path: str = "",
+    constructor_tape_cycle: str = "",
     out_dir: str = "artifacts/parallel",
     max_workers: int = 2,
     seed: int = 42,
@@ -93,6 +95,8 @@ def run(
     # Cycles: allow rotating parameters across variants
     auto_cycle = [float(x) for x in autopoietic_loss_weight_cycle.split(",") if x.strip()] if autopoietic_loss_weight_cycle else []
     curr_cycle = [float(x) for x in curriculum_power_cycle.split(",") if x.strip()] if curriculum_power_cycle else []
+    # constructor tapes: one per variant in rotation (restored after 7bda144 dropped them)
+    tape_cycle = [x.strip() for x in constructor_tape_cycle.replace(";", ",").split(",") if x.strip()]
 
     for i in range(variants):
         variant_seed = seed + i * 1337
@@ -165,6 +169,9 @@ def run(
             cmd.append("--enable-multi-scale-gating")
         if init_weights:
             cmd.extend(["--init-weights", init_weights])
+        variant_tape = tape_cycle[i % len(tape_cycle)] if tape_cycle else constructor_tape_path
+        if variant_tape:
+            cmd.extend(["--constructor-tape-path", variant_tape])
 
         variant_cmds.append((cmd, output_path / f"variant-{i:02d}.log"))
 
@@ -203,10 +210,13 @@ def run(
         if m_path.exists():
             data = json.loads(m_path.read_text())
             last_record = data["records"][-1] if data["records"] else {}
+            flags = data.get("flags", {}) or {}
             summary["results"].append({
                 "variant": i,
                 "best_fitness": last_record.get("best_fitness") or last_record.get("fitness"),
                 "mean_transfer_mismatch": last_record.get("mean_transfer_mismatch"),
+                "constructor_tape_path": flags.get("constructor_tape_path"),
+                "constructor_tape_version": flags.get("constructor_tape_version"),
                 "metrics_file": str(m_path)
             })
 

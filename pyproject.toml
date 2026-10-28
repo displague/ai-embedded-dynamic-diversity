@@ -41,7 +41,18 @@ package-dir = {"" = "src"}
 [tool.setuptools.packages.find]
 where = ["src"]
 
-[tool.uv]
-dev-dependencies = [
+[dependency-groups]
+dev = [
   "pytest>=8.2"
 ]
+
+# CUDA torch on Windows (the RTX 5080 development and training host) from PyTorch's cu130 index, so
+# `uv run` keeps the CUDA build instead of re-syncing the CPU wheel (#14). Linux, including CI, resolves
+# torch from PyPI as before.
+[[tool.uv.index]]
+name = "pytorch-cu130"
+url = "https://download.pytorch.org/whl/cu130"
+explicit = true
+
+[tool.uv.sources]
+torch = [{ index = "pytorch-cu130", marker = "sys_platform == 'win32'" }]

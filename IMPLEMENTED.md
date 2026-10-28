@@ -2,6 +2,20 @@
 
 ## Completed
 
+- Made the CUDA torch install reproducible (#14): on Windows `uv sync` resolves torch from PyTorch's cu130 index via `[tool.uv.sources]`, so `uv run` keeps the CUDA build (verified: torch 2.14.1+cu130 on the RTX 5080, tests, a CUDA training smoke); Linux and CI resolve torch from PyPI.
+- Fixed the 4 tests failing on master (#37): population variance for the emergent-signal loss (NaN at batch 1), `emergent_signal` optional in `loss_fn`, `--constructor-tape-path/--constructor-tape-cycle` restored in `add-train-parallel` (lost in 7bda144) with tape fields in its summary, the v7 tape test reading a committed fixture.
+- Added reward-driven training on grounded bodies (#35), `src/ai_embedded_dynamic_diversity/rl/`, `docs/rl-standin.md`:
+  - `StandinEnv`: batched MuJoCo rollout of a body's fast stand-in (the tendon humanoid's from displague/robot `tools/export_standin.py`; Roboparty RPO's from `rl/rpo_body.py`), domain randomisation, actuation delay, damage gates in place of fall terminations, tasks `stand` and `getup`, per-joint channel blocks padded to shared counts so one network runs both bodies;
+  - the champion core grown to a body's channel counts (`grow_core`) as a recurrent PPO actor (`CoreActor`, `rl/ppo.py`, rsl_rl recipe with an exact-KL adaptive learning rate);
+  - behaviour cloning from the tendon robot's hand-written controller (`rl/bc.py`) and the tendon-model gate (`rl/tendon_eval.py`);
+  - first ladder: stand under pushes reached 90 % standing with cloning, 63 % grown champion, 45 % random weights (one seed); get-up not learned by either start in 24.6 M steps; the cloned policy does not yet pass the tendon-model gate.
+  - one brain, two bodies: RPO stand started from the tendon32 cloned policy stands 79 % in its first 10 iterations against 27 % from scratch (77 % against 72 % at the end);
+  - forgetting: cut back to 48/16 and cross-evaluated, the body-trained cores lose old-world transfer in proportion to what they learned (champion 0.567, stand-grown 0.543, stand-grown-bc 0.435); body runs need the old cross-eval as a regression gate and rehearsal of the old tasks.
+- Added the first grounded embodiment, `humanoid_tendon32` (#34): the tendon-driven humanoid of displague/robot, wrapped by `sim/robot_tendon.py` around that repository's MuJoCo tendon rig (`tools/sim_tendon.py`):
+  - 32 joint targets as controls (delta mode, rate-limited, over the robot's own balance loop);
+  - 11 sensor families as anonymous channels: `joint_angle`, `joint_rate`, `gear_angle`, `strain` (line tension), `slack`, `clutch_slip`, `lock`, `current`, `imu`, `pressure` (foot loads, CoP), `com`;
+  - registered statically in `embodiments.py` (known without MuJoCo or a robot checkout); a rig whose layout drifts from the static entry raises;
+  - `add-sim robot-tendon` rollouts report the standing fraction, electrical power and the worst line against its rating.
 - Added coevolution warm-start cycling via `--init-weights-cycle` (multi-checkpoint seeding with dedupe + compatibility guards) so leading models can co-train in the same run before mutation expansion.
 - Added coevolution capability guardrails to reduce transfer-only overfitting:
   - `--enable-capability-guardrail`

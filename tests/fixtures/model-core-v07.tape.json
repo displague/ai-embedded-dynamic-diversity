@@ -1,0 +1,18 @@
+{
+  "version": 7,
+  "tokens": [
+    "edge_nodes=64",
+    "emergent_signal_dim=8",
+    "enable_dmd_gating=false",
+    "enable_multi_scale_gating=true",
+    "enable_phase_gating=true",
+    "gating_mode=sigmoid",
+    "hidden_dim=64",
+    "io_channels=16",
+    "max_remap_groups=8",
+    "memory_dim=32",
+    "memory_slots=24",
+    "signal_dim=48",
+    "topk_gating=0"
+  ]
+}
