@@ -1,6 +1,6 @@
 [project]
 name = "ai-embedded-dynamic-diversity"
-version = "0.1.0"
+version = "0.3.0"
 description = "Research scaffold for adaptive anonymous-signal model cores for embedded robotics/biologic interfaces"
 readme = "README.md"
 requires-python = ">=3.11"

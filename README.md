@@ -415,6 +415,10 @@ tendon humanoid's fast stand-in (displague/robot `sim/robot_standin.xml`) and Ro
 a body's channel counts and trained with recurrent PPO, optionally after cloning the robot's hand-written
 controller; trained policies are judged on the full tendon model. Method and results: `docs/rl-standin.md`.
 
+| Tendon humanoid, cloned + PPO | RPO, started from the tendon policy |
+| --- | --- |
+| ![tendon humanoid stand](docs/assets/rl-tendon32-stand.gif) | ![RPO stand from tendon](docs/assets/rl-rpo23-stand-from-tendon.gif) |
+
 ```bash
 export ROBOT_REPO=../robot
 python -m ai_embedded_dynamic_diversity.rl.cli train --task stand --init artifacts/model-core-champion-v09.pt     --teacher ../robot/sim/out/teacher/teacher.npz

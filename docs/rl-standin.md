@@ -50,6 +50,11 @@ python -m ai_embedded_dynamic_diversity.rl.tendon_eval artifacts/rl/stand-grown.
 
 Needs `mujoco` (3.17.0 used) and a CUDA build of torch for reasonable speed.
 
+![The tendon humanoid's stand policy (cloned + PPO) on its stand-in, with pushes](assets/rl-tendon32-stand.gif)
+![Roboparty RPO standing under pushes, its training started from the tendon humanoid's policy](assets/rl-rpo23-stand-from-tendon.gif)
+
+Render any policy: `python -m ai_embedded_dynamic_diversity.rl.render <policy.pt> --body tendon32|rpo23 --out x.gif`.
+
 ## Results: the first ladder (seed 0, 2048 environments, RTX 5080 + 24 CPU cores)
 
 Champion: `artifacts/model-core-champion-v09.pt` (46,876 parameters, 48 inputs, 16 outputs), grown to 104
