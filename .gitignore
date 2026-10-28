@@ -3,3 +3,5 @@ __pycache__/
 .venv/
 artifacts/
 external_refs/
+# Roboparty RPO meshes (31 MB): fetched by python -m ai_embedded_dynamic_diversity.rl.rpo_body
+third_party/roboparty_rpo/meshes/

@@ -2,6 +2,13 @@
 
 ## Completed
 
+- Added reward-driven training on grounded bodies (#35), `src/ai_embedded_dynamic_diversity/rl/`, `docs/rl-standin.md`:
+  - `StandinEnv`: batched MuJoCo rollout of a body's fast stand-in (the tendon humanoid's from displague/robot `tools/export_standin.py`; Roboparty RPO's from `rl/rpo_body.py`), domain randomisation, actuation delay, damage gates in place of fall terminations, tasks `stand` and `getup`, per-joint channel blocks padded to shared counts so one network runs both bodies;
+  - the champion core grown to a body's channel counts (`grow_core`) as a recurrent PPO actor (`CoreActor`, `rl/ppo.py`, rsl_rl recipe with an exact-KL adaptive learning rate);
+  - behaviour cloning from the tendon robot's hand-written controller (`rl/bc.py`) and the tendon-model gate (`rl/tendon_eval.py`);
+  - first ladder: stand under pushes reached 90 % standing with cloning, 63 % grown champion, 45 % random weights (one seed); get-up not learned by either start in 24.6 M steps; the cloned policy does not yet pass the tendon-model gate.
+  - one brain, two bodies: RPO stand started from the tendon32 cloned policy stands 79 % in its first 10 iterations against 27 % from scratch (77 % against 72 % at the end);
+  - forgetting: cut back to 48/16 and cross-evaluated, the body-trained cores lose old-world transfer in proportion to what they learned (champion 0.567, stand-grown 0.543, stand-grown-bc 0.435); body runs need the old cross-eval as a regression gate and rehearsal of the old tasks.
 - Added the first grounded embodiment, `humanoid_tendon32` (#34): the tendon-driven humanoid of displague/robot, wrapped by `sim/robot_tendon.py` around that repository's MuJoCo tendon rig (`tools/sim_tendon.py`):
   - 32 joint targets as controls (delta mode, rate-limited, over the robot's own balance loop);
   - 11 sensor families as anonymous channels: `joint_angle`, `joint_rate`, `gear_angle`, `strain` (line tension), `slack`, `clutch_slip`, `lock`, `current`, `imu`, `pressure` (foot loads, CoP), `com`;
