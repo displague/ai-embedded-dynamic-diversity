@@ -1,10 +1,14 @@
+from pathlib import Path
+
 import torch
 import pytest
 from ai_embedded_dynamic_diversity.models.constructor_tape import load_constructor_tape, config_from_constructor_tape
 from ai_embedded_dynamic_diversity.models.universal_constructor import UniversalConstructor
 
 def test_v7_tape_construction():
-    tape_path = "artifacts/model-core-v07.tape.json"
+    # a copy of artifacts/model-core-v07.tape.json (skills/ai-convergence-research/scripts/gen_v7_tape.py):
+    # artifacts/ is not in git, so the test reads the committed fixture
+    tape_path = str(Path(__file__).parent / "fixtures" / "model-core-v07.tape.json")
     tape = load_constructor_tape(tape_path)
     
     # Verify new fields are present in tokens

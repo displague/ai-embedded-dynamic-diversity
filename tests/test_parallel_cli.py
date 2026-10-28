@@ -15,7 +15,7 @@ def test_parallel_cli_forwards_constructor_tape_cycle(monkeypatch) -> None:
             self.stdout = ""
             self.stderr = ""
 
-    def fake_run(cmd, capture_output, text, env):
+    def fake_run(cmd, **kwargs):          # the launcher logs to a file: stdout=, stderr=, check=, env=
         captured_cmds.append(list(cmd))
         metrics_idx = cmd.index("--metrics-path") + 1
         metrics_path = Path(cmd[metrics_idx])
@@ -40,5 +40,6 @@ def test_parallel_cli_forwards_constructor_tape_cycle(monkeypatch) -> None:
     assert any("--constructor-tape-path" in cmd for cmd in captured_cmds)
     assert any("--enable-autopoietic-objective" in cmd for cmd in captured_cmds)
     summary = json.loads((out_dir / "summary.json").read_text(encoding="utf-8"))
-    assert "constructor_tape_path" in summary[0]
-    assert "constructor_tape_version" in summary[0]
+    first = summary["results"][0]
+    assert first["constructor_tape_path"] == "artifacts/tape-a.json"
+    assert first["constructor_tape_version"] == 1

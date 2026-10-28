@@ -2,6 +2,7 @@
 
 ## Completed
 
+- Fixed the 4 tests failing on master (#37): population variance for the emergent-signal loss (NaN at batch 1), `emergent_signal` optional in `loss_fn`, `--constructor-tape-path/--constructor-tape-cycle` restored in `add-train-parallel` (lost in 7bda144) with tape fields in its summary, the v7 tape test reading a committed fixture.
 - Added reward-driven training on grounded bodies (#35), `src/ai_embedded_dynamic_diversity/rl/`, `docs/rl-standin.md`:
   - `StandinEnv`: batched MuJoCo rollout of a body's fast stand-in (the tendon humanoid's from displague/robot `tools/export_standin.py`; Roboparty RPO's from `rl/rpo_body.py`), domain randomisation, actuation delay, damage gates in place of fall terminations, tasks `stand` and `getup`, per-joint channel blocks padded to shared counts so one network runs both bodies;
   - the champion core grown to a body's channel counts (`grow_core`) as a recurrent PPO actor (`CoreActor`, `rl/ppo.py`, rsl_rl recipe with an exact-KL adaptive learning rate);
