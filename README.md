@@ -55,17 +55,14 @@ python -m venv .venv
 pip install -e .
 ```
 
-CUDA wheel setup for this project venv (PowerShell):
+CUDA torch: on Windows `uv sync` installs torch from PyTorch's cu130 index (`[tool.uv.sources]` in
+`pyproject.toml`), so `uv run` keeps the CUDA build; Linux, including CI, resolves torch from PyPI. Check:
 
 ```powershell
-~/.local/bin/uv pip install --python .venv\Scripts\python.exe --torch-backend cu130 --reinstall torch torchvision torchaudio
-@'
-import torch
-print(torch.__version__, torch.cuda.is_available(), torch.version.cuda)
-'@ | .\.venv\Scripts\python -
+~/.local/bin/uv run python -c "import torch; print(torch.__version__, torch.cuda.is_available(), torch.version.cuda)"
 ```
 
-If `uv run` re-syncs CPU torch from lockfile, run training/eval via `.\.venv\Scripts\python -m ...` (or `uv run --no-sync` if your environment is already correct). Training now defaults to strict device selection, so `--device cuda` fails fast if CUDA is unavailable.
+Training defaults to strict device selection, so `--device cuda` fails fast if CUDA is unavailable.
 
 External reference repositories (gitignored) can be synced for simulator calibration research:
 

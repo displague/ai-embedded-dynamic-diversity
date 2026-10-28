@@ -2,6 +2,7 @@
 
 ## Completed
 
+- Made the CUDA torch install reproducible (#14): on Windows `uv sync` resolves torch from PyTorch's cu130 index via `[tool.uv.sources]`, so `uv run` keeps the CUDA build (verified: torch 2.14.1+cu130 on the RTX 5080, tests, a CUDA training smoke); Linux and CI resolve torch from PyPI.
 - Fixed the 4 tests failing on master (#37): population variance for the emergent-signal loss (NaN at batch 1), `emergent_signal` optional in `loss_fn`, `--constructor-tape-path/--constructor-tape-cycle` restored in `add-train-parallel` (lost in 7bda144) with tape fields in its summary, the v7 tape test reading a committed fixture.
 - Added reward-driven training on grounded bodies (#35), `src/ai_embedded_dynamic_diversity/rl/`, `docs/rl-standin.md`:
   - `StandinEnv`: batched MuJoCo rollout of a body's fast stand-in (the tendon humanoid's from displague/robot `tools/export_standin.py`; Roboparty RPO's from `rl/rpo_body.py`), domain randomisation, actuation delay, damage gates in place of fall terminations, tasks `stand` and `getup`, per-joint channel blocks padded to shared counts so one network runs both bodies;
