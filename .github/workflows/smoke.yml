@@ -54,3 +54,8 @@ jobs:
             --batch-size 2 \
             --device cpu \
             --output /tmp/smoke-profile.json
+
+      - name: Unit tests
+        run: |
+          # the MuJoCo-backed tests (tendon humanoid, stand-in env) skip without mujoco and a robot checkout
+          uv run pytest -q

@@ -48,7 +48,7 @@ def loss_fn(
     memory_weights = outputs["memory_weights"]
     predicted_remap = outputs["predicted_remap"]
     predicted_signal_type = outputs["predicted_signal_type"]
-    emergent_signal = outputs["emergent_signal"]
+    emergent_signal = outputs.get("emergent_signal")
     memory = outputs["memory"]
 
     recon = nn.functional.mse_loss(io, target_signal)
@@ -64,7 +64,10 @@ def loss_fn(
         detection_loss = nn.functional.cross_entropy(predicted_signal_type, target_signal_type)
 
     # Emergent signal loss: reward signal variance (avoiding constant/zero signals)
-    emergent_signal_loss = -torch.var(emergent_signal, dim=0).mean()
+    # (population variance: defined for a batch of one, where the unbiased estimate is NaN)
+    emergent_signal_loss = torch.tensor(0.0, device=io.device)
+    if emergent_signal is not None:
+        emergent_signal_loss = -torch.var(emergent_signal, dim=0, correction=0).mean()
 
     # Memory persistence loss: keep current memory close to initial genetic prior
     memory_persistence_loss = torch.tensor(0.0, device=io.device)
