@@ -18,6 +18,14 @@ def _available() -> bool:
 needs_robot = pytest.mark.skipif(not _available(), reason="needs mujoco and a checkout of displague/robot (ROBOT_REPO)")
 
 
+def test_tendon_humanoid_is_registered_statically() -> None:
+    # known without MuJoCo or a robot checkout: 32 controls in the robot repository's order
+    emb = get_embodiment(robot_tendon.EMBODIMENT_NAME)
+    assert len(emb.controls) == 32
+    assert emb.controls[0] == "spine_pitch" and emb.controls[-1] == "foot.R_roll"
+    assert {"strain", "slack", "clutch_slip", "pressure", "imu"} <= set(emb.sensors)
+
+
 @needs_robot
 def test_tendon_humanoid_registers_and_observes() -> None:
     env = robot_tendon.TendonHumanoid(control_hz=50.0)

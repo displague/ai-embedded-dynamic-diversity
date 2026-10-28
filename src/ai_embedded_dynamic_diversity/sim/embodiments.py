@@ -82,6 +82,36 @@ EMBODIMENTS: dict[str, Embodiment] = {
             "strain",
         ),
     ),
+    # The displague/robot tendon humanoid: 32 body DOF, each a winch driving a closed fishing-line loop. The
+    # control names and their order are the robot repository's (tools/export_mjcf.py link order, shared by
+    # its fast stand-in sim/robot_standin.json); the sensor families are what sim/robot_tendon.py reports.
+    # Registered statically so the body is known without MuJoCo or a robot checkout.
+    "humanoid_tendon32": Embodiment(
+        name="humanoid_tendon32",
+        controls=(
+            "spine_pitch", "spine_roll", "spine_yaw", "neck_pitch", "neck_roll", "neck_yaw",
+            "upperarm.L_pitch", "upperarm.L_roll", "upperarm.L_yaw",
+            "upperarm.R_pitch", "upperarm.R_roll", "upperarm.R_yaw",
+            "forearm.L_pitch", "forearm.L_yaw", "forearm.R_pitch", "forearm.R_yaw",
+            "hand.L_pitch", "hand.L_roll", "hand.R_pitch", "hand.R_roll",
+            "thigh.L_pitch", "thigh.L_roll", "thigh.L_yaw", "thigh.R_pitch", "thigh.R_roll", "thigh.R_yaw",
+            "shank.L_pitch", "shank.R_pitch",
+            "foot.L_pitch", "foot.L_roll", "foot.R_pitch", "foot.R_roll",
+        ),
+        sensors=(
+            "clutch_slip",
+            "com",
+            "current",
+            "gear_angle",
+            "imu",
+            "joint_angle",
+            "joint_rate",
+            "lock",
+            "pressure",
+            "slack",
+            "strain",
+        ),
+    ),
 }
 
 

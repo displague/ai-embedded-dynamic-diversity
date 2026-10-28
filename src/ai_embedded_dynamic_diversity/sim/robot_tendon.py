@@ -26,7 +26,7 @@ from typing import Any
 
 import torch
 
-from ai_embedded_dynamic_diversity.sim.embodiments import Embodiment, register_embodiment
+from ai_embedded_dynamic_diversity.sim.embodiments import Embodiment, get_embodiment, register_embodiment
 
 EMBODIMENT_NAME = "humanoid_tendon32"
 
@@ -112,6 +112,14 @@ class TendonHumanoid:
         self.embodiment = Embodiment(
             name=EMBODIMENT_NAME, controls=tuple(self.control_names), sensors=tuple(sorted(set(self.layout.families)))
         )
+        static = get_embodiment(EMBODIMENT_NAME)
+        if static != self.embodiment:
+            # the robot repository changed its joint table or this module its channels: the static entry in
+            # embodiments.py has to follow, or checkpoints trained on one layout meet another
+            raise RuntimeError(
+                f"{EMBODIMENT_NAME}: the rig's layout no longer matches the static registration in embodiments.py "
+                f"(controls {self.embodiment.controls} vs {static.controls})"
+            )
         register_embodiment(self.embodiment)
         self._prev_v = None
 
