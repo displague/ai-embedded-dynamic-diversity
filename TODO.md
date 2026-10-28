@@ -27,6 +27,9 @@
 - [x] Add noisy-signal resilience curriculum in training (sensor dropout + quantization noise) and evaluate impact on hardy transfer.
 - [x] Add calibrated large-world eval profile (`calibrated_large_v1`) with optimism-gap penalty/gate so promotion resists simulation over-optimism.
 
+- [x] Add a grounded embodiment with contact physics and a drive train that can be overloaded (`humanoid_tendon32`, the displague/robot tendon humanoid) (Closes #34).
+- [ ] Train the model core by reward on grounded bodies: PPO on the tendon humanoid's fast stand-in, behaviour cloning from its hand-written controller, transfer between bodies (#35).
+
 ## Medium Priority
 
 - [x] Add packetized handoff examples for multi-generation successor chains (`N>=3`) and validate return-trigger clarity.

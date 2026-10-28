@@ -2,6 +2,11 @@
 
 ## Completed
 
+- Added the first grounded embodiment, `humanoid_tendon32` (#34): the tendon-driven humanoid of displague/robot, wrapped by `sim/robot_tendon.py` around that repository's MuJoCo tendon rig (`tools/sim_tendon.py`):
+  - 32 joint targets as controls (delta mode, rate-limited, over the robot's own balance loop);
+  - 11 sensor families as anonymous channels: `joint_angle`, `joint_rate`, `gear_angle`, `strain` (line tension), `slack`, `clutch_slip`, `lock`, `current`, `imu`, `pressure` (foot loads, CoP), `com`;
+  - registered statically in `embodiments.py` (known without MuJoCo or a robot checkout); a rig whose layout drifts from the static entry raises;
+  - `add-sim robot-tendon` rollouts report the standing fraction, electrical power and the worst line against its rating.
 - Added coevolution warm-start cycling via `--init-weights-cycle` (multi-checkpoint seeding with dedupe + compatibility guards) so leading models can co-train in the same run before mutation expansion.
 - Added coevolution capability guardrails to reduce transfer-only overfitting:
   - `--enable-capability-guardrail`
