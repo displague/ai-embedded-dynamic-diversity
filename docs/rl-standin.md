@@ -50,6 +50,49 @@ python -m ai_embedded_dynamic_diversity.rl.tendon_eval artifacts/rl/stand-grown.
 
 Needs `mujoco` (3.17.0 used) and a CUDA build of torch for reasonable speed.
 
-## Results
+## Results: the first ladder (seed 0, 2048 environments, RTX 5080 + 24 CPU cores)
 
-See the end of this file once the first ladder has run.
+Champion: `artifacts/model-core-champion-v09.pt` (46,876 parameters, 48 inputs, 16 outputs), grown to 104
+observations and 32 actions (51,484 parameters). Stand: 150 iterations, 7.4 million steps, about 5 minutes.
+Get-up: 500 iterations, 24.6 million steps, about 11 minutes.
+
+| Run | Standing, last 10 iterations | Mean episode | Note |
+| --- | --- | --- | --- |
+| tendon32 stand, random weights | 45 % | 1.5 s | found 96 % at iteration 37, then lost it |
+| tendon32 stand, grown champion | 63 % | 1.9 s | |
+| tendon32 stand, grown champion + cloning | **90 %** | **6.0 s** | cloning: 56,903 demonstration steps, 30 epochs, action MSE 0.024 |
+| tendon32 getup, grown champion | 0 % | 7.8 s | |
+| tendon32 getup, random weights | 0 % | 10.6 s | |
+
+- Cloning from the robot's hand-written controller is the large effect.
+- The grown champion ends ahead of random weights on stand, on one seed; not yet a result.
+- Get-up was not learned by either. On this robot a flat-footed squat deeper than 0.6 rad of knee tips over
+  (the ankle dorsiflexes only 20 degrees), so getting up has to go through kneeling; the task needs a
+  curriculum from kneeling, not a drop and a height reward.
+
+**Transfer between bodies.** RPO stand, 150 iterations each:
+
+| Start | Standing, iterations 1 to 10 | Standing, last 10 | Mean episode, last 10 |
+| --- | --- | --- | --- |
+| random weights | 27 % | 72 % | 1.1 s |
+| the tendon32 cloned stand policy | **79 %** | **77 %** | **2.0 s** |
+
+**Forgetting.** Each trained core cut back to the champion's 48 inputs and 16 outputs, scored by
+`add-cross-eval` (hexapod, car, drone, polymorph120; mild, gust, force; 2 runs per combination, 90 steps;
+`artifacts/rl/cross-eval-forgetting.json`):
+
+| Core | Transfer | Mismatch | Car |
+| --- | --- | --- | --- |
+| champion v09 | 0.567 | 0.20 | 0.49 |
+| getup-grown | 0.569 | 0.21 | 0.49 |
+| stand-grown | 0.543 | 0.25 | 0.45 |
+| stand-grown-bc | 0.435 | 0.74 | 0.28 |
+
+Learning a body overwrites the old skills in proportion to how much it learns. Promotion of any body-trained
+core therefore needs the old cross-eval as a regression gate, and body training needs rehearsal of the old
+tasks (or distillation toward the champion on them) alongside it.
+
+**The gate** (`rl/tendon_eval.py`): the cloned policy on the full tendon model falls within 10 s standing
+still and at 20 N pushes, and survives 18 of 20 single random pushes; the hand-written controller passes
+all of these. The stand-in leaves out the drum locks, the slack line run and the ankle loops' stretch-
+for-torque behaviour; closing that gap comes before any of these policies is used on the robot.

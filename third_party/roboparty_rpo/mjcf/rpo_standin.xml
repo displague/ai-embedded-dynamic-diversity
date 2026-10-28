@@ -3,7 +3,6 @@
   <option timestep="0.005" gravity="0 0 -9.81" integrator="implicitfast">
     <flag frictionloss="enable" />
   </option>
-  <size njmax="5000" nconmax="1000" />
   <visual>
     <quality shadowsize="4096" />
     <map znear="0.05" />

@@ -409,6 +409,21 @@ The rollout reports the standing fraction, mean electrical power and the worst l
 the "optimism gap" of `docs/world-harness-gap-analysis-v1.md` measured on a body where a saturated control
 channel means a slack or an overloaded line. Tests skip when mujoco or the robot checkout is absent.
 
+## Reward-driven training on grounded bodies (PPO, the core as the actor)
+
+`src/ai_embedded_dynamic_diversity/rl/` trains the model core by reward on bodies with contact physics: the
+tendon humanoid's fast stand-in (displague/robot `sim/robot_standin.xml`) and Roboparty's RPO
+(`python -m ai_embedded_dynamic_diversity.rl.rpo_body` fetches and builds it). The champion core is grown to
+a body's channel counts and trained with recurrent PPO, optionally after cloning the robot's hand-written
+controller; trained policies are judged on the full tendon model. Method and results: `docs/rl-standin.md`.
+
+```bash
+export ROBOT_REPO=../robot
+python -m ai_embedded_dynamic_diversity.rl.cli train --task stand --init artifacts/model-core-champion-v09.pt     --teacher ../robot/sim/out/teacher/teacher.npz
+python -m ai_embedded_dynamic_diversity.rl.cli train --task stand --body rpo23 --init artifacts/rl/<tendon policy>.pt
+python -m ai_embedded_dynamic_diversity.rl.tendon_eval artifacts/rl/<tendon policy>.pt
+```
+
 ## Staged curriculum training (new_env_v1)
 
 The flat 40-generation run in `eval_evolve_new_env.py` exposes all environment

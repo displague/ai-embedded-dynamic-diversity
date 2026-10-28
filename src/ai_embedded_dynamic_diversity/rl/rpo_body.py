@@ -84,6 +84,9 @@ def build() -> dict:
     src = os.path.join(RPO_DIR, "mjcf", "rpo.xml")
     tree = ET.parse(src)
     root = tree.getroot()
+    size = root.find("size")              # a fixed njmax/nconmax of 5000/1000 makes every MjData large (24 per
+    if size is not None:                  # environment pool); MuJoCo sizes the arena itself without it
+        root.remove(size)
     opt = root.find("option")
     for k in ("iterations", "solver"):
         opt.attrib.pop(k, None)
