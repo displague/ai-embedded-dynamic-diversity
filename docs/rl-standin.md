@@ -9,11 +9,11 @@ the policy is the model core, grown from a champion checkpoint to the body's cha
 
 | Module | What it does |
 | --- | --- |
-| `rl/standin_env.py` | `StandinEnv`: N copies of the robot repository's fast stand-in (`sim/robot_standin.xml`), stepped together in MuJoCo's multithreaded rollout. Domain randomisation per model variant (servo stiffness down to half for a slack line run, damping, clutch torque, friction, link masses, pelvis mass), actuation delay of 0 to 2 control ticks, the damage gates, and the tasks `stand` and `getup`. |
+| `rl/standin_env.py` | `StandinEnv`: N copies of the robot repository's fast stand-in (`sim/robot_standin.xml`), stepped together in MuJoCo's multithreaded rollout. Domain randomisation per model variant (servo stiffness down to half for a slack line run, damping, clutch torque, friction, link masses, pelvis mass, optionally wind), actuation delay of 0 to 2 control ticks, the damage gates, and the tasks `stand` and `getup`. |
 | `rl/actor.py` | `grow_core`: the champion's core grown to the body's inputs and outputs (new encoder columns at zero, new router rows initialised as the originals were, everything else copied). `CoreActor`: the core as a Gaussian policy, its memory as the recurrent state. `Critic`, `RunningNorm`. |
 | `rl/ppo.py` | Recurrent PPO in the rsl_rl recipe: GAE, clipped ratio, KL-adaptive learning rate, truncated backpropagation through each environment's window from its stored memory. |
 | `rl/bc.py` | Behaviour cloning from the robot's hand-written controller (demonstrations from displague/robot `tools/record_teacher.py`), before PPO. |
-| `rl/tendon_eval.py` | The gate: a trained policy run on the full tendon model, with its line, slack, clutch and power readout, against the hand-written controller on the same pushes. |
+| `rl/tendon_eval.py` | The gate: a trained policy run on the full tendon model, with its line, slack, clutch and power readout, against the hand-written controller on the same pushes (and, with a windy robot checkout, in head winds). |
 | `rl/cli.py` | `train` and `compare` (grown versus random weights, same seed). |
 
 ## The stand-in
@@ -23,6 +23,31 @@ the line loop's stiffness, the motor's back-EMF damping and the clutch's slip to
 `tools/export_standin.py`). On 24 cores it runs at about 190,000 control steps per second (50 Hz control, four
 5 ms physics steps each), the environment step including observations, rewards and gates at about 76,000;
 PPO end to end at about 20,000 samples per second, the rest being the recurrent update on the GPU.
+
+## Wind
+
+Off by default. `train` and `compare` take `--wind-mean lo,hi` and `--wind-gust lo,hi` (m/s) and `--wind-tau`
+(s, default 2); `EnvConfig` has the same as `wind_mean`, `wind_gust`, `wind_tau`, plus `wind_ramp_s` and
+`air_density` (1.2).
+
+The model is the robot's (displague/robot `tools/sim_tendon.py`, `WIND` and `Rig.blow`): MuJoCo's own fluid
+model, the inertia-box drag on each body under `opt.density` and `opt.wind` (about 26 N on the 20 kg
+humanoid in 10 m/s head on), a mean speed in one direction plus Ornstein-Uhlenbeck gusts on the along-wind
+speed (sigma = gust) and the cross-wind speed (0.75 gust) with time constant `wind_tau`.
+
+- The rollout shares each model variant among the envs mapped to it, so the wind is **per variant**: every
+  non-nominal variant draws a mean speed, a direction (uniform) and a gust sigma once, and carries its own
+  gust state, advanced every control tick before the physics. Variant 0, the nominal model, stays calm.
+- The mean ramps in over `wind_ramp_s` from the env's construction, not per episode (episodes on a variant
+  start at different times); a reset starts in that variant's current wind.
+- The policy observation has no wind channel, as on the robot: the policy has to infer the wind from the
+  lean, the feet and the joint loads. With wind on, the privileged observation (the critic's) gains two
+  channels at its end, the wind's world x and y speed / 10 m/s, so `priv_dim` grows by 2 only then; with wind
+  off everything is bit-identical to before.
+- `rl/tendon_eval.py` adds the scenes `wind5` and `wind8` (head wind of that mean, 1.5 m/s gusts, 10 s
+  standing) when the robot checkout has wind.
+- The robot's teacher data (`tools/record_teacher.py --winds N`) has standing episodes in random winds
+  (mean 0 to 9 m/s, gusts 0 to 2 m/s, any direction); `--wind-mean 0,9 --wind-gust 0,2` matches it.
 
 ## Damage instead of falling
 

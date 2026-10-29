@@ -22,6 +22,15 @@ Tasks:
 - `stand`: start standing, random pushes; survive and stay upright.
 - `getup`: start fallen (dropped from a random orientation and pose, settled), reach standing and hold it;
   falling does not end the episode, damage does.
+
+Wind (off by default; `wind_mean` / `wind_gust`), as on the robot (displague/robot tools/sim_tendon.py WIND,
+Rig.blow): MuJoCo's fluid model (`opt.density`, the inertia-box drag of each body) under `opt.wind`, a mean
+speed in a random direction plus Ornstein-Uhlenbeck gusts on the along-wind (sigma `gust`) and cross-wind
+(0.75 `gust`) speed with time constant `wind_tau`. The models are shared by the envs mapped to them, so the
+wind is per model variant: every non-nominal variant draws its own mean, direction and gust sigma once and
+carries its own gust state, advanced each control tick; variant 0 stays calm. The policy observation has no
+wind channel (the robot has no anemometer); with wind on, the privileged observation gains two channels, the
+wind's world x and y speed / 10 m/s.
 """
 from __future__ import annotations
 
@@ -92,6 +101,12 @@ class EnvConfig:
     stand_upright: float = 0.95
     settle_s: float = 1.0                  # getup: the drop settles this long before the policy acts
     gated_classes: tuple = ("W-max", "W-mid")
+    wind_mean: tuple = (0.0, 0.0)          # m/s, each non-nominal variant's mean wind speed, uniform in this range
+                                           # (direction uniform); (0, 0) with no gusts: no wind, no air
+    wind_gust: tuple = (0.0, 0.0)          # m/s, each variant's gust sigma (along-wind; 0.75 of it across)
+    wind_tau: float = 2.0                  # s, the gusts' time constant
+    wind_ramp_s: float = 2.0               # s, the mean ramps in over this long from the env's construction
+    air_density: float = 1.2               # kg/m^3, MuJoCo opt.density on the windy variants
     repo: str | None = None
 
 
@@ -163,6 +178,7 @@ class StandinEnv:
         # the full-physics state is [time, qpos, qvel, act, ...]
         self.i_qpos, self.i_qvel = 1, 1 + m.nq
         self.models = self._variants()
+        self._wind_setup()
         self.model_of_env = [self.models[i % len(self.models)] for i in range(self.N)]
         nthread = cfg.nthread or os.cpu_count() or 1
         self.nthread = nthread
@@ -201,6 +217,51 @@ class StandinEnv:
             m.body_mass[pelvis] = max(0.5, m.body_mass[pelvis] + u(cfg.pelvis_mass_add))
             out.append(m)
         return out
+
+    def _wind_setup(self):
+        """Per-variant wind (cfg.wind_*). Its own random stream, so the rest of the randomisation is the same
+        with wind on or off."""
+        cfg = self.cfg
+        self.wind_on = max(*cfg.wind_mean, *cfg.wind_gust) > 0.0
+        V = len(self.models)
+        self.wind_v = np.zeros((V, 2))     # the wind each variant blows now, world x, y (m/s)
+        if not self.wind_on:
+            return
+        rng = self._wind_rng = np.random.default_rng([cfg.seed, 0x57494E44])
+        self.wind_mean = rng.uniform(cfg.wind_mean[0], cfg.wind_mean[1], V)
+        self.wind_sigma = rng.uniform(cfg.wind_gust[0], cfg.wind_gust[1], V)
+        a = rng.uniform(-math.pi, math.pi, V)
+        self.wind_u = np.stack([np.cos(a), np.sin(a)], axis=1)   # the direction the wind blows towards
+        self.wind_mean[0] = self.wind_sigma[0] = 0.0           # variant 0, the nominal model, stays calm
+        self.wind_g = rng.standard_normal((V, 2)) * np.array([1.0, 0.75]) * self.wind_sigma[:, None]  # stationary
+        self.wind_clock = 0.0
+        self.variant_of_env = np.arange(self.N) % V
+        for m in self.models[1:]:
+            m.opt.density = cfg.air_density
+        self._blow(0.0)
+
+    def _blow(self, dt):
+        """Advance each variant's gusts by `dt` (exact Ornstein-Uhlenbeck update) and set its opt.wind."""
+        cfg = self.cfg
+        if dt > 0.0:
+            k = math.exp(-dt / cfg.wind_tau)
+            sig = np.array([1.0, 0.75]) * self.wind_sigma[:, None]
+            self.wind_g = self.wind_g * k + sig * math.sqrt(1.0 - k * k) * self._wind_rng.standard_normal(
+                self.wind_g.shape)
+            self.wind_clock += dt
+        f = min(1.0, self.wind_clock / cfg.wind_ramp_s) if cfg.wind_ramp_s > 0 else 1.0
+        u = self.wind_u
+        across = np.stack([-u[:, 1], u[:, 0]], axis=1)
+        self.wind_v = (f * self.wind_mean + self.wind_g[:, 0])[:, None] * u + self.wind_g[:, 1:2] * across
+        self.wind_v[0] = 0.0
+        for i, m in enumerate(self.models):
+            m.opt.wind[0:2] = self.wind_v[i]
+
+    def wind_of_env(self):
+        """(N, 2) the wind each env stands in now, world x, y (m/s); zeros with wind off."""
+        if not self.wind_on:
+            return np.zeros((self.N, 2))
+        return self.wind_v[self.variant_of_env]
 
     # ---------------------------------------------------------------- physics
     def _roll(self, idx, ctrl, nstep):
@@ -277,8 +338,11 @@ class StandinEnv:
         line = self._line_force(tau) / self.f_cont
         impact = np.zeros((self.N, self.n_impact_slots))
         impact[:, :len(self.s_impact)] = s[:, self.s_impact] / self.weight
-        priv = np.concatenate([obs, (q[:, 2] / self.stand_z)[:, None], up[:, None], lin, impact, pad(line),
-                               (self.t / self.max_steps)[:, None]], axis=1)
+        parts = [obs, (q[:, 2] / self.stand_z)[:, None], up[:, None], lin, impact, pad(line),
+                 (self.t / self.max_steps)[:, None]]
+        if self.wind_on:                   # only with wind, so priv_dim is unchanged without it
+            parts.append(0.1 * self.wind_of_env())
+        priv = np.concatenate(parts, axis=1)
         return obs.astype(np.float32), priv.astype(np.float32)
 
     def _pad(self, x):
@@ -323,6 +387,8 @@ class StandinEnv:
         ctrl = np.clip(self.default + applied * self.half, self.lo, self.hi)
         if cfg.task == "stand":
             self._push()
+        if self.wind_on:
+            self._blow(self.dt_ctrl)
         self._roll(np.arange(self.N), ctrl, self.substeps)
         self.t += 1
         q, v, R, up, grav, lin = self._pelvis()
@@ -360,6 +426,8 @@ class StandinEnv:
                         impact=impact, extras=dict(z=z, up=up, ever_stood=self.ever_stood.copy(),
                                                    over_half_s=line_over_max > cfg.line_report_s,
                                                    wmini_over=((line > 1.0) & ~self.gated).any(axis=1)))
+        if self.wind_on:
+            info.extras["wind"] = self.wind_of_env().copy()
         obs_done = done.copy()
         if done.any():
             self.reset(np.nonzero(done)[0])
@@ -387,7 +455,7 @@ class StandinEnv:
 
     @property
     def priv_dim(self):
-        return self.obs_dim + 1 + 1 + 3 + self.n_impact_slots + self.P + 1
+        return self.obs_dim + 1 + 1 + 3 + self.n_impact_slots + self.P + 1 + (2 if self.wind_on else 0)
 
     def close(self):
         self.roller.close()
