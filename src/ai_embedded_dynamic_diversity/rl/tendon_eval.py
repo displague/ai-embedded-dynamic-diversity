@@ -83,6 +83,9 @@ class TendonPolicyRunner:
         self.prev = a
 
 
+WIND_SCENES = (5, 8)                    # m/s mean head wind, 1.5 m/s gusts, 10 s standing
+
+
 def evaluate(policy_path: str, pushes: int = 20, seed: int = 0) -> dict:
     runner = TendonPolicyRunner(policy_path)
     rng = np.random.default_rng(seed)
@@ -100,6 +103,14 @@ def evaluate(policy_path: str, pushes: int = 20, seed: int = 0) -> dict:
     scene("stand10", lambda r: r.run(10.0))
     for f in (10, 20, 30):
         scene("push%d" % f, lambda r, f=f: (r.run(1.5), r.push("spine", (0, -f, 0), 0.2), r.run(3.0)))
+    if hasattr(runner.st, "WIND"):         # a robot checkout with wind (its docs/25): a head wind with gusts
+        before = runner.st.WIND
+        for mean in WIND_SCENES:
+            runner.st.WIND = dict(mean=mean, gust=1.5, dir="head", seed=seed)
+            try:
+                scene("wind%d" % mean, lambda r: r.run(10.0))
+            finally:
+                runner.st.WIND = before
     ok = 0
     for k in range(pushes):
         ang, f = rng.uniform(-math.pi, math.pi), rng.uniform(10, 30)

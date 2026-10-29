@@ -2,6 +2,7 @@
 
 ## Completed
 
+- Added wind to the RL stand-in as a domain randomisation (#53), off by default and bit-identical when off: `EnvConfig.wind_mean`, `wind_gust`, `wind_tau`, `wind_ramp_s`, `air_density`; per model variant a mean speed and direction and Ornstein-Uhlenbeck gusts (sigma along, 0.75 sigma across, tau 2 s) on MuJoCo's fluid model, as on displague/robot; the wind in the privileged observation only when on; `rl.cli train/compare --wind-mean lo,hi --wind-gust lo,hi`; `rl/tendon_eval.py` scenes `wind5`, `wind8` with a windy robot checkout; `tests/test_rl_standin_wind.py`; `docs/rl-standin.md` (Wind).
 - Added `rl/render.py`: a trained policy on a stand-in body rendered to a GIF (tracking camera, caption with time, pelvis height and pushes); release visuals `docs/assets/rl-tendon32-stand.gif`, `docs/assets/rl-rpo23-stand-from-tendon.gif`.
 - Made the CUDA torch install reproducible (#14): on Windows `uv sync` resolves torch from PyTorch's cu130 index via `[tool.uv.sources]`, so `uv run` keeps the CUDA build (verified: torch 2.14.1+cu130 on the RTX 5080, tests, a CUDA training smoke); Linux and CI resolve torch from PyPI.
 - Fixed the 4 tests failing on master (#37): population variance for the emergent-signal loss (NaN at batch 1), `emergent_signal` optional in `loss_fn`, `--constructor-tape-path/--constructor-tape-cycle` restored in `add-train-parallel` (lost in 7bda144) with tape fields in its summary, the v7 tape test reading a committed fixture.

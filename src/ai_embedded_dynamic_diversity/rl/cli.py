@@ -2,6 +2,7 @@
 
     python -m ai_embedded_dynamic_diversity.rl.cli train --task getup --init artifacts/model-core-champion-v09.pt
     python -m ai_embedded_dynamic_diversity.rl.cli compare --task getup --checkpoint artifacts/model-core-champion-v09.pt
+    python -m ai_embedded_dynamic_diversity.rl.cli train --task stand --wind-mean 0,8 --wind-gust 0,2
 
 `compare` trains the same task twice with the same seed, once from the grown checkpoint and once from random
 weights of the same architecture, and writes a report (docs/rl-standin.md explains the measures).
@@ -19,8 +20,22 @@ from ai_embedded_dynamic_diversity.rl.standin_env import EnvConfig
 app = typer.Typer(add_completion=False)
 
 
-def _cfgs(task, num_envs, iterations, seed, device, horizon, epochs, minibatches, body="tendon32", pad_dofs=32):
-    return (EnvConfig(task=task, num_envs=num_envs, seed=seed, body=body, pad_dofs=pad_dofs),
+def _range(text: str) -> tuple:
+    """'lo,hi' (or one value for both) in m/s."""
+    if not text:
+        return (0.0, 0.0)
+    v = [float(x) for x in text.split(",")]
+    if len(v) == 1:
+        v = v * 2
+    if len(v) != 2 or v[0] < 0 or v[1] < v[0]:
+        raise typer.BadParameter("expected lo,hi with 0 <= lo <= hi, got %r" % text)
+    return tuple(v)
+
+
+def _cfgs(task, num_envs, iterations, seed, device, horizon, epochs, minibatches, body="tendon32", pad_dofs=32,
+          wind_mean="", wind_gust="", wind_tau=2.0):
+    return (EnvConfig(task=task, num_envs=num_envs, seed=seed, body=body, pad_dofs=pad_dofs,
+                      wind_mean=_range(wind_mean), wind_gust=_range(wind_gust), wind_tau=wind_tau),
             PPOConfig(iterations=iterations, seed=seed, device=device, horizon=horizon, epochs=epochs,
                       minibatches=minibatches))
 
@@ -28,10 +43,13 @@ def _cfgs(task, num_envs, iterations, seed, device, horizon, epochs, minibatches
 @app.command()
 def train(task: str = "getup", init: str = "", body: str = "tendon32", pad_dofs: int = 32, teacher: str = "",
           num_envs: int = 2048, iterations: int = 300, seed: int = 0, device: str = "cuda", horizon: int = 24,
-          epochs: int = 4, minibatches: int = 2, out: str = "artifacts/rl", label: str = ""):
+          epochs: int = 4, minibatches: int = 2, out: str = "artifacts/rl", label: str = "",
+          wind_mean: str = "", wind_gust: str = "", wind_tau: float = 2.0):
     """`init`: a champion checkpoint to grow, or a policy from this trainer (any body, same padding) to start
-    from; `teacher`: demonstrations to clone first (displague/robot tools/record_teacher.py)."""
-    env_cfg, ppo = _cfgs(task, num_envs, iterations, seed, device, horizon, epochs, minibatches, body, pad_dofs)
+    from; `teacher`: demonstrations to clone first (displague/robot tools/record_teacher.py); `wind_mean`,
+    `wind_gust`: 'lo,hi' m/s ranges of each model variant's mean wind and gust sigma (default: no wind)."""
+    env_cfg, ppo = _cfgs(task, num_envs, iterations, seed, device, horizon, epochs, minibatches, body, pad_dofs,
+                         wind_mean, wind_gust, wind_tau)
     label = label or "%s-%s-%s-s%d" % (body, task, "init" if init else "random", seed)
     s = ppo_train(env_cfg, ppo, init or None, out, label, teacher=teacher or None)
     print(json.dumps(s, indent=1, default=str))
@@ -53,11 +71,13 @@ def _tail_mean(log, key, n=10):
 @app.command()
 def compare(task: str = "getup", checkpoint: str = "artifacts/model-core-champion-v09.pt", num_envs: int = 2048,
             iterations: int = 300, seed: int = 0, device: str = "cuda", horizon: int = 24, epochs: int = 4,
-            minibatches: int = 2, out: str = "artifacts/rl"):
+            minibatches: int = 2, out: str = "artifacts/rl", wind_mean: str = "", wind_gust: str = "",
+            wind_tau: float = 2.0):
     """Same task, same seed: grown from `checkpoint` versus random weights. Writes <out>/compare-<task>.md."""
     rows = []
     for init, tag in ((checkpoint, "grown"), (None, "random")):
-        env_cfg, ppo = _cfgs(task, num_envs, iterations, seed, device, horizon, epochs, minibatches)
+        env_cfg, ppo = _cfgs(task, num_envs, iterations, seed, device, horizon, epochs, minibatches,
+                             wind_mean=wind_mean, wind_gust=wind_gust, wind_tau=wind_tau)
         label = "%s-%s-s%d" % (task, tag, seed)
         ppo_train(env_cfg, ppo, init, out, label)
         with open(os.path.join(out, label + ".log.json")) as f:
