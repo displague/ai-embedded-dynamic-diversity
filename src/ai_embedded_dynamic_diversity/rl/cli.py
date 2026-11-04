@@ -33,25 +33,58 @@ def _range(text: str) -> tuple:
 
 
 def _cfgs(task, num_envs, iterations, seed, device, horizon, epochs, minibatches, body="tendon32", pad_dofs=32,
-          wind_mean="", wind_gust="", wind_tau=2.0):
+          wind_mean="", wind_gust="", wind_tau=2.0, arch="core", locks=False, power_cost=0.0, quiet=0.0,
+          hand_load="", episode_s=10.0, init_log_std=-2.0, quiet_noise=1.0):
     return (EnvConfig(task=task, num_envs=num_envs, seed=seed, body=body, pad_dofs=pad_dofs,
-                      wind_mean=_range(wind_mean), wind_gust=_range(wind_gust), wind_tau=wind_tau),
+                      wind_mean=_range(wind_mean), wind_gust=_range(wind_gust), wind_tau=wind_tau,
+                      locks=locks, power_cost=power_cost, quiet_fraction=quiet, hand_load=_range(hand_load),
+                      episode_s=episode_s, quiet_noise=quiet_noise),
             PPOConfig(iterations=iterations, seed=seed, device=device, horizon=horizon, epochs=epochs,
-                      minibatches=minibatches))
+                      minibatches=minibatches, arch=arch, init_log_std=init_log_std))
 
 
 @app.command()
 def train(task: str = "getup", init: str = "", body: str = "tendon32", pad_dofs: int = 32, teacher: str = "",
           num_envs: int = 2048, iterations: int = 300, seed: int = 0, device: str = "cuda", horizon: int = 24,
           epochs: int = 4, minibatches: int = 2, out: str = "artifacts/rl", label: str = "",
-          wind_mean: str = "", wind_gust: str = "", wind_tau: float = 2.0):
-    """`init`: a champion checkpoint to grow, or a policy from this trainer (any body, same padding) to start
+          wind_mean: str = "", wind_gust: str = "", wind_tau: float = 2.0, arch: str = "core",
+          locks: bool = False, power_cost: float = 0.0, quiet: float = 0.0, hand_load: str = "",
+          episode_s: float = 10.0, init_log_std: float = -2.0, quiet_noise: float = 1.0):
+    """`init_log_std`: the exploration noise's starting log std (rests: small enough that drums can lock, -4.5);
+    `arch`: "core" (the model core) or "mlp" (the plain baseline, random weights only); `init`: a champion checkpoint to grow, or a policy from this trainer (any body, same padding) to start
     from; `teacher`: demonstrations to clone first (displague/robot tools/record_teacher.py); `wind_mean`,
-    `wind_gust`: 'lo,hi' m/s ranges of each model variant's mean wind and gust sigma (default: no wind)."""
+    `wind_gust`: 'lo,hi' m/s ranges of each model variant's mean wind and gust sigma (default: no wind);
+    rests and locks (issue #56): `locks` the drums self-lock, `power_cost` c in c log(1 + W / 10 W), `quiet` the fraction of
+    envs pushed only every 8 to 16 s, `hand_load` 'lo,hi' kg in one hand, `episode_s` the episode length."""
     env_cfg, ppo = _cfgs(task, num_envs, iterations, seed, device, horizon, epochs, minibatches, body, pad_dofs,
-                         wind_mean, wind_gust, wind_tau)
-    label = label or "%s-%s-%s-s%d" % (body, task, "init" if init else "random", seed)
+                         wind_mean, wind_gust, wind_tau, arch, locks, power_cost, quiet, hand_load, episode_s,
+                         init_log_std, quiet_noise)
+    label = label or "%s-%s-%s-s%d" % (body, task, "mlp" if arch == "mlp" else "init" if init else "random", seed)
     s = ppo_train(env_cfg, ppo, init or None, out, label, teacher=teacher or None)
+    print(json.dumps(s, indent=1, default=str))
+
+
+@app.command()
+def finetune(policy: str, workers: int = 20, per_worker: int = 8, iterations: int = 150, seed: int = 0,
+             device: str = "cuda", horizon: int = 48, epochs: int = 4, minibatches: int = 4, out: str = "artifacts/rl",
+             label: str = "", power_cost: float = 0.5, quiet: float = 0.5, wind_workers: float = 0.3,
+             episode_s: float = 20.0, critic_warmup: int = 10, lr: float = 3e-4, init_log_std: float = -3.0,
+             desired_kl: float = 0.01):
+    """PPO on the full tendon model (rl/tendon_env.py), continuing a stand policy saved by `train`: the drums'
+    locks and the electrical power as the robot's model has them (issue #56)."""
+    from ai_embedded_dynamic_diversity.rl.tendon_env import TendonEnvConfig, TendonVecEnv
+
+    cfg = TendonEnvConfig(workers=workers, per_worker=per_worker, power_cost=power_cost, quiet_fraction=quiet,
+                          wind_workers=wind_workers, episode_s=episode_s, seed=seed)
+    env = TendonVecEnv(cfg)
+    try:
+        ppo = PPOConfig(iterations=iterations, seed=seed, device=device, horizon=horizon, epochs=epochs,
+                        minibatches=minibatches, critic_warmup=critic_warmup, lr=lr, save_every=10,
+                        init_log_std=init_log_std, desired_kl=desired_kl)
+        label = label or "tendon-ft-s%d" % seed
+        s = ppo_train(cfg, ppo, None, out, label, env=env, finetune=policy)
+    finally:
+        env.close()
     print(json.dumps(s, indent=1, default=str))
 
 

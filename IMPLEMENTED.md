@@ -2,6 +2,24 @@
 
 ## Completed
 
+- Seed study, a plain-network baseline, and rests and locks (#51, #56; displague/robot docs/31, D-052):
+  - `rl.cli train --arch mlp`: a plain two-layer MLP (51,440 parameters, the grown core 51,484) through the same
+    actor, cloning, PPO, gate and render (`PlainMLP`, `build_policy_net`);
+  - five seeds per arm on the tendon gate: plain network + cloning 22/30 named scenes and 98/100 random pushes,
+    grown core + cloning 17 and 89, random core + cloning 13 and 61; without cloning the plain network 18 and 89,
+    either core 0 (it never stands on the tendon model). RPO from the tendon policy: 0.80 against 0.32 standing in
+    the first 10 iterations on every seed, 0.76-0.78 against 0.70-0.72 at the end on four seeds, 0.17 on one;
+  - `StandinEnv(locks=True, power_cost=c, quiet_fraction, quiet_noise, hand_load, episode_s)`: the drive's
+    electrical power as the robot's tendon model counts it (rotor inertia included, the driver's current limit)
+    and its drums' self-lock gated on whole-body stillness (the robot's `locks`, `com_vel`); a log power cost;
+    calm, rarely pushed quiet variants; a load in one hand; `step(action, mean)` decides locks on the mean;
+  - `rl/tendon_env.py` and `rl.cli finetune`: PPO on the full tendon model across worker processes (a policy
+    continued with its frozen input scaling, a critic warm-up), for what the stand-in cannot carry;
+  - `rl/tendon_eval.py`: drums may lock under a policy (the robot's `still_gate`), power and locked fraction per
+    scene, `rest` scenes (idle 30 s, a 3.9 kg bag 20 s), and an optional rest mode (a target deadband);
+  - result: training with 0-4 kg in one hand is what made policies rest (median idle 175 W to 38 W, best 10.6 W
+    against the hand-written controller's 5.4 W; the bag held by 3/5 seeds, 5/5 with quiet scenes); training with
+    less exploration noise lets the drums lock in the stand-in but does not transfer (falls in every scene).
 - Fitted the RL stand-in's drive to the tendon model and re-gated the stand policy (refs #48; displague/robot docs/29, D-050):
   - `StandinEnv` runs the body's outer joint loop when its spec has one (`outer_loop`: integral trim on the joint error at the control rate, as the robot's firmware does; `EnvConfig.outer_loop`), starts a lagged servo at its target, and randomises the lag (`lag_scale`); the robot's export now has 0.1 of the back-EMF damping and a 30 ms target lag, fitted on step responses (error 0.84 against 2.41);
   - `rl/tendon_eval.py teacher` runs the hand-written controller on every gate scene, and random pushes are judged 4.5 s after the push (2.5 s missed slow falls);

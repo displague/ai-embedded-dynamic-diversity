@@ -110,6 +110,16 @@ class EnvConfig:
     wind_tau: float = 2.0                  # s, the gusts' time constant
     wind_ramp_s: float = 2.0               # s, the mean ramps in over this long from the env's construction
     air_density: float = 1.2               # kg/m^3, MuJoCo opt.density on the windy variants
+    # rests and locks (issue #56; displague/robot docs/30): the drive's self-locking drums and its electrical power
+    locks: bool = False                    # a drum locks (zero power, the joint held) under the spec's `locks` rule
+    power_cost: float = 0.0                # reward cost power_cost * log(1 + P / power_ref_w), P the electrical power
+    power_ref_w: float = 10.0              # (the tendon model's count); log, because training's exploration noise
+                                           # shakes the rotors (kW) while the gap that matters is 100 W against 4 W
+    quiet_fraction: float = 0.0            # stand: this fraction of variants is calm (no wind) and its envs are
+                                           # pushed only every quiet_push_s: time and stillness to rest
+    quiet_push_s: tuple = (8.0, 16.0)      # s between pushes in a quiet env (time to rest, as standing idle is)
+    quiet_noise: float = 1.0               # the exploration std's multiplier in quiet envs (0.2: drums can lock)
+    hand_load: tuple = (0.0, 0.0)          # kg added to one hand on each non-nominal variant (a held bag)
     repo: str | None = None
 
 
@@ -174,6 +184,8 @@ class StandinEnv:
         self.s_impact = [sadr("%s_impact" % b)[0] for b in self.spec["impact_bodies"]]
         self.s_tau = np.array([sadr("%s_tau" % n)[0] for n in self.dof_names])
         self.s_stop = np.array([sadr("%s_stop" % n)[0] for n in self.dof_names])
+        names = {m.sensor(i).name for i in range(m.nsensor)}
+        self.s_com = sadr("com_vel")[0] if "com_vel" in names else None   # whole-body CoM velocity (docs/30)
         self.weight = float(m.body_subtreemass[0] * 9.81)
         self.nq, self.nv = m.nq, m.nv
         self.state_kind = mujoco.mjtState.mjSTATE_FULLPHYSICS
@@ -183,6 +195,8 @@ class StandinEnv:
         self.models = self._variants()
         self._wind_setup()
         self.model_of_env = [self.models[i % len(self.models)] for i in range(self.N)]
+        quiet_env = (np.arange(self.N) % len(self.models)) < self.n_quiet
+        self.noise_scale = np.where(quiet_env, cfg.quiet_noise, 1.0).astype(np.float32)
         nthread = cfg.nthread or os.cpu_count() or 1
         self.nthread = nthread
         self.datas = [mujoco.MjData(m) for _ in range(nthread)]
@@ -200,9 +214,34 @@ class StandinEnv:
             self.ol_gain = np.array(ol["gain"], dtype=float)
         self.ctrl_lo, self.ctrl_hi = m.actuator_ctrlrange[:, 0].copy(), m.actuator_ctrlrange[:, 1].copy()
         self.i_act, self.na = 1 + m.nq + m.nv, m.na
+        # the drive's electrical power (the robot's tools/sim_tendon.py count, in joint terms) and its lock rule
+        self.has_power = all("volt" in d for d in dofs)
+        if self.has_power:
+            self.p_scale = np.array([d["volt"] * d["i_stall_a"] for d in dofs])
+            self.stall = np.array([d["stall_nm"] for d in dofs])
+            self.w_nl = np.array([d["noload_rad_s"] for d in dofs])
+            self.rotor_j = np.array([d.get("rotor_j_joint", 0.0) for d in dofs])
+            # the driver's current limit (sim_tendon CURRENT_LIMIT of the clutch torque), as a fraction of stall
+            self.u_max = 0.9 * np.array([d["torque_max"] for d in dofs]) / self.stall
+        lk = self.spec.get("locks") if cfg.locks else None
+        if cfg.locks and lk is None:
+            raise ValueError("locks=True needs a stand-in spec with `locks` (displague/robot docs/30)")
+        self.lk = lk
+        if lk is not None:
+            self.lk_tol, self.lk_rate = np.array(lk["tol"]), np.array(lk["rate"])
+        self.locked = np.zeros((self.N, self.nu), dtype=bool)
+        self.lock_servo = np.zeros((self.N, self.nu))
+        self.lock_target = np.zeros((self.N, self.nu))
+        self.prev_ctrl = np.tile(self.default, (self.N, 1))
+        self.still_t = np.zeros(self.N)
+        self.v_f = np.zeros((self.N, 2))
+        self.power = np.zeros(self.N)
+        self.gear = np.tile(self.default, (self.N, 1))     # the gear's position, joint terms (the lagged servo)
+        self.gear_v = np.zeros((self.N, self.nu))
         self.prev_action = np.zeros((self.N, self.nu))
         self.delay = self.rng.integers(0, cfg.max_delay_steps + 1, size=self.N)
         self.queue = np.zeros((cfg.max_delay_steps + 1, self.N, self.nu))
+        self.queue_mean = np.zeros((cfg.max_delay_steps + 1, self.N, self.nu))
         self.t = np.zeros(self.N, dtype=np.int64)
         self.over_t = np.zeros((self.N, self.nu))
         self.stand_t = np.zeros(self.N)
@@ -214,6 +253,7 @@ class StandinEnv:
         cfg, mj = self.cfg, self.mj
         out = []
         pelvis = self.base.body(self.root).id
+        hands = [i for i in range(self.base.nbody) if self.base.body(i).name in ("hand.L", "hand.R")]
         for k in range(cfg.variants):
             m = mj.MjModel.from_xml_path(self.xml_path)
             if k == 0:                     # variant 0 is the nominal model
@@ -230,6 +270,8 @@ class StandinEnv:
             m.geom_friction[:, 0] = u(cfg.friction)
             m.body_mass[1:] *= u(cfg.mass_scale, m.nbody - 1)
             m.body_mass[pelvis] = max(0.5, m.body_mass[pelvis] + u(cfg.pelvis_mass_add))
+            if cfg.hand_load[1] > 0.0 and len(hands) == 2:
+                m.body_mass[hands[int(self.rng.integers(0, 2))]] += u(cfg.hand_load)
             out.append(m)
         return out
 
@@ -239,6 +281,8 @@ class StandinEnv:
         cfg = self.cfg
         self.wind_on = max(*cfg.wind_mean, *cfg.wind_gust) > 0.0
         V = len(self.models)
+        # quiet variants (the first quiet_fraction of them): no wind, and their envs pushed only every quiet_push_s
+        self.n_quiet = int(round(cfg.quiet_fraction * V)) if cfg.quiet_fraction > 0.0 else 0
         self.wind_v = np.zeros((V, 2))     # the wind each variant blows now, world x, y (m/s)
         if not self.wind_on:
             return
@@ -248,6 +292,7 @@ class StandinEnv:
         a = rng.uniform(-math.pi, math.pi, V)
         self.wind_u = np.stack([np.cos(a), np.sin(a)], axis=1)   # the direction the wind blows towards
         self.wind_mean[0] = self.wind_sigma[0] = 0.0           # variant 0, the nominal model, stays calm
+        self.wind_mean[:self.n_quiet] = self.wind_sigma[:self.n_quiet] = 0.0   # and the quiet variants (idle indoors)
         self.wind_g = rng.standard_normal((V, 2)) * np.array([1.0, 0.75]) * self.wind_sigma[:, None]  # stationary
         self.wind_clock = 0.0
         self.variant_of_env = np.arange(self.N) % V
@@ -286,6 +331,8 @@ class StandinEnv:
         st, sd = self.roller.rollout(models, self.datas, self.state[idx], control, nstep=nstep)
         self.state[idx] = st[:, -1, :]
         self.sens[idx] = sd[:, -1, :]
+        if self.has_power and len(idx) == self.N:
+            self.tau_sub = sd[:, :, self.s_tau]           # (N, nstep, nu): the power integrates every step
 
     def _standing_state(self, n):
         m, d = self.base, self.mj.MjData(self.base)
@@ -361,6 +408,9 @@ class StandinEnv:
                  (self.t / self.max_steps)[:, None]]
         if self.wind_on:                   # only with wind, so priv_dim is unchanged without it
             parts.append(0.1 * self.wind_of_env())
+        if self.cfg.locks or self.cfg.power_cost > 0.0:   # only when resting is trained, likewise
+            parts += [(self.power / 100.0)[:, None], self.locked.mean(axis=1)[:, None],
+                      np.minimum(self.still_t, 5.0)[:, None] / 5.0]
         priv = np.concatenate(parts, axis=1)
         return obs.astype(np.float32), priv.astype(np.float32)
 
@@ -389,15 +439,36 @@ class StandinEnv:
             self.target[idx] = self.default
         self.prev_action[idx] = 0.0
         self.trim[idx] = 0.0
+        self.locked[idx] = False
+        self.prev_ctrl[idx] = self.target[idx]
+        self.still_t[idx] = 0.0
+        self.v_f[idx] = 0.0
+        self.power[idx] = 0.0
+        self.gear[idx] = self._gear()[idx]
+        self.gear_v[idx] = 0.0
         self.queue[:, idx] = (self.target[idx] - self.default) / self.half
+        self.queue_mean[:, idx] = self.queue[:, idx]
         self.t[idx] = 0
         self.over_t[idx] = 0.0
         self.stand_t[idx] = 0.0
         self.ever_stood[idx] = False
         self.delay[idx] = self.rng.integers(0, self.cfg.max_delay_steps + 1, size=len(idx))
-        self.push_at[idx] = self.rng.uniform(*self.cfg.push_interval_s, size=len(idx))
+        self.push_at[idx] = self._push_gap(idx)
 
-    def step(self, action: np.ndarray):
+    def _push_gap(self, idx):
+        """Seconds to each env's next push: quiet envs (the first quiet_fraction of them) wait longer."""
+        gap = self.rng.uniform(*self.cfg.push_interval_s, size=len(idx))
+        if self.cfg.quiet_fraction > 0.0:
+            quiet = (idx % len(self.models)) < self.n_quiet
+            gap = np.where(quiet, self.rng.uniform(*self.cfg.quiet_push_s, size=len(idx)), gap)
+        return gap
+
+    def step(self, action: np.ndarray, mean: np.ndarray | None = None):
+        """`mean`: the policy's noise-free action (training passes it). The drums' locks decide on it, as they
+        would at deployment, where the policy acts with its mean: exploration noise of 4 to 8 degrees per tick
+        would otherwise keep every drum unlocked in training, and training with less noise does not transfer
+        (issue #56). A locked drum holds its gear whatever the noise asks, so getting a joint locked saves its
+        power in training as on the robot."""
         cfg = self.cfg
         action = np.clip(action[:, :self.nu], -1.0, 1.0)     # padded slots beyond this body's joints are unused
         # actuation delay: each env applies the action from `delay` ticks ago
@@ -405,15 +476,28 @@ class StandinEnv:
         self.queue[0] = action
         applied = self.queue[self.delay, np.arange(self.N)]
         ctrl = np.clip(self.default + applied * self.half, self.lo, self.hi)
+        if mean is not None:
+            self.queue_mean = np.roll(self.queue_mean, 1, axis=0)
+            self.queue_mean[0] = np.clip(mean[:, :self.nu], -1.0, 1.0)
+            ctrl_mean = np.clip(self.default + self.queue_mean[self.delay, np.arange(self.N)] * self.half,
+                                self.lo, self.hi)
+        else:
+            ctrl_mean = ctrl
         if cfg.task == "stand":
             self._push()
         if self.wind_on:
             self._blow(self.dt_ctrl)
-        self._roll(np.arange(self.N), self._servo(ctrl), self.substeps)
+        servo = self._servo(ctrl)
+        if self.lk is not None:
+            servo = self._lock(ctrl_mean, servo, self._servo_of(ctrl_mean) if mean is not None else servo)
+        self.prev_ctrl = servo
+        self._roll(np.arange(self.N), servo, self.substeps)
         self.t += 1
         q, v, R, up, grav, lin = self._pelvis()
         s = self.sens
         tau = s[:, self.s_tau]
+        if self.has_power:
+            self.power = self._power(getattr(self, "tau_sub", tau[:, None, :]))
         line = self._line_force(tau) / self.f_cont
         over = (line > 1.0) & self.gated
         self.over_t = np.where(over, self.over_t + self.dt_ctrl, 0.0)
@@ -435,6 +519,8 @@ class StandinEnv:
         r -= 0.01 * np.square(tau / np.maximum(self.tau_max, 1e-3)).mean(axis=1) * self.nu
         r -= 0.02 * np.clip(stop - 0.2, 0.0, None).sum(axis=1)
         r -= 1.0 * np.clip((impact - cfg.impact_cost_n) / cfg.impact_cost_n, 0.0, 3.0)
+        if cfg.power_cost > 0.0:
+            r -= cfg.power_cost * np.log1p(self.power / cfg.power_ref_w)
         damage = (line_over_max > cfg.line_over_s) | (impact > cfg.impact_end_n)
         if cfg.task == "stand":
             damage |= (z < cfg.fall_height * self.stand_z)        # in the stand task a fall ends it
@@ -445,7 +531,8 @@ class StandinEnv:
         info = StepInfo(standing=standing, damage=damage, timeout=timeout & ~damage, line_over_max=line_over_max,
                         impact=impact, extras=dict(z=z, up=up, ever_stood=self.ever_stood.copy(),
                                                    over_half_s=line_over_max > cfg.line_report_s,
-                                                   wmini_over=((line > 1.0) & ~self.gated).any(axis=1)))
+                                                   wmini_over=((line > 1.0) & ~self.gated).any(axis=1),
+                                                   power_w=self.power.copy(), locked=self.locked.mean(axis=1)))
         if self.wind_on:
             info.extras["wind"] = self.wind_of_env().copy()
         obs_done = done.copy()
@@ -453,6 +540,65 @@ class StandinEnv:
             self.reset(np.nonzero(done)[0])
         obs, priv = self.observe()
         return obs, priv, r.astype(np.float32), obs_done, info
+
+    def _gear(self):
+        """(N, nu) the gear's position in joint terms: the lagged servo's state, or its target without a lag."""
+        if self.na == self.nu:
+            return self.state[:, self.i_act:self.i_act + self.na].copy()
+        return self.prev_ctrl.copy()
+
+    def _power(self, tau):
+        """(N,) electrical power in W as the tendon model counts it (duty times V times the current for the
+        motor torque): V I_stall |(u + w/w_noload) u| per joint with u = motor torque / stall, the motor torque
+        being the joint torque plus the rotor and gear inertia's (the gear's acceleration, joint terms), each
+        bounded by the driver; zero on a locked drum. Dithering spends its power accelerating the rotor."""
+        gear = self._gear()
+        gv = (gear - self.gear) / self.dt_ctrl
+        ga = (gv - self.gear_v) / self.dt_ctrl
+        self.gear, self.gear_v = gear, gv
+        u = np.clip((tau + (self.rotor_j * ga)[:, None, :]) / self.stall, -self.u_max, self.u_max)
+        duty = np.clip(u + (gv / self.w_nl)[:, None, :], -1.0, 1.0)
+        p = (self.p_scale * np.abs(duty * u)).mean(axis=1)         # mean over the tick's physics steps
+        return np.where(self.locked, 0.0, p).sum(axis=1)
+
+    def _servo_of(self, target):
+        """The outer loop's servo target for `target`, without advancing its trim."""
+        if self.ol is None:
+            return target
+        q = self.state[:, self.i_qpos:self.i_qpos + self.nq][:, self.qadr]
+        return np.clip(target + self.ol_gain * self.ol["kq"] * (target - q) + self.trim, self.ctrl_lo, self.ctrl_hi)
+
+    def _lock(self, target, servo, servo_lock=None):
+        """`target`, `servo_lock`: the joint and servo targets the lock decides on (the policy's mean); `servo`
+        the servo target applied when unlocked."""
+        servo_lock = servo if servo_lock is None else servo_lock
+        """The drums' self-lock (the robot's tools/sim_tendon.py rule in joint terms, its D-038 stillness gate):
+        a drum locks when the body has been still for `still_s`, its joint is within `err_max` of the target and
+        slower than `rate`, and the target has not moved by more than `tol` since the last tick; it holds the
+        servo where it locked (zero power) until the target moves 2 tol from where it locked or the body moves."""
+        lk = self.lk
+        if self.s_com is not None:         # the CoM's speed, as the tendon model's gate reads it
+            v = self.sens[:, self.s_com:self.s_com + 2]
+        else:                              # the pelvis's: it sways more than the CoM, so the gate is stricter
+            v = self.state[:, self.i_qvel:self.i_qvel + 2]
+        a = self.dt_ctrl / (lk.get("tau_s", 0.03) + self.dt_ctrl)
+        self.v_f += a * (v - self.v_f)
+        sp = np.linalg.norm(self.v_f, axis=1)
+        self.still_t = np.where(sp > lk["release_v"], 0.0,
+                                np.where(sp < lk["still_v"], self.still_t + self.dt_ctrl, self.still_t))
+        still = (self.still_t > lk["still_s"])[:, None]
+        q = self.state[:, self.i_qpos:self.i_qpos + self.nq][:, self.qadr]
+        qd = self.state[:, self.i_qvel:self.i_qvel + self.nv][:, self.vadr]
+        caught = np.abs(servo_lock - self._gear()) < self.lk_tol      # the gear on its target
+        # the gear's rate (the tendon model's dphi), and the joint error, checked every tick as there; the outer
+        # loop's trim keeps winding up on a locked drum, so a sagging joint's servo target walks off and releases
+        on = (np.abs(target - q) < lk["err_max"]) & (np.abs(self.gear_v) < self.lk_rate)
+        keep = self.locked & still & on & (np.abs(servo_lock - self.lock_servo) < 2 * self.lk_tol)
+        new = ~self.locked & still & on & caught
+        self.lock_servo = np.where(new, self._gear(), self.lock_servo)
+        self.lock_target = np.where(new, target, self.lock_target)
+        self.locked = keep | new
+        return np.where(self.locked, self.lock_servo, servo)
 
     def _servo(self, target):
         """The servo targets for joint targets `target` (N, nu): through the outer loop when the body has one."""
@@ -472,7 +618,7 @@ class StandinEnv:
         ang = self.rng.uniform(-math.pi, math.pi, len(idx))
         self.state[idx, self.i_qvel + 0] += self.cfg.push_speed * np.cos(ang)
         self.state[idx, self.i_qvel + 1] += self.cfg.push_speed * np.sin(ang)
-        self.push_at[idx] = t[idx] + self.rng.uniform(*self.cfg.push_interval_s, size=len(idx))
+        self.push_at[idx] = t[idx] + self._push_gap(idx)
 
     @property
     def obs_dim(self):
@@ -484,7 +630,8 @@ class StandinEnv:
 
     @property
     def priv_dim(self):
-        return self.obs_dim + 1 + 1 + 3 + self.n_impact_slots + self.P + 1 + (2 if self.wind_on else 0)
+        return (self.obs_dim + 1 + 1 + 3 + self.n_impact_slots + self.P + 1 + (2 if self.wind_on else 0)
+                + (3 if self.cfg.locks or self.cfg.power_cost > 0.0 else 0))
 
     def close(self):
         self.roller.close()

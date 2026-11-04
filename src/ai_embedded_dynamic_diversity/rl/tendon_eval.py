@@ -16,16 +16,13 @@ import sys
 import numpy as np
 import torch
 
-from ai_embedded_dynamic_diversity.models.core import ModelCore
-from ai_embedded_dynamic_diversity.rl.actor import CoreActor, RunningNorm, load_checkpoint
+from ai_embedded_dynamic_diversity.rl.actor import CoreActor, RunningNorm, build_policy_net
 from ai_embedded_dynamic_diversity.sim.robot_tendon import _load_sim_tendon, find_robot_repo
 
 
 def load_policy(path: str, device="cpu"):
     saved = torch.load(path, map_location="cpu", weights_only=False)
-    cfg, state = load_checkpoint(path)
-    core = ModelCore(**cfg)
-    core.load_state_dict(state)
+    core = build_policy_net(saved)
     actor = CoreActor(core)
     actor.log_std.data = saved["log_std"]
     norm = RunningNorm(core.signal_dim)
@@ -34,8 +31,15 @@ def load_policy(path: str, device="cpu"):
 
 
 class TendonPolicyRunner:
-    def __init__(self, policy_path: str, repo: str | None = None, rate_hz: float = 50.0):
+    def __init__(self, policy_path: str, repo: str | None = None, rate_hz: float = 50.0, locks: bool = True,
+                 deadband: float = 0.0, rest_v: float = 0.0, rest_s: float = 0.5):
+        """`deadband` (rad): a joint's target holds until the policy asks for a change larger than this, so a
+        policy that is nearly still gives steady targets and the drums can lock (issue #56)."""
         self.actor, self.norm, self.saved = load_policy(policy_path)
+        self.locks = locks
+        self.deadband = deadband
+        self.rest_v, self.rest_s = rest_v, rest_s   # rest_v > 0: the deadband's own looser stillness gate
+        self.rest_t = 0.0
         st = _load_sim_tendon(find_robot_repo(repo))
         self.st = st
         self.rig = st.Rig()
@@ -52,10 +56,16 @@ class TendonPolicyRunner:
         r = self.rig
         r.reset()
         r.balance = False
+        # the drums' stillness gate (the robot's D-038) runs without the balance loop, so the drums can lock under
+        # a policy that holds still, as the firmware would let them (robot checkouts from its docs/30 on)
+        r.still_gate = self.locks
+        if not self.locks:
+            r.lock_enabled = False
         self.default = np.array([r.target[n] for n in self.names])
         self.prev = np.zeros(len(self.names))
         self.mem = self.actor.initial_state(1, "cpu")
         self.count = 0
+        self.rest_t = 0.0
         r.hook = self._hook
 
     def _obs(self):
@@ -78,6 +88,17 @@ class TendonPolicyRunner:
         mean, self.mem = self.actor(self.norm(o), self.mem)
         a = mean[0].clamp(-1, 1).numpy()
         tgt = np.clip(self.default + a * self.half, self.lo, self.hi)
+        # only while the body is still: the drums' own stillness gate, or (rest_v > 0) a looser one on the CoM
+        # speed, which the policy's own fidget does not hold shut; a push (above the drums' release speed) opens it
+        if self.rest_v > 0.0:
+            v = float(np.linalg.norm(r._com_v))
+            self.rest_t = 0.0 if v > self.rest_v else self.rest_t + self.every * r.model.opt.timestep
+            resting = self.rest_t > self.rest_s
+        else:
+            resting = getattr(r, "_still", 0.0) > self.st.LOCK_STILL
+        if self.deadband > 0.0 and resting:
+            held = np.array([r.target[n] for n in self.names])
+            tgt = np.where(np.abs(tgt - held) > self.deadband, tgt, held)
         for n, v in zip(self.names, tgt):
             r.target[n] = float(v)
         self.prev = a
@@ -97,10 +118,69 @@ class _TeacherRunner:
         self.rig.reset()
 
 
-def evaluate(policy_path: str, pushes: int = 20, seed: int = 0) -> dict:
-    """The gate scenes for a policy, or for the hand-written controller when `policy_path` is 'teacher'."""
+def power(rig) -> tuple[float, float]:
+    """(mean electrical power in W over the scene so far, fraction of drum-steps locked), as the tendon model
+    counts them (its `report`)."""
+    st = rig.stats.values()
+    t = max(rig.data.time, 1e-9)
+    n = sum(s["n"] for s in st)
+    return sum(s["e_j"] for s in st) / t, (sum(s["locked"] for s in st) / n if n else 0.0)
+
+
+REST_BAG_KG = 3.9                       # a gallon of milk in the left hand, arm hanging (the robot's docs/28)
+POWER_PASS_W = 7.2                      # the rest scenes' pass line: 2 x the hand-written controller standing
+
+
+REST_MODE = dict(deadband=math.radians(2.0), rest_v=0.05)   # the rest mode: targets held within 2 deg once the
+                                                            # CoM has been under 0.05 m/s for 0.5 s (issue #56)
+
+
+def _runner(policy_path: str, locks: bool, bag_kg: float = 0.0, repo: str | None = None, rest_mode: bool = False):
+    """A runner whose rig carries `bag_kg` in the left hand (the robot's export_mjcf.BAGS, read at build)."""
+    import sys as _sys
+    _load_sim_tendon(find_robot_repo(repo))
+    ex = _sys.modules["export_mjcf"]
+    before = dict(ex.BAGS)
+    if bag_kg > 0:
+        ex.BAGS.update({"hand.L": bag_kg})
+    try:
+        return (_TeacherRunner(repo) if policy_path == "teacher"
+                else TendonPolicyRunner(policy_path, repo=repo, locks=locks, **(REST_MODE if rest_mode else {})))
+    finally:
+        ex.BAGS.clear()
+        ex.BAGS.update(before)
+
+
+def evaluate_rest(policy_path: str, locks: bool = True, repo: str | None = None, rest_mode: bool = False) -> dict:
+    """The rest scenes (issue #56): standing idle 30 s, and holding a 3.9 kg bag 20 s. Each: standing at the end,
+    mean electrical power and the fraction of drum-steps locked over the last 20 s (after settling)."""
+    out = {}
+    for name, kg, secs in (("idle30", 0.0, 30.0), ("bag20", REST_BAG_KG, 20.0)):
+        runner = _runner(policy_path, locks, kg, repo, rest_mode)
+        runner.reset()
+        r = runner.rig
+        r.run(secs - 20.0 if secs > 20.0 else 0.0)
+        e0 = sum(s["e_j"] for s in r.stats.values())
+        n0 = sum(s["n"] for s in r.stats.values())
+        l0 = sum(s["locked"] for s in r.stats.values())
+        t0 = r.data.time
+        r.run(min(20.0, secs))
+        st_ = r.stats.values()
+        w = (sum(s["e_j"] for s in st_) - e0) / max(r.data.time - t0, 1e-9)
+        n = sum(s["n"] for s in st_) - n0
+        lk = (sum(s["locked"] for s in st_) - l0) / n if n else 0.0
+        out[name] = dict(stands=bool(r.standing()), power_w=float(w), locked=float(lk),
+                         passes=bool(r.standing() and w <= POWER_PASS_W * (1.0 if kg == 0 else 3.0)))
+    return out
+
+
+def evaluate(policy_path: str, pushes: int = 20, seed: int = 0, locks: bool = True, rest_mode: bool = False) -> dict:
+    """The gate scenes for a policy, or for the hand-written controller when `policy_path` is 'teacher'.
+    `locks`: let the drums lock under the policy (the stillness gate on); False reproduces the gate before
+    the robot's docs/30, where no lock could engage under a policy."""
     teacher = policy_path == "teacher"
-    runner = _TeacherRunner() if teacher else TendonPolicyRunner(policy_path)
+    runner = _TeacherRunner() if teacher else TendonPolicyRunner(policy_path, locks=locks,
+                                                                 **(REST_MODE if rest_mode else {}))
     who = "the hand-written controller" if teacher else "policy %s" % policy_path
     rng = np.random.default_rng(seed)
     results = {}
@@ -110,7 +190,9 @@ def evaluate(policy_path: str, pushes: int = 20, seed: int = 0) -> dict:
         fn(runner.rig)
         z, tilt = runner.rig.pelvis_state()
         rows = runner.rig.report("%s (%s)" % (name, who), top=5)
+        w, locked = power(runner.rig)
         results[name] = dict(stands=bool(runner.rig.standing()), pelvis_z=float(z), tilt_deg=float(tilt),
+                             power_w=float(w), locked=float(locked),
                              worst_line=rows[0][1], worst_line_n=float(rows[0][2]), worst_line_cont=float(rows[0][3]),
                              worst_hot_s=float(max(r[11] for r in rows)))
 
@@ -157,6 +239,10 @@ def evaluate_teacher(pushes: int = 20, seed: int = 0) -> dict:
 
 
 if __name__ == "__main__":
+    rm = "restmode" in sys.argv[3:]           # the policy with the rest mode (REST_MODE) in front of the drives
+    if len(sys.argv) > 2 and sys.argv[2] == "rest":
+        print(json.dumps(evaluate_rest(sys.argv[1], rest_mode=rm), indent=1))
+        sys.exit(0)
     n = int(sys.argv[2]) if len(sys.argv) > 2 else 20
-    out = evaluate(sys.argv[1], pushes=n)   # 'teacher': the hand-written controller on every scene
+    out = evaluate(sys.argv[1], pushes=n, rest_mode=rm)   # 'teacher': the hand-written controller on every scene
     print(json.dumps(out, indent=1))

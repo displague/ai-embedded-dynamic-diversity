@@ -12,8 +12,7 @@ import numpy as np
 import torch
 import typer
 
-from ai_embedded_dynamic_diversity.models.core import ModelCore
-from ai_embedded_dynamic_diversity.rl.actor import CoreActor, RunningNorm, load_checkpoint
+from ai_embedded_dynamic_diversity.rl.actor import CoreActor, RunningNorm, build_policy_net
 from ai_embedded_dynamic_diversity.rl.standin_env import EnvConfig, StandinEnv
 
 app = typer.Typer(add_completion=False)
@@ -21,9 +20,7 @@ app = typer.Typer(add_completion=False)
 
 def load(path: str):
     saved = torch.load(path, map_location="cpu", weights_only=False)
-    cfg, state = load_checkpoint(path)
-    core = ModelCore(**cfg)
-    core.load_state_dict(state)
+    core = build_policy_net(saved)
     actor = CoreActor(core).eval()
     norm = RunningNorm(core.signal_dim)
     norm.load_state_dict(saved["obs_norm"])
