@@ -74,7 +74,7 @@ def finetune(policy: str, workers: int = 20, per_worker: int = 8, iterations: in
              device: str = "cuda", horizon: int = 48, epochs: int = 4, minibatches: int = 4, out: str = "artifacts/rl",
              label: str = "", power_cost: float = 0.5, quiet: float = 0.5, wind_workers: float = 0.3,
              episode_s: float = 20.0, critic_warmup: int = 10, lr: float = 3e-4, init_log_std: float = -3.0,
-             desired_kl: float = 0.01, wind_max: float = 8.0):
+             desired_kl: float = 0.01, wind_max: float = 8.0, hand_ankles: bool = False):
     """PPO on the full tendon model (rl/tendon_env.py), continuing a stand policy saved by `train`: the drums'
     locks and the electrical power as the robot's model has them (issue #56)."""
     from ai_embedded_dynamic_diversity.rl.tendon_env import TendonEnvConfig, TendonVecEnv
@@ -85,7 +85,7 @@ def finetune(policy: str, workers: int = 20, per_worker: int = 8, iterations: in
     cfg = TendonEnvConfig(workers=workers, per_worker=per_worker, power_cost=power_cost, quiet_fraction=quiet,
                           wind_workers=wind_workers, wind_max=wind_max, episode_s=episode_s, seed=seed,
                           action_fraction=pe.get("action_fraction") or 0.2, action_half=pe.get("action_half"),
-                          ankle_torque=bool(pe.get("ankle_torque")))
+                          ankle_torque=bool(pe.get("ankle_torque")), hand_ankles=hand_ankles)
     env = TendonVecEnv(cfg)
     try:
         ppo = PPOConfig(iterations=iterations, seed=seed, device=device, horizon=horizon, epochs=epochs,
