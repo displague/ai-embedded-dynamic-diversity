@@ -419,11 +419,25 @@ controller; trained policies are judged on the full tendon model. Method and res
 | --- | --- |
 | ![tendon humanoid stand](docs/assets/rl-tendon32-stand.gif) | ![RPO stand from tendon](docs/assets/rl-rpo23-stand-from-tendon.gif) |
 
+On the full tendon model in an 8 m/s head wind, the plain policy alone and as the hybrid (the robot's hand-written
+ankle balance under it), and a get-up from a half-kneel in the stand-in (v0.4.0):
+
+| Plain policy alone, 8 m/s | Hybrid, 8 m/s | Get-up from a half-kneel |
+| --- | --- | --- |
+| ![alone](docs/assets/rl-tendon32-wind8-alone.gif) | ![hybrid](docs/assets/rl-tendon32-wind8-hybrid.gif) | ![getup](docs/assets/rl-tendon32-getup-halfkneel.gif) |
+
+A plain network of the same size (`--arch mlp`, or `--arch gru`) beats the grown core on the tendon gate over five
+seeds (22 against 17 of 30 named scenes cloned); the core's one confirmed gain is a head start on a new body (RPO).
+
 ```bash
 export ROBOT_REPO=../robot
 python -m ai_embedded_dynamic_diversity.rl.cli train --task stand --init artifacts/model-core-champion-v09.pt     --teacher ../robot/sim/out/teacher/teacher.npz
 python -m ai_embedded_dynamic_diversity.rl.cli train --task stand --body rpo23 --init artifacts/rl/<tendon policy>.pt
 python -m ai_embedded_dynamic_diversity.rl.tendon_eval artifacts/rl/<tendon policy>.pt
+python -m ai_embedded_dynamic_diversity.rl.cli train --task stand --arch mlp --teacher ../robot/sim/out/teacher/teacher.npz --hand-load 0,4
+python -m ai_embedded_dynamic_diversity.rl.tendon_eval artifacts/rl/<policy>.pt 20 handankles   # the hybrid
+python -m ai_embedded_dynamic_diversity.rl.tendon_eval artifacts/rl/<policy>.pt rest            # idle 30 s, a 3.9 kg bag
+python -m ai_embedded_dynamic_diversity.rl.getup_eval artifacts/rl/<get-up policy>.pt
 ```
 
 ## Staged curriculum training (new_env_v1)

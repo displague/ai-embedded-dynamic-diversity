@@ -1,5 +1,24 @@
 # Release History
 
+## v0.4.0 (2026-11-04) — A plain baseline, rests and locks, and the tendon gate as the target
+
+**Key changes:**
+- Plain baselines `--arch mlp|gru` and a five-seed study (#58, #59; closes #51).
+- Rests and locks (#58, #56): the drive's self-locking drums and electrical power in the stand-in, a power cost,
+  held loads and quiet scenes; `tendon_env` + `rl.cli finetune` (PPO on the full tendon model); the gate's power,
+  locked fraction and rest scenes.
+- Per-joint action ranges from the teacher, wind range (#60); ankles in torque mode (#62); the hybrid gate and
+  fine-tune (#63); get-up as a curriculum from a half-kneel (#61) and `rl.getup_eval`; review fixes (#64).
+
+**Findings (five seeds):** the plain MLP beats the grown core on the tendon gate (22 against 17 of 30 named scenes
+cloned, 18 against 0 uncloned); a GRU matches the MLP; the core's head start on RPO holds on every seed. A held
+load in training cuts median idle power 175 to 38 W (best 10.6 W, hand-written 5.4 W). Only the hybrid holds the
+8 m/s wind (2 of 5 plain seeds pass all six named scenes). Get-up rises 61 % from a half-kneel, 0 % from a fall.
+
+**Champion:** unchanged (v09). Nothing body-trained is promoted; the robot uses the plain network (robot D-052).
+
+**PRs:** #55, #54 (before the tag, after v0.3.0), #58-#64.
+
 ## v0.3.0 (2026-10-28) — Grounded bodies: PPO on the tendon humanoid and RPO, one core across both
 
 **Key changes:**
