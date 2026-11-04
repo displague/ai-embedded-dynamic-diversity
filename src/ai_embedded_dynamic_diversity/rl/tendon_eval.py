@@ -113,27 +113,28 @@ REST_BAG_KG = 3.9                       # a gallon of milk in the left hand, arm
 POWER_PASS_W = 7.2                      # the rest scenes' pass line: 2 x the hand-written controller standing
 
 
-def _runner(policy_path: str, locks: bool, bag_kg: float = 0.0):
+def _runner(policy_path: str, locks: bool, bag_kg: float = 0.0, repo: str | None = None):
     """A runner whose rig carries `bag_kg` in the left hand (the robot's export_mjcf.BAGS, read at build)."""
     import sys as _sys
-    st = _load_sim_tendon(find_robot_repo(None))
+    _load_sim_tendon(find_robot_repo(repo))
     ex = _sys.modules["export_mjcf"]
     before = dict(ex.BAGS)
     if bag_kg > 0:
         ex.BAGS.update({"hand.L": bag_kg})
     try:
-        return _TeacherRunner() if policy_path == "teacher" else TendonPolicyRunner(policy_path, locks=locks)
+        return (_TeacherRunner(repo) if policy_path == "teacher"
+                else TendonPolicyRunner(policy_path, repo=repo, locks=locks))
     finally:
         ex.BAGS.clear()
         ex.BAGS.update(before)
 
 
-def evaluate_rest(policy_path: str, locks: bool = True) -> dict:
+def evaluate_rest(policy_path: str, locks: bool = True, repo: str | None = None) -> dict:
     """The rest scenes (issue #56): standing idle 30 s, and holding a 3.9 kg bag 20 s. Each: standing at the end,
     mean electrical power and the fraction of drum-steps locked over the last 20 s (after settling)."""
     out = {}
     for name, kg, secs in (("idle30", 0.0, 30.0), ("bag20", REST_BAG_KG, 20.0)):
-        runner = _runner(policy_path, locks, kg)
+        runner = _runner(policy_path, locks, kg, repo)
         runner.reset()
         r = runner.rig
         r.run(secs - 20.0 if secs > 20.0 else 0.0)

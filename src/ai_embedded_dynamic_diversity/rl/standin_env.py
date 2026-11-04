@@ -217,6 +217,8 @@ class StandinEnv:
             self.stall = np.array([d["stall_nm"] for d in dofs])
             self.w_nl = np.array([d["noload_rad_s"] for d in dofs])
             self.rotor_j = np.array([d.get("rotor_j_joint", 0.0) for d in dofs])
+            # the driver's current limit (sim_tendon CURRENT_LIMIT of the clutch torque), as a fraction of stall
+            self.u_max = 0.9 * np.array([d["torque_max"] for d in dofs]) / self.stall
         lk = self.spec.get("locks") if cfg.locks else None
         if cfg.locks and lk is None:
             raise ValueError("locks=True needs a stand-in spec with `locks` (displague/robot docs/30)")
@@ -321,6 +323,8 @@ class StandinEnv:
         st, sd = self.roller.rollout(models, self.datas, self.state[idx], control, nstep=nstep)
         self.state[idx] = st[:, -1, :]
         self.sens[idx] = sd[:, -1, :]
+        if self.has_power and len(idx) == self.N:
+            self.tau_sub = sd[:, :, self.s_tau]           # (N, nstep, nu): the power integrates every step
 
     def _standing_state(self, n):
         m, d = self.base, self.mj.MjData(self.base)
@@ -465,14 +469,14 @@ class StandinEnv:
         servo = self._servo(ctrl)
         if self.lk is not None:
             servo = self._lock(ctrl, servo)
-        self.prev_ctrl = ctrl
+        self.prev_ctrl = servo
         self._roll(np.arange(self.N), servo, self.substeps)
         self.t += 1
         q, v, R, up, grav, lin = self._pelvis()
         s = self.sens
         tau = s[:, self.s_tau]
         if self.has_power:
-            self.power = self._power(tau)
+            self.power = self._power(getattr(self, "tau_sub", tau[:, None, :]))
         line = self._line_force(tau) / self.f_cont
         over = (line > 1.0) & self.gated
         self.over_t = np.where(over, self.over_t + self.dt_ctrl, 0.0)
@@ -531,9 +535,9 @@ class StandinEnv:
         gv = (gear - self.gear) / self.dt_ctrl
         ga = (gv - self.gear_v) / self.dt_ctrl
         self.gear, self.gear_v = gear, gv
-        u = np.clip((tau + self.rotor_j * ga) / self.stall, -1.0, 1.0)
-        duty = np.clip(u + gv / self.w_nl, -1.0, 1.0)
-        p = self.p_scale * np.abs(duty * u)
+        u = np.clip((tau + (self.rotor_j * ga)[:, None, :]) / self.stall, -self.u_max, self.u_max)
+        duty = np.clip(u + (gv / self.w_nl)[:, None, :], -1.0, 1.0)
+        p = (self.p_scale * np.abs(duty * u)).mean(axis=1)         # mean over the tick's physics steps
         return np.where(self.locked, 0.0, p).sum(axis=1)
 
     def _lock(self, target, servo):
@@ -555,14 +559,14 @@ class StandinEnv:
         q = self.state[:, self.i_qpos:self.i_qpos + self.nq][:, self.qadr]
         qd = self.state[:, self.i_qvel:self.i_qvel + self.nv][:, self.vadr]
         caught = np.abs(servo - self._gear()) < self.lk_tol           # the gear on its target
-        on = (np.abs(target - q) < lk["err_max"]) & (np.abs(qd) < self.lk_rate)
-        keep = self.locked & still & (np.abs(servo - self.lock_servo) < 2 * self.lk_tol)
+        # the gear's rate (the tendon model's dphi), and the joint error, checked every tick as there; the outer
+        # loop's trim keeps winding up on a locked drum, so a sagging joint's servo target walks off and releases
+        on = (np.abs(target - q) < lk["err_max"]) & (np.abs(self.gear_v) < self.lk_rate)
+        keep = self.locked & still & on & (np.abs(servo - self.lock_servo) < 2 * self.lk_tol)
         new = ~self.locked & still & on & caught
         self.lock_servo = np.where(new, servo, self.lock_servo)
         self.lock_target = np.where(new, target, self.lock_target)
         self.locked = keep | new
-        if self.ol is not None:            # the outer loop's trim does not wind up on a locked drum
-            self.trim = np.where(self.locked, self._trim_prev, self.trim)
         return np.where(self.locked, self.lock_servo, servo)
 
     def _servo(self, target):
@@ -571,7 +575,6 @@ class StandinEnv:
             return target
         ol, g = self.ol, self.ol_gain
         err = target - self.state[:, self.i_qpos:self.i_qpos + self.nq][:, self.qadr]
-        self._trim_prev = self.trim
         self.trim = np.clip(self.trim + g * ol["ki"] * err * self.dt_ctrl, -ol["trim_max"], ol["trim_max"])
         return np.clip(target + g * ol["kq"] * err + self.trim, self.ctrl_lo, self.ctrl_hi)
 
