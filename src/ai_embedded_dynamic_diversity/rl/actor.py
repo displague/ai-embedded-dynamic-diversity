@@ -144,8 +144,13 @@ class CoreActor(nn.Module):
         mean = 2.0 * out["io"] - 1.0
         return mean, out["memory"]
 
-    def dist(self, mean: torch.Tensor) -> torch.distributions.Normal:
-        return torch.distributions.Normal(mean, self.log_std.exp().expand_as(mean))
+    def dist(self, mean: torch.Tensor, scale: torch.Tensor | None = None) -> torch.distributions.Normal:
+        """`scale` (batch,): a fixed per-environment multiplier on the std (the stand-in's quiet envs explore
+        less, so drums can lock there); the log-probabilities use it, so PPO stays on-policy."""
+        std = self.log_std.exp().expand_as(mean)
+        if scale is not None:
+            std = std * scale[..., None]
+        return torch.distributions.Normal(mean, std)
 
     def num_params(self) -> int:
         return sum(p.numel() for p in self.core.parameters())

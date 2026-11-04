@@ -115,8 +115,10 @@ class EnvConfig:
     power_cost: float = 0.0                # reward cost power_cost * log(1 + P / power_ref_w), P the electrical power
     power_ref_w: float = 10.0              # (the tendon model's count); log, because training's exploration noise
                                            # shakes the rotors (kW) while the gap that matters is 100 W against 4 W
-    quiet_fraction: float = 0.0            # stand: this fraction of envs gets pushes only every quiet_push_s
+    quiet_fraction: float = 0.0            # stand: this fraction of variants is calm (no wind) and its envs are
+                                           # pushed only every quiet_push_s: time and stillness to rest
     quiet_push_s: tuple = (8.0, 16.0)      # s between pushes in a quiet env (time to rest, as standing idle is)
+    quiet_noise: float = 1.0               # the exploration std's multiplier in quiet envs (0.2: drums can lock)
     hand_load: tuple = (0.0, 0.0)          # kg added to one hand on each non-nominal variant (a held bag)
     repo: str | None = None
 
@@ -193,6 +195,8 @@ class StandinEnv:
         self.models = self._variants()
         self._wind_setup()
         self.model_of_env = [self.models[i % len(self.models)] for i in range(self.N)]
+        quiet_env = (np.arange(self.N) % len(self.models)) < self.n_quiet
+        self.noise_scale = np.where(quiet_env, cfg.quiet_noise, 1.0).astype(np.float32)
         nthread = cfg.nthread or os.cpu_count() or 1
         self.nthread = nthread
         self.datas = [mujoco.MjData(m) for _ in range(nthread)]
@@ -237,6 +241,7 @@ class StandinEnv:
         self.prev_action = np.zeros((self.N, self.nu))
         self.delay = self.rng.integers(0, cfg.max_delay_steps + 1, size=self.N)
         self.queue = np.zeros((cfg.max_delay_steps + 1, self.N, self.nu))
+        self.queue_mean = np.zeros((cfg.max_delay_steps + 1, self.N, self.nu))
         self.t = np.zeros(self.N, dtype=np.int64)
         self.over_t = np.zeros((self.N, self.nu))
         self.stand_t = np.zeros(self.N)
@@ -276,6 +281,8 @@ class StandinEnv:
         cfg = self.cfg
         self.wind_on = max(*cfg.wind_mean, *cfg.wind_gust) > 0.0
         V = len(self.models)
+        # quiet variants (the first quiet_fraction of them): no wind, and their envs pushed only every quiet_push_s
+        self.n_quiet = int(round(cfg.quiet_fraction * V)) if cfg.quiet_fraction > 0.0 else 0
         self.wind_v = np.zeros((V, 2))     # the wind each variant blows now, world x, y (m/s)
         if not self.wind_on:
             return
@@ -285,6 +292,7 @@ class StandinEnv:
         a = rng.uniform(-math.pi, math.pi, V)
         self.wind_u = np.stack([np.cos(a), np.sin(a)], axis=1)   # the direction the wind blows towards
         self.wind_mean[0] = self.wind_sigma[0] = 0.0           # variant 0, the nominal model, stays calm
+        self.wind_mean[:self.n_quiet] = self.wind_sigma[:self.n_quiet] = 0.0   # and the quiet variants (idle indoors)
         self.wind_g = rng.standard_normal((V, 2)) * np.array([1.0, 0.75]) * self.wind_sigma[:, None]  # stationary
         self.wind_clock = 0.0
         self.variant_of_env = np.arange(self.N) % V
@@ -439,6 +447,7 @@ class StandinEnv:
         self.gear[idx] = self._gear()[idx]
         self.gear_v[idx] = 0.0
         self.queue[:, idx] = (self.target[idx] - self.default) / self.half
+        self.queue_mean[:, idx] = self.queue[:, idx]
         self.t[idx] = 0
         self.over_t[idx] = 0.0
         self.stand_t[idx] = 0.0
@@ -450,11 +459,16 @@ class StandinEnv:
         """Seconds to each env's next push: quiet envs (the first quiet_fraction of them) wait longer."""
         gap = self.rng.uniform(*self.cfg.push_interval_s, size=len(idx))
         if self.cfg.quiet_fraction > 0.0:
-            quiet = idx < int(round(self.cfg.quiet_fraction * self.N))
+            quiet = (idx % len(self.models)) < self.n_quiet
             gap = np.where(quiet, self.rng.uniform(*self.cfg.quiet_push_s, size=len(idx)), gap)
         return gap
 
-    def step(self, action: np.ndarray):
+    def step(self, action: np.ndarray, mean: np.ndarray | None = None):
+        """`mean`: the policy's noise-free action (training passes it). The drums' locks decide on it, as they
+        would at deployment, where the policy acts with its mean: exploration noise of 4 to 8 degrees per tick
+        would otherwise keep every drum unlocked in training, and training with less noise does not transfer
+        (issue #56). A locked drum holds its gear whatever the noise asks, so getting a joint locked saves its
+        power in training as on the robot."""
         cfg = self.cfg
         action = np.clip(action[:, :self.nu], -1.0, 1.0)     # padded slots beyond this body's joints are unused
         # actuation delay: each env applies the action from `delay` ticks ago
@@ -462,13 +476,20 @@ class StandinEnv:
         self.queue[0] = action
         applied = self.queue[self.delay, np.arange(self.N)]
         ctrl = np.clip(self.default + applied * self.half, self.lo, self.hi)
+        if mean is not None:
+            self.queue_mean = np.roll(self.queue_mean, 1, axis=0)
+            self.queue_mean[0] = np.clip(mean[:, :self.nu], -1.0, 1.0)
+            ctrl_mean = np.clip(self.default + self.queue_mean[self.delay, np.arange(self.N)] * self.half,
+                                self.lo, self.hi)
+        else:
+            ctrl_mean = ctrl
         if cfg.task == "stand":
             self._push()
         if self.wind_on:
             self._blow(self.dt_ctrl)
         servo = self._servo(ctrl)
         if self.lk is not None:
-            servo = self._lock(ctrl, servo)
+            servo = self._lock(ctrl_mean, servo, self._servo_of(ctrl_mean) if mean is not None else servo)
         self.prev_ctrl = servo
         self._roll(np.arange(self.N), servo, self.substeps)
         self.t += 1
@@ -540,7 +561,17 @@ class StandinEnv:
         p = (self.p_scale * np.abs(duty * u)).mean(axis=1)         # mean over the tick's physics steps
         return np.where(self.locked, 0.0, p).sum(axis=1)
 
-    def _lock(self, target, servo):
+    def _servo_of(self, target):
+        """The outer loop's servo target for `target`, without advancing its trim."""
+        if self.ol is None:
+            return target
+        q = self.state[:, self.i_qpos:self.i_qpos + self.nq][:, self.qadr]
+        return np.clip(target + self.ol_gain * self.ol["kq"] * (target - q) + self.trim, self.ctrl_lo, self.ctrl_hi)
+
+    def _lock(self, target, servo, servo_lock=None):
+        """`target`, `servo_lock`: the joint and servo targets the lock decides on (the policy's mean); `servo`
+        the servo target applied when unlocked."""
+        servo_lock = servo if servo_lock is None else servo_lock
         """The drums' self-lock (the robot's tools/sim_tendon.py rule in joint terms, its D-038 stillness gate):
         a drum locks when the body has been still for `still_s`, its joint is within `err_max` of the target and
         slower than `rate`, and the target has not moved by more than `tol` since the last tick; it holds the
@@ -558,13 +589,13 @@ class StandinEnv:
         still = (self.still_t > lk["still_s"])[:, None]
         q = self.state[:, self.i_qpos:self.i_qpos + self.nq][:, self.qadr]
         qd = self.state[:, self.i_qvel:self.i_qvel + self.nv][:, self.vadr]
-        caught = np.abs(servo - self._gear()) < self.lk_tol           # the gear on its target
+        caught = np.abs(servo_lock - self._gear()) < self.lk_tol      # the gear on its target
         # the gear's rate (the tendon model's dphi), and the joint error, checked every tick as there; the outer
         # loop's trim keeps winding up on a locked drum, so a sagging joint's servo target walks off and releases
         on = (np.abs(target - q) < lk["err_max"]) & (np.abs(self.gear_v) < self.lk_rate)
-        keep = self.locked & still & on & (np.abs(servo - self.lock_servo) < 2 * self.lk_tol)
+        keep = self.locked & still & on & (np.abs(servo_lock - self.lock_servo) < 2 * self.lk_tol)
         new = ~self.locked & still & on & caught
-        self.lock_servo = np.where(new, servo, self.lock_servo)
+        self.lock_servo = np.where(new, self._gear(), self.lock_servo)
         self.lock_target = np.where(new, target, self.lock_target)
         self.locked = keep | new
         return np.where(self.locked, self.lock_servo, servo)

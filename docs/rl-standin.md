@@ -155,3 +155,32 @@ standing against 89 to 92 %), but on the gate its effect is inside the spread be
 Left for #48: the 30 N push and the 8 m/s wind, and the power. The policies never let a joint target rest, so the
 outer loop never settles; an energy estimate in the reward and a power column in the gate come next, then a
 fine-tune on the tendon model itself.
+
+## Five seeds, a plain network, rests and locks (issues #51, #56; displague/robot docs/31)
+
+`--arch mlp` trains a plain two-layer ELU MLP (168 units, 51,440 parameters) instead of the core, through the same
+pipeline. Stand, 150 iterations, wind, seeds 0-4, gated on the tendon model with drums allowed to lock:
+
+| Arm | Named scenes per seed (of 6) | Sum of 30 | Random pushes (of 100) | Stand-in standing |
+| --- | --- | --- | --- | --- |
+| plain network + cloning | 4 4 5 5 4 | 22 | 98 | 0.92 |
+| grown champion + cloning | 4 2 4 4 3 | 17 | 89 | 0.86 |
+| random core + cloning | 3 4 2 4 0 | 13 | 61 | 0.86 |
+| plain network | 3 4 4 4 3 | 18 | 89 | 0.90 |
+| grown champion | 0 0 0 0 0 | 0 | 0 | 0.44 |
+| random core | 0 0 0 0 0 | 0 | 0 | 0.51 |
+
+The champion's prior beats random weights of its architecture, but a plain network beats both on this body, and
+it clones the hand-written controller about 170 times more closely. Caveats: the core has memory and the MLP
+none, and the trainer's settings were tuned on the core. RPO stand, five seeds: from the tendon policy 0.80
+standing in the first 10 iterations on every seed against 0.32 from random weights; at the end 0.76-0.78 on four
+seeds against 0.70-0.72, and one seed collapsed to 0.17.
+
+**Rests and locks.** The robot's drums lock when a joint is on target and the body has been still. With
+`locks=True` the stand-in carries that rule and the electrical power (`power_cost` charges c log(1 + P / 10 W)).
+PPO's exploration noise (4 to 8 degrees per tick) keeps every drum unlocked in training, and training with less
+noise (`--init-log-std`, `quiet_noise`) does not transfer to the tendon model. `rl.cli finetune` runs PPO on the
+tendon model itself (`rl/tendon_env.py`), where the locks are the real ones, at about 600 control steps per second.
+What made policies rest was a scene: a load in one hand (`--hand-load 0,4`), which cut the median idle power over
+five seeds from 175 W to 38 W (best 10.6 W, the hand-written controller 5.4 W) and lets 3 of 5 seeds hold a 3.9 kg
+bag (5 of 5 with `--quiet 0.5 --episode-s 20`). `tendon_eval <policy> rest [restmode]` runs the rest scenes.

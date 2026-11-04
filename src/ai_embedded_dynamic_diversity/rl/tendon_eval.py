@@ -31,9 +31,15 @@ def load_policy(path: str, device="cpu"):
 
 
 class TendonPolicyRunner:
-    def __init__(self, policy_path: str, repo: str | None = None, rate_hz: float = 50.0, locks: bool = True):
+    def __init__(self, policy_path: str, repo: str | None = None, rate_hz: float = 50.0, locks: bool = True,
+                 deadband: float = 0.0, rest_v: float = 0.0, rest_s: float = 0.5):
+        """`deadband` (rad): a joint's target holds until the policy asks for a change larger than this, so a
+        policy that is nearly still gives steady targets and the drums can lock (issue #56)."""
         self.actor, self.norm, self.saved = load_policy(policy_path)
         self.locks = locks
+        self.deadband = deadband
+        self.rest_v, self.rest_s = rest_v, rest_s   # rest_v > 0: the deadband's own looser stillness gate
+        self.rest_t = 0.0
         st = _load_sim_tendon(find_robot_repo(repo))
         self.st = st
         self.rig = st.Rig()
@@ -59,6 +65,7 @@ class TendonPolicyRunner:
         self.prev = np.zeros(len(self.names))
         self.mem = self.actor.initial_state(1, "cpu")
         self.count = 0
+        self.rest_t = 0.0
         r.hook = self._hook
 
     def _obs(self):
@@ -81,6 +88,17 @@ class TendonPolicyRunner:
         mean, self.mem = self.actor(self.norm(o), self.mem)
         a = mean[0].clamp(-1, 1).numpy()
         tgt = np.clip(self.default + a * self.half, self.lo, self.hi)
+        # only while the body is still: the drums' own stillness gate, or (rest_v > 0) a looser one on the CoM
+        # speed, which the policy's own fidget does not hold shut; a push (above the drums' release speed) opens it
+        if self.rest_v > 0.0:
+            v = float(np.linalg.norm(r._com_v))
+            self.rest_t = 0.0 if v > self.rest_v else self.rest_t + self.every * r.model.opt.timestep
+            resting = self.rest_t > self.rest_s
+        else:
+            resting = getattr(r, "_still", 0.0) > self.st.LOCK_STILL
+        if self.deadband > 0.0 and resting:
+            held = np.array([r.target[n] for n in self.names])
+            tgt = np.where(np.abs(tgt - held) > self.deadband, tgt, held)
         for n, v in zip(self.names, tgt):
             r.target[n] = float(v)
         self.prev = a
@@ -113,7 +131,11 @@ REST_BAG_KG = 3.9                       # a gallon of milk in the left hand, arm
 POWER_PASS_W = 7.2                      # the rest scenes' pass line: 2 x the hand-written controller standing
 
 
-def _runner(policy_path: str, locks: bool, bag_kg: float = 0.0, repo: str | None = None):
+REST_MODE = dict(deadband=math.radians(2.0), rest_v=0.05)   # the rest mode: targets held within 2 deg once the
+                                                            # CoM has been under 0.05 m/s for 0.5 s (issue #56)
+
+
+def _runner(policy_path: str, locks: bool, bag_kg: float = 0.0, repo: str | None = None, rest_mode: bool = False):
     """A runner whose rig carries `bag_kg` in the left hand (the robot's export_mjcf.BAGS, read at build)."""
     import sys as _sys
     _load_sim_tendon(find_robot_repo(repo))
@@ -123,18 +145,18 @@ def _runner(policy_path: str, locks: bool, bag_kg: float = 0.0, repo: str | None
         ex.BAGS.update({"hand.L": bag_kg})
     try:
         return (_TeacherRunner(repo) if policy_path == "teacher"
-                else TendonPolicyRunner(policy_path, repo=repo, locks=locks))
+                else TendonPolicyRunner(policy_path, repo=repo, locks=locks, **(REST_MODE if rest_mode else {})))
     finally:
         ex.BAGS.clear()
         ex.BAGS.update(before)
 
 
-def evaluate_rest(policy_path: str, locks: bool = True, repo: str | None = None) -> dict:
+def evaluate_rest(policy_path: str, locks: bool = True, repo: str | None = None, rest_mode: bool = False) -> dict:
     """The rest scenes (issue #56): standing idle 30 s, and holding a 3.9 kg bag 20 s. Each: standing at the end,
     mean electrical power and the fraction of drum-steps locked over the last 20 s (after settling)."""
     out = {}
     for name, kg, secs in (("idle30", 0.0, 30.0), ("bag20", REST_BAG_KG, 20.0)):
-        runner = _runner(policy_path, locks, kg, repo)
+        runner = _runner(policy_path, locks, kg, repo, rest_mode)
         runner.reset()
         r = runner.rig
         r.run(secs - 20.0 if secs > 20.0 else 0.0)
@@ -152,12 +174,13 @@ def evaluate_rest(policy_path: str, locks: bool = True, repo: str | None = None)
     return out
 
 
-def evaluate(policy_path: str, pushes: int = 20, seed: int = 0, locks: bool = True) -> dict:
+def evaluate(policy_path: str, pushes: int = 20, seed: int = 0, locks: bool = True, rest_mode: bool = False) -> dict:
     """The gate scenes for a policy, or for the hand-written controller when `policy_path` is 'teacher'.
     `locks`: let the drums lock under the policy (the stillness gate on); False reproduces the gate before
     the robot's docs/30, where no lock could engage under a policy."""
     teacher = policy_path == "teacher"
-    runner = _TeacherRunner() if teacher else TendonPolicyRunner(policy_path, locks=locks)
+    runner = _TeacherRunner() if teacher else TendonPolicyRunner(policy_path, locks=locks,
+                                                                 **(REST_MODE if rest_mode else {}))
     who = "the hand-written controller" if teacher else "policy %s" % policy_path
     rng = np.random.default_rng(seed)
     results = {}
@@ -216,9 +239,10 @@ def evaluate_teacher(pushes: int = 20, seed: int = 0) -> dict:
 
 
 if __name__ == "__main__":
+    rm = "restmode" in sys.argv[3:]           # the policy with the rest mode (REST_MODE) in front of the drives
     if len(sys.argv) > 2 and sys.argv[2] == "rest":
-        print(json.dumps(evaluate_rest(sys.argv[1]), indent=1))
+        print(json.dumps(evaluate_rest(sys.argv[1], rest_mode=rm), indent=1))
         sys.exit(0)
     n = int(sys.argv[2]) if len(sys.argv) > 2 else 20
-    out = evaluate(sys.argv[1], pushes=n)   # 'teacher': the hand-written controller on every scene
+    out = evaluate(sys.argv[1], pushes=n, rest_mode=rm)   # 'teacher': the hand-written controller on every scene
     print(json.dumps(out, indent=1))

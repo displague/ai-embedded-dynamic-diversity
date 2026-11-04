@@ -40,18 +40,25 @@ class PPOConfig:
     device: str = "cuda"
     save_every: int = 50
     arch: str = "core"           # "core": the model core (grown from `init`, or random); "mlp": the plain baseline
+    critic_warmup: int = 0       # iterations at the start that train only the critic (a fine-tune's fresh critic)
 
 
 def train(env_cfg: EnvConfig, ppo: PPOConfig, init: str | None, out_dir: str, label: str,
-          teacher: str | None = None, bc_epochs: int = 30) -> dict:
+          teacher: str | None = None, bc_epochs: int = 30, env=None, finetune: str | None = None) -> dict:
     """Train a core actor; `init` is a checkpoint path to grow from, or None for random initialisation;
     `teacher` is a demonstrations file (displague/robot tools/record_teacher.py) to clone before PPO.
     Writes out_dir/<label>.log.json (one record per iteration) and out_dir/<label>.pt; returns the summary."""
     os.makedirs(out_dir, exist_ok=True)
     dev = torch.device(ppo.device if torch.cuda.is_available() or ppo.device == "cpu" else "cpu")
     torch.manual_seed(ppo.seed)
-    env = StandinEnv(env_cfg)
-    if ppo.arch == "mlp":
+    env = StandinEnv(env_cfg) if env is None else env
+    saved_ft = None
+    if finetune:                 # a policy saved by this trainer, any architecture, continued as it is
+        from ai_embedded_dynamic_diversity.rl.actor import build_policy_net
+        saved_ft = torch.load(finetune, map_location="cpu", weights_only=False)
+        core = build_policy_net(saved_ft)
+        grow_report = dict(saved_ft["grow"], finetune=finetune)
+    elif ppo.arch == "mlp":
         if init:
             raise ValueError("the plain baseline starts from random weights; init must be empty")
         from ai_embedded_dynamic_diversity.rl.actor import PlainMLP
@@ -64,6 +71,11 @@ def train(env_cfg: EnvConfig, ppo: PPOConfig, init: str | None, out_dir: str, la
     actor = CoreActor(core, ppo.init_log_std).to(dev)
     critic = Critic(env.priv_dim).to(dev)
     obs_norm, priv_norm = RunningNorm(env.obs_dim).to(dev), RunningNorm(env.priv_dim).to(dev)
+    if saved_ft is not None:     # its noise and its input scaling (frozen: the actor was trained on that scaling)
+        actor.log_std.data = (saved_ft["log_std"] if ppo.init_log_std is None
+                              else torch.full_like(saved_ft["log_std"], ppo.init_log_std)).to(dev)
+        obs_norm.load_state_dict(saved_ft["obs_norm"])
+        obs_norm.update = lambda x: None
     bc_log = None
     if teacher:
         from ai_embedded_dynamic_diversity.rl.bc import clone, load_teacher
@@ -75,6 +87,8 @@ def train(env_cfg: EnvConfig, ppo: PPOConfig, init: str | None, out_dir: str, la
     env.reset()
     obs_np, priv_np = env.observe()
     memory = actor.initial_state(N, dev)
+    noise = getattr(env, "noise_scale", None)     # (N,) per-env std multiplier, or None
+    noise = torch.as_tensor(noise, device=dev, dtype=torch.float32) if noise is not None else None
     log, t_start, total_steps = [], time.time(), 0
     ep_success, ep_damage, ep_count, ep_wmini = 0, 0, 0, 0
     for it in range(ppo.iterations):
@@ -98,13 +112,13 @@ def train(env_cfg: EnvConfig, ppo: PPOConfig, init: str | None, out_dir: str, la
                 priv_norm.update(p)
                 on, pn = obs_norm(o), priv_norm(p)
                 mean, memory = actor(on, memory)
-                d = actor.dist(mean)
+                d = actor.dist(mean, noise)
                 a = d.sample()
                 buf_obs[t], buf_priv[t], buf_act[t] = on, pn, a
                 buf_logp[t] = d.log_prob(a).sum(-1)
                 buf_mean[t] = mean
                 buf_val[t] = critic(pn)
-                obs_np, priv_np, r, done, info = env.step(a.clamp(-1, 1).cpu().numpy())
+                obs_np, priv_np, r, done, info = env.step(a.clamp(-1, 1).cpu().numpy(), mean.clamp(-1, 1).cpu().numpy())
                 buf_rew[t] = torch.as_tensor(r, device=dev)
                 dn = torch.as_tensor(done, device=dev, dtype=torch.float32)
                 buf_done[t] = dn
@@ -147,7 +161,7 @@ def train(env_cfg: EnvConfig, ppo: PPOConfig, init: str | None, out_dir: str, la
                     m_t, mem = actor(buf_obs[t, idx], mem)
                     means.append(m_t)
                 mean = torch.stack(means)
-                d = actor.dist(mean)
+                d = actor.dist(mean, None if noise is None else noise[idx].expand(T, -1))
                 logp = d.log_prob(buf_act[:, idx]).sum(-1)
                 ratio = torch.exp(logp - buf_logp[:, idx])
                 a_mb = adv_n[:, idx]
@@ -155,7 +169,8 @@ def train(env_cfg: EnvConfig, ppo: PPOConfig, init: str | None, out_dir: str, la
                 v = critic(buf_priv[:, idx])
                 vl = (v - ret[:, idx]).pow(2).mean()
                 ent = gaussian_entropy(actor.log_std)
-                loss = pl + ppo.value_coef * vl - ppo.entropy * ent
+                pw = 0.0 if it < ppo.critic_warmup else 1.0
+                loss = pw * pl + ppo.value_coef * vl - pw * ppo.entropy * ent
                 opt.zero_grad()
                 loss.backward()
                 torch.nn.utils.clip_grad_norm_(params, ppo.max_grad_norm)
@@ -169,6 +184,8 @@ def train(env_cfg: EnvConfig, ppo: PPOConfig, init: str | None, out_dir: str, la
                 kls.append(kl)
                 pls.append(pl.item())
                 vls.append(vl.item())
+                if it < ppo.critic_warmup:       # the policy is not moving: no learning-rate adaptation
+                    continue
                 if kl > 2.0 * ppo.desired_kl:
                     lr = max(1e-5, lr / 1.5)
                 elif 0.0 <= kl < 0.5 * ppo.desired_kl:
