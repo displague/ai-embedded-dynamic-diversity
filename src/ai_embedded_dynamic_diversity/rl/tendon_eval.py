@@ -32,13 +32,16 @@ def load_policy(path: str, device="cpu"):
 
 class TendonPolicyRunner:
     def __init__(self, policy_path: str, repo: str | None = None, rate_hz: float = 50.0, locks: bool = True,
-                 deadband: float = 0.0, rest_v: float = 0.0, rest_s: float = 0.5):
+                 deadband: float = 0.0, rest_v: float = 0.0, rest_s: float = 0.5, hand_ankles: bool = False):
         """`deadband` (rad): a joint's target holds until the policy asks for a change larger than this, so a
         policy that is nearly still gives steady targets and the drums can lock (issue #56)."""
         self.actor, self.norm, self.saved = load_policy(policy_path)
         self._ankle_gain = None
         self.locks = locks
         self.deadband = deadband
+        # hand_ankles: the robot's hand-written balance loop drives the ankles (its torque mode, CoP loop and hip
+        # lean) and the policy every other joint: a hybrid (displague/robot docs/32)
+        self.hand_ankles = hand_ankles
         self.rest_v, self.rest_s = rest_v, rest_s   # rest_v > 0: the deadband's own looser stillness gate
         self.rest_t = 0.0
         st = _load_sim_tendon(find_robot_repo(repo))
@@ -61,7 +64,7 @@ class TendonPolicyRunner:
     def reset(self):
         r = self.rig
         r.reset()
-        r.balance = False
+        r.balance = self.hand_ankles
         # the drums' stillness gate (the robot's D-038) runs without the balance loop, so the drums can lock under
         # a policy that holds still, as the firmware would let them (robot checkouts from its docs/30 on)
         r.still_gate = self.locks
@@ -70,6 +73,7 @@ class TendonPolicyRunner:
         if not self.locks:
             r.lock_enabled = False
         self.default = np.array([r.target[n] for n in self.names])
+        self.is_ankle = np.array([n.startswith("foot.") for n in self.names])
         self.prev = np.zeros(len(self.names))
         self.mem = self.actor.initial_state(1, "cpu")
         self.count = 0
@@ -107,6 +111,8 @@ class TendonPolicyRunner:
         if self.deadband > 0.0 and resting:
             held = np.array([r.target[n] for n in self.names])
             tgt = np.where(np.abs(tgt - held) > self.deadband, tgt, held)
+        if self.hand_ankles:                # the ankles keep the balance loop's own targets
+            tgt = np.where(self.is_ankle, self.default, tgt)
         for n, v in zip(self.names, tgt):
             r.target[n] = float(v)
         self.prev = a
@@ -137,6 +143,9 @@ def power(rig) -> tuple[float, float]:
 
 REST_BAG_KG = 3.9                       # a gallon of milk in the left hand, arm hanging (the robot's docs/28)
 POWER_PASS_W = 7.2                      # the rest scenes' pass line: 2 x the hand-written controller standing
+
+
+HYBRID = dict(hand_ankles=True)     # the hand-written ankle balance under the policy
 
 
 REST_MODE = dict(deadband=math.radians(2.0), rest_v=0.05)   # the rest mode: targets held within 2 deg once the
@@ -248,6 +257,13 @@ def evaluate_teacher(pushes: int = 20, seed: int = 0) -> dict:
 
 if __name__ == "__main__":
     rm = "restmode" in sys.argv[3:]           # the policy with the rest mode (REST_MODE) in front of the drives
+    if "handankles" in sys.argv[3:]:          # the hybrid: the hand-written ankle balance under the policy
+        _orig_init = TendonPolicyRunner.__init__
+
+        def _init(self, *a, **k):
+            k.setdefault("hand_ankles", True)
+            _orig_init(self, *a, **k)
+        TendonPolicyRunner.__init__ = _init
     if len(sys.argv) > 2 and sys.argv[2] == "rest":
         print(json.dumps(evaluate_rest(sys.argv[1], rest_mode=rm), indent=1))
         sys.exit(0)

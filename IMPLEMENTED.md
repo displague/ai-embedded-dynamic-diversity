@@ -2,6 +2,12 @@
 
 ## Completed
 
+- A hybrid in the gate and the tendon fine-tune (`tendon_eval <policy> 20 handankles`, `finetune --hand-ankles`):
+  the robot's hand-written balance loop drives the ankles (torque mode, CoP loop, hip lean) and the policy every
+  other joint. Ten cloned policies, not trained with it: 2 of 10 pass all six named scenes, the first with the
+  8 m/s wind (plain seed 3: 19/20 pushes, 44 W standing), but random pushes fall (77/100 plain, 94/100 held-load).
+  200 iterations of tendon fine-tune in the hybrid: 20/20 pushes, but the 8 m/s wind lost and 270 W standing
+  (displague/robot docs/32).
 - `--ankle-torque`: the policy's ankles in torque mode (no outer-loop trim, the lines a series spring), in the
   stand-in, the gate and the tendon fine-tune, as the robot's hand-written controller runs them and as its
   demonstrations were recorded. Ten seeds (five plain, five with a hand load), cloned + PPO: 0 of 10 hold the 8 m/s

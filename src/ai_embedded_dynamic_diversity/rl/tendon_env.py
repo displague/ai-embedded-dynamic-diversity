@@ -39,6 +39,7 @@ class TendonEnvConfig:
     quiet_push_s: tuple = (8.0, 16.0)
     wind_workers: float = 0.3              # this fraction of workers blows a wind (mean 0 to wind_max, gusts to 1.5)
     wind_max: float = 8.0
+    hand_ankles: bool = False              # the robot's hand-written balance loop drives the ankles, the policy the rest
     power_cost: float = 0.5
     power_ref_w: float = 10.0
     seed: int = 0
@@ -63,6 +64,7 @@ def _worker(conn, cfg: TendonEnvConfig, wid: int):
     lo = np.array([w["lo"] for w in rigs[0].w])
     hi = np.array([w["hi"] for w in rigs[0].w])
     half = 0.5 * (hi - lo) * cfg.action_fraction
+    is_ankle = np.array([n.startswith("foot.") for n in names])
     if cfg.action_half is not None:
         half = np.asarray(cfg.action_half, dtype=float)[:len(lo)]
     every = max(1, int(round(1.0 / (cfg.control_hz * rigs[0].model.opt.timestep))))
@@ -79,7 +81,7 @@ def _worker(conn, cfg: TendonEnvConfig, wid: int):
     def reset(k):
         r = rigs[k]
         r.reset()
-        r.balance = False
+        r.balance = cfg.hand_ankles
         r.still_gate = True
         st.mujoco.mj_forward(r.model, r.data)   # positions for the first observation (reset leaves them stale)
         if windy:
@@ -130,6 +132,8 @@ def _worker(conn, cfg: TendonEnvConfig, wid: int):
             r = rigs[k]
             a = np.clip(arg[k], -1.0, 1.0)
             tgt = np.clip(S["default"] + a * half, lo, hi)
+            if cfg.hand_ankles:
+                tgt = np.where(is_ankle, S["default"], tgt)
             for n, v in zip(names, tgt):
                 r.target[n] = float(v)
             if S["push_left"][k] == 0 and S["t"][k] >= S["push_at"][k]:
