@@ -2,6 +2,12 @@
 
 ## Completed
 
+- `--ankle-torque`: the policy's ankles in torque mode (no outer-loop trim, the lines a series spring), in the
+  stand-in, the gate and the tendon fine-tune, as the robot's hand-written controller runs them and as its
+  demonstrations were recorded. Ten seeds (five plain, five with a hand load), cloned + PPO: 0 of 10 hold the 8 m/s
+  wind, named scenes as without it (23 and 22 of 30), so the default stays off. With the hand-written balance
+  loop driving the ankles under a policy instead, 2 of 10 hold it: the ankle strategy, not the drive mode, is what
+  the policies miss (displague/robot docs/32).
 - Get-up as a curriculum from a half-kneel (#49; displague/robot docs/32): `StandinEnv(task="getup",
   getup_start="curriculum")` starts half-kneeling (the one resting half-kneel found by search; a two-knee kneel does
   not rest on this robot), placed on the floor by a contact search and settled, then adds fallen starts once the

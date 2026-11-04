@@ -36,12 +36,16 @@ class TendonPolicyRunner:
         """`deadband` (rad): a joint's target holds until the policy asks for a change larger than this, so a
         policy that is nearly still gives steady targets and the drums can lock (issue #56)."""
         self.actor, self.norm, self.saved = load_policy(policy_path)
+        self._ankle_gain = None
         self.locks = locks
         self.deadband = deadband
         self.rest_v, self.rest_s = rest_v, rest_s   # rest_v > 0: the deadband's own looser stillness gate
         self.rest_t = 0.0
         st = _load_sim_tendon(find_robot_repo(repo))
         self.st = st
+        if not hasattr(st, "_OUTER_GAIN_FOOT"):
+            st._OUTER_GAIN_FOOT = st.OUTER_GAIN.get("foot", 1.0)    # the model's own ankle gain, kept once
+        self._ankle_gain = st._OUTER_GAIN_FOOT
         self.rig = st.Rig()
         self.names = [w["name"] for w in self.rig.w]
         assert self.names == self.saved["dof_names"], "the policy was trained on a different joint order"
@@ -61,6 +65,8 @@ class TendonPolicyRunner:
         # the drums' stillness gate (the robot's D-038) runs without the balance loop, so the drums can lock under
         # a policy that holds still, as the firmware would let them (robot checkouts from its docs/30 on)
         r.still_gate = self.locks
+        # a policy trained with the ankles in torque mode runs them so here too: no outer-loop trim at the ankles
+        self.st.OUTER_GAIN["foot"] = 0.0 if self.saved["env"].get("ankle_torque") else self._ankle_gain
         if not self.locks:
             r.lock_enabled = False
         self.default = np.array([r.target[n] for n in self.names])
