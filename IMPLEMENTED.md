@@ -2,6 +2,13 @@
 
 ## Completed
 
+- Get-up as a curriculum from a half-kneel (#49; displague/robot docs/32): `StandinEnv(task="getup",
+  getup_start="curriculum")` starts half-kneeling (the one resting half-kneel found by search; a two-knee kneel does
+  not rest on this robot), placed on the floor by a contact search and settled, then adds fallen starts once the
+  half-kneel succeeds on more than half of 200+ episodes, keeping half the resets on it. Plain MLP, 1,500
+  iterations (74 M steps), two seeds: from the half-kneel 61 % and 55 % rise and stand 1 s (28 % and 19 % still
+  standing at 10 s), as fast lunges; the forearm lines peak at 2.3 times their continuous rating; fallen starts 0 %.
+  `render --task getup` uses the policy's start. Tests: `tests/test_rl_getup_curriculum.py`.
 - Per-joint action ranges from the teacher (`--teacher-range`; the uniform 0.2 of each joint's range clipped the
   teacher's ankle and knee corrections in 11.6 % of its steps, now 1.4 %) and `finetune --wind-max`. Tried for the
   8 m/s wind (displague/robot docs/31): no policy holds it either way, and the wider ranges use far more power

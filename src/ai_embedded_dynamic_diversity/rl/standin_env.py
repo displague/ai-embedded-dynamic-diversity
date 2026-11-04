@@ -115,6 +115,10 @@ class EnvConfig:
     fall_height: float = 0.65              # stand task: below this fraction of standing height is a fall
     stand_upright: float = 0.95
     settle_s: float = 1.0                  # getup: the drop settles this long before the policy acts
+    getup_start: str = "fallen"            # getup: "fallen" (random drops), or "curriculum": start half-kneeling,
+                                           # then kneeling, then fallen, each unlocked as the last succeeds (#49)
+    curriculum_unlock: float = 0.5         # a start's success rate (EMA over episodes) that unlocks the next
+    curriculum_rehearse: float = 0.5       # the share of resets each unlocked easier start keeps (0.15 forgot)
     gated_classes: tuple = ("W-max", "W-mid")
     wind_mean: tuple = (0.0, 0.0)          # m/s, each non-nominal variant's mean wind speed, uniform in this range
                                            # (direction uniform); (0, 0) with no gusts: no wind, no air
@@ -365,6 +369,79 @@ class StandinEnv:
         self.mj.mj_getState(m, d, s, self.state_kind)
         return np.tile(s, (n, 1))
 
+    # the tendon humanoid's kneeling start (joint targets, rad; "F" the front leg, "B" the back one): a flat-footed
+    # squat tips over (the ankle dorsiflexes only 20 degrees), so getting up goes through a half-kneel (issue #49).
+    # Found by search: the only one of 32 candidates that rests upright (pelvis 0.46 m). A two-knee kneel does not
+    # rest on this robot: with the shins flat the feet stand on their toes' edge, and with the knees bent further
+    # only the knees touch.
+    KNEEL_STARTS = (
+        ("halfkneel", {"thigh.F_pitch": math.radians(-90), "shank.F_pitch": math.radians(95),
+                       "foot.F_pitch": math.radians(-5), "thigh.B_pitch": math.radians(5),
+                       "shank.B_pitch": math.radians(100), "foot.B_pitch": 0.0, "spine_pitch": math.radians(10)}),
+    )
+    LEVELS = ("halfkneel", "fallen")
+
+    def _curriculum_setup(self):
+        self.level = np.zeros(self.N, dtype=np.int64)
+        self.level_ema = np.zeros(len(self.LEVELS))
+        self.level_n = np.zeros(len(self.LEVELS), dtype=np.int64)
+        self.frontier = 0
+
+    def _curriculum_record(self, idx):
+        """Fold finished episodes (envs `idx`) into each start's success EMA; unlock the next start."""
+        for k in idx:
+            lv = self.level[k]
+            self.level_n[lv] += 1
+            a = 0.005 if self.level_n[lv] > 200 else 1.0 / self.level_n[lv]
+            self.level_ema[lv] += a * (float(self.ever_stood[k]) - self.level_ema[lv])
+        f = self.frontier
+        if f + 1 < len(self.LEVELS) and self.level_n[f] > 200 and self.level_ema[f] > self.cfg.curriculum_unlock:
+            self.frontier = f + 1
+
+    def _curriculum_pick(self, n):
+        f = self.frontier
+        p = np.full(f + 1, self.cfg.curriculum_rehearse)
+        p[f] = 1.0 - self.cfg.curriculum_rehearse * f
+        return self.rng.choice(f + 1, size=n, p=p / p.sum())
+
+    def _kneel_state(self, idx, name):
+        """Upright in a kneeling start, the lowest point a few mm above the floor, settled with the servos holding it."""
+        mj = self.mj
+        pose_d = dict(self.KNEEL_STARTS)[name]
+        n = len(idx)
+        st = self._standing_state(n)
+        poses = np.tile(self.default, (n, 1))
+        d = mj.MjData(self.base)
+        for k in range(n):
+            front = "L" if self.rng.random() < 0.5 else "R"
+            back = "R" if front == "L" else "L"
+            for key, v in pose_d.items():
+                j = key.replace(".F_", ".%s_" % front).replace(".B_", ".%s_" % back)
+                if j in self.dof_names:
+                    poses[k, self.dof_names.index(j)] = v
+            poses[k] += self.rng.normal(0.0, 0.02, self.nu)
+            poses[k] = np.clip(poses[k], self.lo, self.hi)
+            q = st[k, self.i_qpos:self.i_qpos + self.nq]
+            q[0:3] = (0.0, 0.0, 1.0)
+            q[3:7] = _axis_angle_quat(np.array([0.0, 0.0, self.rng.uniform(-math.pi, math.pi)]))
+            q[self.qadr] = poses[k]
+            # the highest root height at which the body touches the floor (bisection on contacts), plus 5 mm
+            lo_z, hi_z = 0.0, 1.2
+            for _ in range(24):
+                q[2] = 0.5 * (lo_z + hi_z)
+                d.qpos[:] = q
+                mj.mj_forward(self.base, d)
+                touching = any(self.base.geom_bodyid[c.geom1] == 0 or self.base.geom_bodyid[c.geom2] == 0
+                               for c in d.contact[:d.ncon])
+                lo_z, hi_z = (q[2], hi_z) if touching else (lo_z, q[2])
+            q[2] = lo_z + 0.005
+        st[:, self.i_qvel:self.i_qvel + self.nv] = 0.0
+        if self.na == self.nu:
+            st[:, self.i_act:self.i_act + self.na] = poses
+        self.state[idx] = st
+        self._roll(idx, poses, int(round(self.cfg.settle_s / self.base.opt.timestep)))
+        return poses
+
     def _fallen_state(self, idx):
         """Drop from a random orientation and pose, settle with the servos holding that pose."""
         n = len(idx)
@@ -444,7 +521,17 @@ class StandinEnv:
         idx = np.arange(self.N) if idx is None else np.asarray(idx)
         if len(idx) == 0:
             return
-        if self.cfg.task == "getup":
+        if self.cfg.task == "getup" and self.cfg.getup_start == "curriculum":
+            if not hasattr(self, "level"):
+                self._curriculum_setup()
+            else:
+                self._curriculum_record(idx)
+            self.level[idx] = self._curriculum_pick(len(idx))
+            for lv, name in enumerate(self.LEVELS):
+                sub = idx[self.level[idx] == lv]
+                if len(sub):
+                    self.target[sub] = (self._fallen_state(sub) if name == "fallen" else self._kneel_state(sub, name))
+        elif self.cfg.task == "getup":
             pose = self._fallen_state(idx)
             self.target[idx] = pose
         else:
