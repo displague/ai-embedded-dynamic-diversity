@@ -2,6 +2,11 @@
 
 ## Completed
 
+- Per-joint action ranges from the teacher (`--teacher-range`; the uniform 0.2 of each joint's range clipped the
+  teacher's ankle and knee corrections in 11.6 % of its steps, now 1.4 %) and `finetune --wind-max`. Tried for the
+  8 m/s wind (displague/robot docs/31): no policy holds it either way, and the wider ranges use far more power
+  (300 W standing without a held load), so the default stays 0.2. The tendon model's and the stand-in's drag agree
+  (16.4 and 15.6 N at 8 m/s); a 200-iteration all-windy tendon fine-tune did not get the 8 m/s wind either.
 - A plain recurrent baseline, `--arch gru` (`PlainGRU`: input layer, an 80-unit GRU cell, output layer; 49,872
   parameters), so the core's memory is compared against memory: five seeds, cloned, on the tendon gate 20 of 30
   named scenes and 100 of 100 random pushes (plain MLP 22 and 98, grown core 17 and 89; displague/robot docs/31).

@@ -36,7 +36,7 @@ def main(policy: str, body: str = "tendon32", task: str = "stand", seconds: floa
     actor, norm, saved = load(policy)
     env = EnvConfig(task=task, body=body, num_envs=1, variants=1, nthread=1, seed=seed,
                     pad_dofs=saved["env"].get("pad_dofs", 32) or 32, max_delay_steps=0,
-                    action_fraction=saved["env"].get("action_fraction"))
+                    action_fraction=saved["env"].get("action_fraction"), action_half=saved["env"].get("action_half"))
     e = StandinEnv(env)
     e.reset()
     obs, _ = e.observe()

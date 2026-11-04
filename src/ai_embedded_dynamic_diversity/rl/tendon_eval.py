@@ -50,6 +50,8 @@ class TendonPolicyRunner:
         lo = np.array([w["lo"] for w in self.rig.w])
         hi = np.array([w["hi"] for w in self.rig.w])
         self.lo, self.hi, self.half = lo, hi, 0.5 * (hi - lo) * frac
+        if env.get("action_half") is not None:
+            self.half = np.asarray(env["action_half"], dtype=float)[:len(lo)]
         self.every = max(1, int(round(1.0 / (rate_hz * self.rig.model.opt.timestep))))
 
     def reset(self):
