@@ -86,8 +86,22 @@ class TendonPolicyRunner:
 WIND_SCENES = (5, 8)                    # m/s mean head wind, 1.5 m/s gusts, 10 s standing
 
 
+class _TeacherRunner:
+    """The hand-written controller on the same scenes: the rig as it comes, balance loop on."""
+
+    def __init__(self, repo: str | None = None):
+        self.st = _load_sim_tendon(find_robot_repo(repo))
+        self.rig = self.st.Rig()
+
+    def reset(self):
+        self.rig.reset()
+
+
 def evaluate(policy_path: str, pushes: int = 20, seed: int = 0) -> dict:
-    runner = TendonPolicyRunner(policy_path)
+    """The gate scenes for a policy, or for the hand-written controller when `policy_path` is 'teacher'."""
+    teacher = policy_path == "teacher"
+    runner = _TeacherRunner() if teacher else TendonPolicyRunner(policy_path)
+    who = "the hand-written controller" if teacher else "policy %s" % policy_path
     rng = np.random.default_rng(seed)
     results = {}
 
@@ -95,7 +109,7 @@ def evaluate(policy_path: str, pushes: int = 20, seed: int = 0) -> dict:
         runner.reset()
         fn(runner.rig)
         z, tilt = runner.rig.pelvis_state()
-        rows = runner.rig.report("%s (policy %s)" % (name, policy_path), top=5)
+        rows = runner.rig.report("%s (%s)" % (name, who), top=5)
         results[name] = dict(stands=bool(runner.rig.standing()), pelvis_z=float(z), tilt_deg=float(tilt),
                              worst_line=rows[0][1], worst_line_n=float(rows[0][2]), worst_line_cont=float(rows[0][3]),
                              worst_hot_s=float(max(r[11] for r in rows)))
@@ -118,7 +132,7 @@ def evaluate(policy_path: str, pushes: int = 20, seed: int = 0) -> dict:
         def fn(r, ang=ang, f=f):
             r.run(1.5)
             r.push("spine", (f * math.cos(ang), f * math.sin(ang), 0.0), 0.2)
-            r.run(2.5)
+            r.run(4.5)                    # 4.5 s after the push: a slow fall shows by then (2.5 s missed some)
         runner.reset()
         fn(runner.rig)
         ok += bool(runner.rig.standing())
@@ -144,5 +158,5 @@ def evaluate_teacher(pushes: int = 20, seed: int = 0) -> dict:
 
 if __name__ == "__main__":
     n = int(sys.argv[2]) if len(sys.argv) > 2 else 20
-    out = evaluate_teacher(n) if sys.argv[1] == "teacher" else evaluate(sys.argv[1], pushes=n)
+    out = evaluate(sys.argv[1], pushes=n)   # 'teacher': the hand-written controller on every scene
     print(json.dumps(out, indent=1))

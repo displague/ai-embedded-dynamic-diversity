@@ -83,6 +83,9 @@ class EnvConfig:
     max_delay_steps: int = 2               # actuation delay, uniform in [0, this] control ticks per env
     kp_scale: tuple = (0.5, 1.05)          # servo stiffness: down to half (one line run slack), per DOF
     kv_scale: tuple = (0.8, 1.2)
+    lag_scale: tuple = (0.7, 1.5)          # the servo target's lag (timeconst), on a stand-in that has one
+    outer_loop: bool = True                # run the body's outer joint loop (the spec's `outer_loop`: integral
+                                           # trim on the joint error at the control rate), if it has one
     torque_scale: tuple = (0.85, 1.0)      # clutch slip torque
     friction: tuple = (0.4, 1.2)
     mass_scale: tuple = (0.9, 1.1)
@@ -187,6 +190,16 @@ class StandinEnv:
         self.state = np.zeros((self.N, self.nstate))
         self.sens = np.zeros((self.N, m.nsensordata))
         self.target = np.tile(self.default, (self.N, 1))
+        # the drive's outer joint loop (displague/robot tools/export_standin.py `outer_loop`, its docs/29): the
+        # servo target is the policy's target plus gain (kq err + trim), the trim integrating the joint error,
+        # so a joint held under load reaches its target as on the tendon model
+        ol = self.spec.get("outer_loop") if cfg.outer_loop else None
+        self.ol = ol
+        self.trim = np.zeros((self.N, self.nu))
+        if ol is not None:
+            self.ol_gain = np.array(ol["gain"], dtype=float)
+        self.ctrl_lo, self.ctrl_hi = m.actuator_ctrlrange[:, 0].copy(), m.actuator_ctrlrange[:, 1].copy()
+        self.i_act, self.na = 1 + m.nq + m.nv, m.na
         self.prev_action = np.zeros((self.N, self.nu))
         self.delay = self.rng.integers(0, cfg.max_delay_steps + 1, size=self.N)
         self.queue = np.zeros((cfg.max_delay_steps + 1, self.N, self.nu))
@@ -211,6 +224,8 @@ class StandinEnv:
             m.actuator_gainprm[:, 0] = kp
             m.actuator_biasprm[:, 1] = -kp
             m.actuator_biasprm[:, 2] *= u(cfg.kv_scale, m.nu)
+            if m.na:
+                m.actuator_dynprm[:, 0] *= u(cfg.lag_scale, m.nu)
             m.actuator_forcerange[:] *= u(cfg.torque_scale, m.nu)[:, None]
             m.geom_friction[:, 0] = u(cfg.friction)
             m.body_mass[1:] *= u(cfg.mass_scale, m.nbody - 1)
@@ -282,6 +297,8 @@ class StandinEnv:
             d.qpos[0:3] = (0.0, -(0.95 - ankle_z) * math.sin(th), ankle_z + (0.95 - ankle_z) * math.cos(th) + 0.01)
             d.qpos[3:7] = (math.cos(th / 2), math.sin(th / 2), 0.0, 0.0)
             d.qpos[self.qadr] = self.default
+        if m.na == m.nu:                   # a lagged servo starts at its target
+            d.act[:] = self.default
         self.mj.mj_forward(m, d)
         s = np.empty(self.nstate)
         self.mj.mj_getState(m, d, s, self.state_kind)
@@ -310,6 +327,8 @@ class StandinEnv:
         q[:, 7:][:, self.qadr - 7] = pose
         st[:, self.i_qpos:self.i_qpos + self.nq] = q
         st[:, self.i_qvel:self.i_qvel + self.nv] = 0.0
+        if self.na == self.nu:
+            st[:, self.i_act:self.i_act + self.na] = pose
         self.state[idx] = st
         self._roll(idx, pose, int(round(self.cfg.settle_s / self.base.opt.timestep)))
         return pose
@@ -369,6 +388,7 @@ class StandinEnv:
             self._roll(idx, np.tile(self.default, (len(idx), 1)), self.substeps)
             self.target[idx] = self.default
         self.prev_action[idx] = 0.0
+        self.trim[idx] = 0.0
         self.queue[:, idx] = (self.target[idx] - self.default) / self.half
         self.t[idx] = 0
         self.over_t[idx] = 0.0
@@ -389,7 +409,7 @@ class StandinEnv:
             self._push()
         if self.wind_on:
             self._blow(self.dt_ctrl)
-        self._roll(np.arange(self.N), ctrl, self.substeps)
+        self._roll(np.arange(self.N), self._servo(ctrl), self.substeps)
         self.t += 1
         q, v, R, up, grav, lin = self._pelvis()
         s = self.sens
@@ -433,6 +453,15 @@ class StandinEnv:
             self.reset(np.nonzero(done)[0])
         obs, priv = self.observe()
         return obs, priv, r.astype(np.float32), obs_done, info
+
+    def _servo(self, target):
+        """The servo targets for joint targets `target` (N, nu): through the outer loop when the body has one."""
+        if self.ol is None:
+            return target
+        ol, g = self.ol, self.ol_gain
+        err = target - self.state[:, self.i_qpos:self.i_qpos + self.nq][:, self.qadr]
+        self.trim = np.clip(self.trim + g * ol["ki"] * err * self.dt_ctrl, -ol["trim_max"], ol["trim_max"])
+        return np.clip(target + g * ol["kq"] * err + self.trim, self.ctrl_lo, self.ctrl_hi)
 
     def _push(self):
         t = self.t * self.dt_ctrl

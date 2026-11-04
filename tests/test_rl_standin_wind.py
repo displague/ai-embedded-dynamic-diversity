@@ -50,8 +50,9 @@ def test_wind_off_is_calm_and_keeps_the_layout() -> None:
 
 
 def test_wind_pushes_a_standing_standin_downwind() -> None:
-    calm = _run()
-    windy = _run(wind_mean=(9.0, 9.0), wind_ramp_s=0.0)
+    # the drive's outer loop off: with it, the integral trim holds the pose and the body barely sways in 1.5 s
+    calm = _run(outer_loop=False)
+    windy = _run(wind_mean=(9.0, 9.0), wind_ramp_s=0.0, outer_loop=False)
     env = windy["env"]
     assert env.wind_on and env.priv_dim == calm["env"].priv_dim + 2
     assert windy["priv"].shape == (2, env.priv_dim)

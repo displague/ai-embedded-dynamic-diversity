@@ -126,3 +126,32 @@ tasks (or distillation toward the champion on them) alongside it.
 still and at 20 N pushes, and survives 18 of 20 single random pushes; the hand-written controller passes
 all of these. The stand-in leaves out the drum locks, the slack line run and the ankle loops' stretch-
 for-torque behaviour; closing that gap comes before any of these policies is used on the robot.
+
+## The drive refit and three seeds (issue #48, displague/robot docs/29)
+
+The robot's stand-in was slow and soft against the tendon model: the motor's back-EMF damping sat at the joint
+(it acts on the gear, behind the line spring), and nothing reproduced the firmware's outer loop, whose integral
+trim takes out the line stretch (a held knee reached 16 % of a target step in 1 s; the tendon model 91 %). The
+export now has 0.1 of that damping and a 30 ms target lag, and its JSON carries `outer_loop`, which `StandinEnv`
+runs at the control rate (`EnvConfig.outer_loop`, on by default when the spec has it; the lag randomised by
+`lag_scale`). With the drum locks gated on whole-body stillness by the robot's balance loop (its D-038), and that
+loop off under a policy, no lock engages in the gate, so the locks were not the gap.
+
+Each run: champion v09 grown, cloned from the robot's current teacher data (272 episodes, wind included), 150 PPO
+iterations with pushes and `--wind-mean 0,9 --wind-gust 0,2`. Gated with `rl/tendon_eval.py` (S stands):
+
+| Policy | Stand 10 s | 10 N | 20 N | 30 N | Wind 5 | Wind 8 | Random pushes | Standing still |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| hand-written controller (`teacher`) | S | S | S | S | S | S | 20/20 | 3.6 W |
+| v0.3.0 `stand-grown-bc` | F | F | F | F | F | F | 18/20 (2.5 s window) | 40 W |
+| refitted stand-in, seeds 0 / 1 / 2 | S S S | S S S | S F S | F F S | S F F | F F F | 18, 16, 18 | 67, 110, 99 W |
+| old stand-in, seeds 0 / 1 / 2 | S S S | S F S | S F S | S F F | F F F | F F F | 17, 17, 18 | 134, 117, 50 W |
+
+Most of the gain over v0.3.0 is the teacher data (re-recorded with the robot's drum locks off while balancing,
+and with wind). The refit matches the drive better and its policies score lower on the stand-in itself (83 to 87 %
+standing against 89 to 92 %), but on the gate its effect is inside the spread between seeds. Policies:
+`artifacts/rl/stand-cascade-bc-s{0,1,2}.pt`, `stand-oldservo-bc-s{0,1,2}.pt` (local, not released).
+
+Left for #48: the 30 N push and the 8 m/s wind, and the power. The policies never let a joint target rest, so the
+outer loop never settles; an energy estimate in the reward and a power column in the gate come next, then a
+fine-tune on the tendon model itself.
