@@ -2,9 +2,13 @@
 
 ## Completed
 
+- Pre-release review fixes (v0.4.0): the gate runs a policy saved with `hand_ankles` as the hybrid without the
+  flag; in the hybrid the hand-written ankles keep the model's ankle gain even under a torque-mode policy; the
+  hand-written controller restores that gain after one; `render` passes `ankle_torque` and `locks`;
+  `rl.getup_eval`, the get-up test (reproduces 61 % / 55 % from `gu2-mlp-s0`/`-s1`). No published gate number changed.
 - A hybrid in the gate and the tendon fine-tune (`tendon_eval <policy> 20 handankles`, `finetune --hand-ankles`):
-  the robot's hand-written balance loop drives the ankles (torque mode, CoP loop, hip lean) and the policy every
-  other joint. Ten cloned policies, not trained with it: 2 of 10 pass all six named scenes, the first with the
+  the robot's hand-written balance loop drives the ankles (torque mode, CoP loop) and adds its hip lean and hip-roll
+  shift to the policy's hip targets; the policy drives every joint but the ankles. Ten cloned policies, not trained with it: 2 of 10 pass all six named scenes, the first with the
   8 m/s wind (plain seed 3: 19/20 pushes, 44 W standing), but random pushes fall (77/100 plain, 94/100 held-load).
   200 iterations of tendon fine-tune in the hybrid: 20/20 pushes, but the 8 m/s wind lost and 270 W standing
   (displague/robot docs/32).

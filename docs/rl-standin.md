@@ -185,7 +185,9 @@ noise (`--init-log-std`, `quiet_noise`) does not transfer to the tendon model. `
 tendon model itself (`rl/tendon_env.py`), where the locks are the real ones, at about 600 control steps per second.
 What made policies rest was a scene: a load in one hand (`--hand-load 0,4`), which cut the median idle power over
 five seeds from 175 W to 38 W (best 10.6 W, the hand-written controller 5.4 W) and lets 3 of 5 seeds hold a 3.9 kg
-bag (5 of 5 with `--quiet 0.5 --episode-s 20`). `tendon_eval <policy> rest [restmode]` runs the rest scenes.
+bag (5 of 5 with `--quiet 0.5 --episode-s 20`). `tendon_eval <policy> rest [restmode]` runs the rest scenes. (The
+held load draws one extra random number per variant, so a run with it randomises the other variant parameters
+differently from a run without: the 175 against 38 W compares two different sets of training variants as well.)
 
 ## Get-up from a half-kneel (issue #49, displague/robot docs/32)
 
@@ -194,7 +196,7 @@ bag (5 of 5 with `--quiet 0.5 --episode-s 20`). `tendon_eval <policy> rest [rest
 A two-knee kneel does not rest on this robot: with the shins flat the feet stand on their toes' edge, and with the
 knees bent further only the knees touch. A search over 32 half-kneels found one that rests upright (front hip flexed
 90 degrees, knee 95, ankle -5; back hip +5, knee 100; pelvis 0.46 m). The robot's static check
-(`tools/rise_static.py` there) shows it cannot rise slowly on one leg from below a pelvis height of 0.85 m (the
+(`tools/rise_static.py` there) shows it cannot rise slowly on one leg from below a pelvis height of 0.90 m (the
 ankle dorsiflexes 20 degrees), so the rise has to be dynamic.
 
 `--task getup --getup-start curriculum`: start half-kneeling, add fallen starts once the half-kneel succeeds on more
@@ -206,4 +208,6 @@ with 15 % rehearsal, unlocked too early and forgot the half-kneel).
 | seed 0 | 61 % | 28 % | forearms 2.3 | 0 % |
 | seed 1 | 55 % | 19 % | forearms 2.3 | 0 % |
 
-The rises are lunges of about half a second. Not yet: from a fall, on the tendon model, within the arms' ratings.
+`python -m ai_embedded_dynamic_diversity.rl.getup_eval <policy> [--start fallen]` is that test (deterministic, 64
+starts, seed 7); it reproduces the table from `gu2-mlp-s0` and `-s1`. The rises are lunges of about half a second.
+Not yet: from a fall, on the tendon model, within the arms' ratings.

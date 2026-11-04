@@ -32,7 +32,8 @@ def load_policy(path: str, device="cpu"):
 
 class TendonPolicyRunner:
     def __init__(self, policy_path: str, repo: str | None = None, rate_hz: float = 50.0, locks: bool = True,
-                 deadband: float = 0.0, rest_v: float = 0.0, rest_s: float = 0.5, hand_ankles: bool = False):
+                 deadband: float = 0.0, rest_v: float = 0.0, rest_s: float = 0.5,
+                 hand_ankles: bool | None = None):
         """`deadband` (rad): a joint's target holds until the policy asks for a change larger than this, so a
         policy that is nearly still gives steady targets and the drums can lock (issue #56)."""
         self.actor, self.norm, self.saved = load_policy(policy_path)
@@ -40,8 +41,9 @@ class TendonPolicyRunner:
         self.locks = locks
         self.deadband = deadband
         # hand_ankles: the robot's hand-written balance loop drives the ankles (its torque mode, CoP loop and hip
-        # lean) and the policy every other joint: a hybrid (displague/robot docs/32)
-        self.hand_ankles = hand_ankles
+        # lean) and the policy every other joint: a hybrid (displague/robot docs/32). None: as the policy was trained
+        # (a `finetune --hand-ankles` policy saves it), else off
+        self.hand_ankles = bool(self.saved["env"].get("hand_ankles")) if hand_ankles is None else hand_ankles
         self.rest_v, self.rest_s = rest_v, rest_s   # rest_v > 0: the deadband's own looser stillness gate
         self.rest_t = 0.0
         st = _load_sim_tendon(find_robot_repo(repo))
@@ -68,8 +70,11 @@ class TendonPolicyRunner:
         # the drums' stillness gate (the robot's D-038) runs without the balance loop, so the drums can lock under
         # a policy that holds still, as the firmware would let them (robot checkouts from its docs/30 on)
         r.still_gate = self.locks
-        # a policy trained with the ankles in torque mode runs them so here too: no outer-loop trim at the ankles
-        self.st.OUTER_GAIN["foot"] = 0.0 if self.saved["env"].get("ankle_torque") else self._ankle_gain
+        # a policy trained with the ankles in torque mode runs them so here too: no outer-loop trim at the ankles.
+        # Not in the hybrid: there the hand-written loop drives the ankles, and its ankle roll in double stance runs
+        # in position mode on the model's own gain
+        torque = self.saved["env"].get("ankle_torque") and not self.hand_ankles
+        self.st.OUTER_GAIN["foot"] = 0.0 if torque else self._ankle_gain
         if not self.locks:
             r.lock_enabled = False
         self.default = np.array([r.target[n] for n in self.names])
@@ -126,9 +131,13 @@ class _TeacherRunner:
 
     def __init__(self, repo: str | None = None):
         self.st = _load_sim_tendon(find_robot_repo(repo))
+        if not hasattr(self.st, "_OUTER_GAIN_FOOT"):
+            self.st._OUTER_GAIN_FOOT = self.st.OUTER_GAIN.get("foot", 1.0)
         self.rig = self.st.Rig()
 
     def reset(self):
+        # the model's own ankle gain, should a torque-mode policy have run in this process before
+        self.st.OUTER_GAIN["foot"] = self.st._OUTER_GAIN_FOOT
         self.rig.reset()
 
 
