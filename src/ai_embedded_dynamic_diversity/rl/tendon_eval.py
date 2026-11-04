@@ -16,16 +16,13 @@ import sys
 import numpy as np
 import torch
 
-from ai_embedded_dynamic_diversity.models.core import ModelCore
-from ai_embedded_dynamic_diversity.rl.actor import CoreActor, RunningNorm, load_checkpoint
+from ai_embedded_dynamic_diversity.rl.actor import CoreActor, RunningNorm, build_policy_net
 from ai_embedded_dynamic_diversity.sim.robot_tendon import _load_sim_tendon, find_robot_repo
 
 
 def load_policy(path: str, device="cpu"):
     saved = torch.load(path, map_location="cpu", weights_only=False)
-    cfg, state = load_checkpoint(path)
-    core = ModelCore(**cfg)
-    core.load_state_dict(state)
+    core = build_policy_net(saved)
     actor = CoreActor(core)
     actor.log_std.data = saved["log_std"]
     norm = RunningNorm(core.signal_dim)
@@ -34,8 +31,9 @@ def load_policy(path: str, device="cpu"):
 
 
 class TendonPolicyRunner:
-    def __init__(self, policy_path: str, repo: str | None = None, rate_hz: float = 50.0):
+    def __init__(self, policy_path: str, repo: str | None = None, rate_hz: float = 50.0, locks: bool = True):
         self.actor, self.norm, self.saved = load_policy(policy_path)
+        self.locks = locks
         st = _load_sim_tendon(find_robot_repo(repo))
         self.st = st
         self.rig = st.Rig()
@@ -52,6 +50,11 @@ class TendonPolicyRunner:
         r = self.rig
         r.reset()
         r.balance = False
+        # the drums' stillness gate (the robot's D-038) runs without the balance loop, so the drums can lock under
+        # a policy that holds still, as the firmware would let them (robot checkouts from its docs/30 on)
+        r.still_gate = self.locks
+        if not self.locks:
+            r.lock_enabled = False
         self.default = np.array([r.target[n] for n in self.names])
         self.prev = np.zeros(len(self.names))
         self.mem = self.actor.initial_state(1, "cpu")
@@ -97,10 +100,21 @@ class _TeacherRunner:
         self.rig.reset()
 
 
-def evaluate(policy_path: str, pushes: int = 20, seed: int = 0) -> dict:
-    """The gate scenes for a policy, or for the hand-written controller when `policy_path` is 'teacher'."""
+def power(rig) -> tuple[float, float]:
+    """(mean electrical power in W over the scene so far, fraction of drum-steps locked), as the tendon model
+    counts them (its `report`)."""
+    st = rig.stats.values()
+    t = max(rig.data.time, 1e-9)
+    n = sum(s["n"] for s in st)
+    return sum(s["e_j"] for s in st) / t, (sum(s["locked"] for s in st) / n if n else 0.0)
+
+
+def evaluate(policy_path: str, pushes: int = 20, seed: int = 0, locks: bool = True) -> dict:
+    """The gate scenes for a policy, or for the hand-written controller when `policy_path` is 'teacher'.
+    `locks`: let the drums lock under the policy (the stillness gate on); False reproduces the gate before
+    the robot's docs/30, where no lock could engage under a policy."""
     teacher = policy_path == "teacher"
-    runner = _TeacherRunner() if teacher else TendonPolicyRunner(policy_path)
+    runner = _TeacherRunner() if teacher else TendonPolicyRunner(policy_path, locks=locks)
     who = "the hand-written controller" if teacher else "policy %s" % policy_path
     rng = np.random.default_rng(seed)
     results = {}
@@ -110,7 +124,9 @@ def evaluate(policy_path: str, pushes: int = 20, seed: int = 0) -> dict:
         fn(runner.rig)
         z, tilt = runner.rig.pelvis_state()
         rows = runner.rig.report("%s (%s)" % (name, who), top=5)
+        w, locked = power(runner.rig)
         results[name] = dict(stands=bool(runner.rig.standing()), pelvis_z=float(z), tilt_deg=float(tilt),
+                             power_w=float(w), locked=float(locked),
                              worst_line=rows[0][1], worst_line_n=float(rows[0][2]), worst_line_cont=float(rows[0][3]),
                              worst_hot_s=float(max(r[11] for r in rows)))
 

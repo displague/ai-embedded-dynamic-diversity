@@ -34,6 +34,8 @@ def load_checkpoint(path: str) -> tuple[dict, dict]:
     """(core config, core state dict) from a champion checkpoint of this project, or from a policy saved by
     rl/ppo.py (its core, trained on some body), so a policy trained on one body can start another's training."""
     ck = torch.load(path, map_location="cpu", weights_only=False)
+    if ck.get("arch") == "mlp":
+        raise ValueError("%s is a plain-network policy; it cannot start a core's training" % path)
     if "core" in ck and "grow" in ck:                      # an rl/ppo.py policy
         g = ck["grow"]
         cfg = dict(load_checkpoint(g["checkpoint"])[0]) if g.get("checkpoint") else dict(DEFAULT_CORE)
@@ -82,6 +84,48 @@ def grow_core(signal_dim: int, io_channels: int, checkpoint: str | None = None, 
                 report["fresh"].append(k)
     core.load_state_dict(new_sd)
     return core, report
+
+
+class PlainMLP(nn.Module):
+    """The comparison baseline (issue #51): a plain feed-forward network with the core's interface, so the same
+    actor, trainer, cloning and gate run it. Two ELU hidden layers; `hidden` 168 gives 51,440 parameters for the
+    tendon humanoid's 104 inputs and 32 outputs, against the grown core's 51,484. No memory: the state tensor is
+    passed through unchanged. The output layer starts near zero, so the sigmoid sits at 0.5 and the action mean
+    at 0 (the standing pose), as the core's outputs do."""
+
+    arch = "mlp"
+
+    def __init__(self, signal_dim: int, io_channels: int, hidden: int = 168):
+        super().__init__()
+        self.signal_dim, self.io_channels, self.hidden = signal_dim, io_channels, hidden
+        self.memory_slots, self.memory_dim = 1, 1
+        self.net = nn.Sequential(nn.Linear(signal_dim, hidden), nn.ELU(), nn.Linear(hidden, hidden), nn.ELU(),
+                                 nn.Linear(hidden, io_channels))
+        with torch.no_grad():
+            self.net[-1].weight.mul_(0.01)
+            self.net[-1].bias.zero_()
+
+    def init_memory(self, batch_size: int, memory_slots: int, memory_dim: int, device) -> torch.Tensor:
+        return torch.zeros(batch_size, memory_slots, memory_dim, device=device)
+
+    def forward(self, signal: torch.Tensor, memory: torch.Tensor) -> dict[str, torch.Tensor]:
+        return dict(io=torch.sigmoid(self.net(signal)), memory=memory)
+
+
+def build_policy_net(saved: dict) -> nn.Module:
+    """The actor's network from a policy saved by rl/ppo.py: the plain baseline or the model core."""
+    if saved.get("arch") == "mlp":
+        c = saved["core_config"]
+        net = PlainMLP(c["signal_dim"], c["io_channels"], c["hidden"])
+        net.load_state_dict(saved["core"])
+        return net
+    from ai_embedded_dynamic_diversity.models.core import ModelCore
+    g = saved["grow"]
+    cfg = dict(load_checkpoint(g["checkpoint"])[0]) if g.get("checkpoint") else dict(DEFAULT_CORE)
+    cfg.update(signal_dim=g["signal_dim"], io_channels=g["io_channels"])
+    core = ModelCore(**cfg)
+    core.load_state_dict(saved["core"])
+    return core
 
 
 class CoreActor(nn.Module):

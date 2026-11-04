@@ -33,24 +33,24 @@ def _range(text: str) -> tuple:
 
 
 def _cfgs(task, num_envs, iterations, seed, device, horizon, epochs, minibatches, body="tendon32", pad_dofs=32,
-          wind_mean="", wind_gust="", wind_tau=2.0):
+          wind_mean="", wind_gust="", wind_tau=2.0, arch="core"):
     return (EnvConfig(task=task, num_envs=num_envs, seed=seed, body=body, pad_dofs=pad_dofs,
                       wind_mean=_range(wind_mean), wind_gust=_range(wind_gust), wind_tau=wind_tau),
             PPOConfig(iterations=iterations, seed=seed, device=device, horizon=horizon, epochs=epochs,
-                      minibatches=minibatches))
+                      minibatches=minibatches, arch=arch))
 
 
 @app.command()
 def train(task: str = "getup", init: str = "", body: str = "tendon32", pad_dofs: int = 32, teacher: str = "",
           num_envs: int = 2048, iterations: int = 300, seed: int = 0, device: str = "cuda", horizon: int = 24,
           epochs: int = 4, minibatches: int = 2, out: str = "artifacts/rl", label: str = "",
-          wind_mean: str = "", wind_gust: str = "", wind_tau: float = 2.0):
-    """`init`: a champion checkpoint to grow, or a policy from this trainer (any body, same padding) to start
+          wind_mean: str = "", wind_gust: str = "", wind_tau: float = 2.0, arch: str = "core"):
+    """`arch`: "core" (the model core) or "mlp" (the plain baseline, random weights only); `init`: a champion checkpoint to grow, or a policy from this trainer (any body, same padding) to start
     from; `teacher`: demonstrations to clone first (displague/robot tools/record_teacher.py); `wind_mean`,
     `wind_gust`: 'lo,hi' m/s ranges of each model variant's mean wind and gust sigma (default: no wind)."""
     env_cfg, ppo = _cfgs(task, num_envs, iterations, seed, device, horizon, epochs, minibatches, body, pad_dofs,
-                         wind_mean, wind_gust, wind_tau)
-    label = label or "%s-%s-%s-s%d" % (body, task, "init" if init else "random", seed)
+                         wind_mean, wind_gust, wind_tau, arch)
+    label = label or "%s-%s-%s-s%d" % (body, task, "mlp" if arch == "mlp" else "init" if init else "random", seed)
     s = ppo_train(env_cfg, ppo, init or None, out, label, teacher=teacher or None)
     print(json.dumps(s, indent=1, default=str))
 

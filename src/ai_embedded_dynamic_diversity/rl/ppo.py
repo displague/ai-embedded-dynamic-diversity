@@ -39,6 +39,7 @@ class PPOConfig:
     seed: int = 0
     device: str = "cuda"
     save_every: int = 50
+    arch: str = "core"           # "core": the model core (grown from `init`, or random); "mlp": the plain baseline
 
 
 def train(env_cfg: EnvConfig, ppo: PPOConfig, init: str | None, out_dir: str, label: str,
@@ -50,7 +51,16 @@ def train(env_cfg: EnvConfig, ppo: PPOConfig, init: str | None, out_dir: str, la
     dev = torch.device(ppo.device if torch.cuda.is_available() or ppo.device == "cpu" else "cpu")
     torch.manual_seed(ppo.seed)
     env = StandinEnv(env_cfg)
-    core, grow_report = grow_core(env.obs_dim, env.act_dim, init, seed=ppo.seed)
+    if ppo.arch == "mlp":
+        if init:
+            raise ValueError("the plain baseline starts from random weights; init must be empty")
+        from ai_embedded_dynamic_diversity.rl.actor import PlainMLP
+        core = PlainMLP(env.obs_dim, env.act_dim)
+        grow_report = dict(arch="mlp", checkpoint=None, signal_dim=env.obs_dim, io_channels=env.act_dim)
+    elif ppo.arch == "core":
+        core, grow_report = grow_core(env.obs_dim, env.act_dim, init, seed=ppo.seed)
+    else:
+        raise ValueError("arch must be core or mlp, got %r" % ppo.arch)
     actor = CoreActor(core, ppo.init_log_std).to(dev)
     critic = Critic(env.priv_dim).to(dev)
     obs_norm, priv_norm = RunningNorm(env.obs_dim).to(dev), RunningNorm(env.priv_dim).to(dev)
@@ -192,8 +202,9 @@ def train(env_cfg: EnvConfig, ppo: PPOConfig, init: str | None, out_dir: str, la
 
 def _save(path, actor, critic, obs_norm, priv_norm, env_cfg, ppo, grow_report, env):
     torch.save(dict(core=actor.core.state_dict(), log_std=actor.log_std.detach().cpu(),
+                    arch=getattr(actor.core, "arch", "core"),
                     core_config={k: getattr(actor.core, k, None) for k in ("edge_nodes", "io_channels", "hidden_dim",
                                                                             "signal_dim", "memory_slots", "memory_dim",
-                                                                            "max_remap_groups")},
+                                                                            "max_remap_groups", "hidden")},
                     critic=critic.state_dict(), obs_norm=obs_norm.state_dict(), priv_norm=priv_norm.state_dict(),
                     env=asdict(env_cfg), ppo=asdict(ppo), grow=grow_report, dof_names=env.dof_names), path)
