@@ -31,11 +31,13 @@ class TendonEnvConfig:
     control_hz: float = 50.0
     episode_s: float = 20.0
     action_fraction: float = 0.2
+    action_half: tuple | None = None       # per-DOF half-spans (the fine-tuned policy's own), overrides the fraction
     push_interval_s: tuple = (2.0, 5.0)
     push_n: tuple = (10.0, 30.0)
     quiet_fraction: float = 0.5
     quiet_push_s: tuple = (8.0, 16.0)
-    wind_workers: float = 0.3              # this fraction of workers blows a wind (mean 0 to 8 m/s, gusts to 1.5)
+    wind_workers: float = 0.3              # this fraction of workers blows a wind (mean 0 to wind_max, gusts to 1.5)
+    wind_max: float = 8.0
     power_cost: float = 0.5
     power_ref_w: float = 10.0
     seed: int = 0
@@ -58,6 +60,8 @@ def _worker(conn, cfg: TendonEnvConfig, wid: int):
     lo = np.array([w["lo"] for w in rigs[0].w])
     hi = np.array([w["hi"] for w in rigs[0].w])
     half = 0.5 * (hi - lo) * cfg.action_fraction
+    if cfg.action_half is not None:
+        half = np.asarray(cfg.action_half, dtype=float)[:len(lo)]
     every = max(1, int(round(1.0 / (cfg.control_hz * rigs[0].model.opt.timestep))))
     dt_ctrl = every * rigs[0].model.opt.timestep
     windy = wid < int(round(cfg.wind_workers * cfg.workers))
@@ -76,7 +80,7 @@ def _worker(conn, cfg: TendonEnvConfig, wid: int):
         r.still_gate = True
         st.mujoco.mj_forward(r.model, r.data)   # positions for the first observation (reset leaves them stale)
         if windy:
-            r.set_wind(dict(mean=float(rng.uniform(0, 8)), gust=float(rng.uniform(0, 1.5)),
+            r.set_wind(dict(mean=float(rng.uniform(0, cfg.wind_max)), gust=float(rng.uniform(0, 1.5)),
                             dir=float(rng.uniform(0, 360)), seed=int(rng.integers(1 << 30))))
         S["t"][k] = 0.0
         S["push_at"][k] = gap(k)

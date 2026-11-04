@@ -65,6 +65,15 @@ def body_paths(body: str, repo: str | None = None) -> tuple[str, str]:
     raise ValueError("unknown body %r (one of %s)" % (body, ", ".join(BODIES)))
 
 
+def teacher_action_half(teacher_path: str, frac_min: float = 0.2, pct: float = 99.5, margin: float = 1.2) -> tuple:
+    """Per-DOF action half-spans (rad) that hold the teacher's corrections: `margin` times their `pct` percentile,
+    and at least `frac_min` of each joint's half-range (the old uniform 0.2)."""
+    z = np.load(teacher_path, allow_pickle=False)
+    lo, hi, off = z["joint_lo"], z["joint_hi"], z["offset"]
+    need = margin * np.percentile(np.abs(off), pct, axis=0)
+    return tuple(float(x) for x in np.maximum(need, 0.5 * (hi - lo) * frac_min))
+
+
 @dataclass
 class EnvConfig:
     task: str = "getup"
@@ -80,6 +89,9 @@ class EnvConfig:
     action_fraction: float | None = None  # actions span this fraction of each joint's half-range; None: 0.2
                                            # for stand (small corrections; the full span turned policy noise
                                            # into falls), 1.0 for getup (it needs the whole range)
+    action_half: tuple | None = None       # per-DOF action half-span in rad (overrides action_fraction): sized
+                                           # from the teacher's own corrections (`teacher_action_half`), since
+                                           # 0.2 of the range clipped them in 11.6 % of its steps (displague/robot docs/32)
     max_delay_steps: int = 2               # actuation delay, uniform in [0, this] control ticks per env
     kp_scale: tuple = (0.5, 1.05)          # servo stiffness: down to half (one line run slack), per DOF
     kv_scale: tuple = (0.8, 1.2)
@@ -170,6 +182,8 @@ class StandinEnv:
         self.n_impact_slots = 3            # impact channels in the privileged observation (padded)
         frac = cfg.action_fraction if cfg.action_fraction is not None else (0.2 if cfg.task == "stand" else 1.0)
         self.half = 0.5 * (self.hi - self.lo) * frac
+        if cfg.action_half is not None:
+            self.half = np.asarray(cfg.action_half, dtype=float)[:len(self.lo)].copy()
         self.arm = np.array([d["moment_arm_m"] for d in dofs])
         self.pre = np.array([d["pretension_n"] for d in dofs])
         self.lin = np.array([d["linear_torque_nm"] for d in dofs])

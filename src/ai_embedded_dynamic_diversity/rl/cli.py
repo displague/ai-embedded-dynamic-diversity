@@ -15,7 +15,7 @@ import os
 import typer
 
 from ai_embedded_dynamic_diversity.rl.ppo import PPOConfig, train as ppo_train
-from ai_embedded_dynamic_diversity.rl.standin_env import EnvConfig
+from ai_embedded_dynamic_diversity.rl.standin_env import EnvConfig, teacher_action_half
 
 app = typer.Typer(add_completion=False)
 
@@ -34,11 +34,11 @@ def _range(text: str) -> tuple:
 
 def _cfgs(task, num_envs, iterations, seed, device, horizon, epochs, minibatches, body="tendon32", pad_dofs=32,
           wind_mean="", wind_gust="", wind_tau=2.0, arch="core", locks=False, power_cost=0.0, quiet=0.0,
-          hand_load="", episode_s=10.0, init_log_std=-2.0, quiet_noise=1.0):
+          hand_load="", episode_s=10.0, init_log_std=-2.0, quiet_noise=1.0, action_half=None):
     return (EnvConfig(task=task, num_envs=num_envs, seed=seed, body=body, pad_dofs=pad_dofs,
                       wind_mean=_range(wind_mean), wind_gust=_range(wind_gust), wind_tau=wind_tau,
                       locks=locks, power_cost=power_cost, quiet_fraction=quiet, hand_load=_range(hand_load),
-                      episode_s=episode_s, quiet_noise=quiet_noise),
+                      episode_s=episode_s, quiet_noise=quiet_noise, action_half=action_half),
             PPOConfig(iterations=iterations, seed=seed, device=device, horizon=horizon, epochs=epochs,
                       minibatches=minibatches, arch=arch, init_log_std=init_log_std))
 
@@ -49,7 +49,8 @@ def train(task: str = "getup", init: str = "", body: str = "tendon32", pad_dofs:
           epochs: int = 4, minibatches: int = 2, out: str = "artifacts/rl", label: str = "",
           wind_mean: str = "", wind_gust: str = "", wind_tau: float = 2.0, arch: str = "core",
           locks: bool = False, power_cost: float = 0.0, quiet: float = 0.0, hand_load: str = "",
-          episode_s: float = 10.0, init_log_std: float = -2.0, quiet_noise: float = 1.0):
+          episode_s: float = 10.0, init_log_std: float = -2.0, quiet_noise: float = 1.0,
+          teacher_range: bool = False):
     """`init_log_std`: the exploration noise's starting log std (rests: small enough that drums can lock, -4.5);
     `arch`: "core" (the model core) or "mlp" (the plain baseline, random weights only); `init`: a champion checkpoint to grow, or a policy from this trainer (any body, same padding) to start
     from; `teacher`: demonstrations to clone first (displague/robot tools/record_teacher.py); `wind_mean`,
@@ -58,7 +59,8 @@ def train(task: str = "getup", init: str = "", body: str = "tendon32", pad_dofs:
     envs pushed only every 8 to 16 s, `hand_load` 'lo,hi' kg in one hand, `episode_s` the episode length."""
     env_cfg, ppo = _cfgs(task, num_envs, iterations, seed, device, horizon, epochs, minibatches, body, pad_dofs,
                          wind_mean, wind_gust, wind_tau, arch, locks, power_cost, quiet, hand_load, episode_s,
-                         init_log_std, quiet_noise)
+                         init_log_std, quiet_noise,
+                         teacher_action_half(teacher) if teacher_range and teacher else None)
     label = label or "%s-%s-%s-s%d" % (body, task, arch if arch in ("mlp", "gru") else "init" if init else "random", seed)
     s = ppo_train(env_cfg, ppo, init or None, out, label, teacher=teacher or None)
     print(json.dumps(s, indent=1, default=str))
@@ -69,13 +71,17 @@ def finetune(policy: str, workers: int = 20, per_worker: int = 8, iterations: in
              device: str = "cuda", horizon: int = 48, epochs: int = 4, minibatches: int = 4, out: str = "artifacts/rl",
              label: str = "", power_cost: float = 0.5, quiet: float = 0.5, wind_workers: float = 0.3,
              episode_s: float = 20.0, critic_warmup: int = 10, lr: float = 3e-4, init_log_std: float = -3.0,
-             desired_kl: float = 0.01):
+             desired_kl: float = 0.01, wind_max: float = 8.0):
     """PPO on the full tendon model (rl/tendon_env.py), continuing a stand policy saved by `train`: the drums'
     locks and the electrical power as the robot's model has them (issue #56)."""
     from ai_embedded_dynamic_diversity.rl.tendon_env import TendonEnvConfig, TendonVecEnv
 
+    import torch
+
+    pe = torch.load(policy, map_location="cpu", weights_only=False)["env"]
     cfg = TendonEnvConfig(workers=workers, per_worker=per_worker, power_cost=power_cost, quiet_fraction=quiet,
-                          wind_workers=wind_workers, episode_s=episode_s, seed=seed)
+                          wind_workers=wind_workers, wind_max=wind_max, episode_s=episode_s, seed=seed,
+                          action_fraction=pe.get("action_fraction") or 0.2, action_half=pe.get("action_half"))
     env = TendonVecEnv(cfg)
     try:
         ppo = PPOConfig(iterations=iterations, seed=seed, device=device, horizon=horizon, epochs=epochs,
