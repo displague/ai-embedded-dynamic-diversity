@@ -34,7 +34,7 @@ def load_checkpoint(path: str) -> tuple[dict, dict]:
     """(core config, core state dict) from a champion checkpoint of this project, or from a policy saved by
     rl/ppo.py (its core, trained on some body), so a policy trained on one body can start another's training."""
     ck = torch.load(path, map_location="cpu", weights_only=False)
-    if ck.get("arch") == "mlp":
+    if ck.get("arch") in ("mlp", "gru"):
         raise ValueError("%s is a plain-network policy; it cannot start a core's training" % path)
     if "core" in ck and "grow" in ck:                      # an rl/ppo.py policy
         g = ck["grow"]
@@ -112,8 +112,39 @@ class PlainMLP(nn.Module):
         return dict(io=torch.sigmoid(self.net(signal)), memory=memory)
 
 
+class PlainGRU(nn.Module):
+    """A plain recurrent baseline (the core has memory, the MLP none): input layer, a GRU cell, output layer. `hidden`
+    80 gives 49,872 parameters for 104 inputs and 32 outputs (the MLP 51,440, the grown core 51,484). The memory
+    tensor is (batch, 1, hidden)."""
+
+    arch = "gru"
+
+    def __init__(self, signal_dim: int, io_channels: int, hidden: int = 80):
+        super().__init__()
+        self.signal_dim, self.io_channels, self.hidden = signal_dim, io_channels, hidden
+        self.memory_slots, self.memory_dim = 1, hidden
+        self.inp = nn.Sequential(nn.Linear(signal_dim, hidden), nn.ELU())
+        self.cell = nn.GRUCell(hidden, hidden)
+        self.out = nn.Linear(hidden, io_channels)
+        with torch.no_grad():
+            self.out.weight.mul_(0.01)
+            self.out.bias.zero_()
+
+    def init_memory(self, batch_size: int, memory_slots: int, memory_dim: int, device) -> torch.Tensor:
+        return torch.zeros(batch_size, 1, self.hidden, device=device)
+
+    def forward(self, signal: torch.Tensor, memory: torch.Tensor) -> dict[str, torch.Tensor]:
+        h = self.cell(self.inp(signal), memory[:, 0])
+        return dict(io=torch.sigmoid(self.out(h)), memory=h[:, None, :])
+
+
 def build_policy_net(saved: dict) -> nn.Module:
     """The actor's network from a policy saved by rl/ppo.py: the plain baseline or the model core."""
+    if saved.get("arch") == "gru":
+        c = saved["core_config"]
+        net = PlainGRU(c["signal_dim"], c["io_channels"], c["hidden"])
+        net.load_state_dict(saved["core"])
+        return net
     if saved.get("arch") == "mlp":
         c = saved["core_config"]
         net = PlainMLP(c["signal_dim"], c["io_channels"], c["hidden"])

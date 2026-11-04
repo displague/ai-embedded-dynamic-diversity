@@ -59,7 +59,7 @@ def train(task: str = "getup", init: str = "", body: str = "tendon32", pad_dofs:
     env_cfg, ppo = _cfgs(task, num_envs, iterations, seed, device, horizon, epochs, minibatches, body, pad_dofs,
                          wind_mean, wind_gust, wind_tau, arch, locks, power_cost, quiet, hand_load, episode_s,
                          init_log_std, quiet_noise)
-    label = label or "%s-%s-%s-s%d" % (body, task, "mlp" if arch == "mlp" else "init" if init else "random", seed)
+    label = label or "%s-%s-%s-s%d" % (body, task, arch if arch in ("mlp", "gru") else "init" if init else "random", seed)
     s = ppo_train(env_cfg, ppo, init or None, out, label, teacher=teacher or None)
     print(json.dumps(s, indent=1, default=str))
 

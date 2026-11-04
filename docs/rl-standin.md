@@ -171,8 +171,10 @@ pipeline. Stand, 150 iterations, wind, seeds 0-4, gated on the tendon model with
 | random core | 0 0 0 0 0 | 0 | 0 | 0.51 |
 
 The champion's prior beats random weights of its architecture, but a plain network beats both on this body, and
-it clones the hand-written controller about 170 times more closely. Caveats: the core has memory and the MLP
-none, and the trainer's settings were tuned on the core. RPO stand, five seeds: from the tendon policy 0.80
+it clones the hand-written controller about 170 times more closely. The core has memory and the MLP none, so
+`--arch gru` (a plain 80-unit GRU, 49,872 parameters) was run too: cloned, five seeds, 4 of 6 named scenes on every
+seed (20 of 30) and 100 of 100 pushes. Memory is not what the core adds. (The trainer's settings were tuned on
+the core.) RPO stand, five seeds: from the tendon policy 0.80
 standing in the first 10 iterations on every seed against 0.32 from random weights; at the end 0.76-0.78 on four
 seeds against 0.70-0.72, and one seed collapsed to 0.17.
 

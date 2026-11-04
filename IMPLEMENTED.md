@@ -2,6 +2,9 @@
 
 ## Completed
 
+- A plain recurrent baseline, `--arch gru` (`PlainGRU`: input layer, an 80-unit GRU cell, output layer; 49,872
+  parameters), so the core's memory is compared against memory: five seeds, cloned, on the tendon gate 20 of 30
+  named scenes and 100 of 100 random pushes (plain MLP 22 and 98, grown core 17 and 89; displague/robot docs/31).
 - Seed study, a plain-network baseline, and rests and locks (#51, #56; displague/robot docs/31, D-052):
   - `rl.cli train --arch mlp`: a plain two-layer MLP (51,440 parameters, the grown core 51,484) through the same
     actor, cloning, PPO, gate and render (`PlainMLP`, `build_policy_net`);

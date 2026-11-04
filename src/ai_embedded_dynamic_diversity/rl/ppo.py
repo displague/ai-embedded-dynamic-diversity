@@ -58,6 +58,12 @@ def train(env_cfg: EnvConfig, ppo: PPOConfig, init: str | None, out_dir: str, la
         saved_ft = torch.load(finetune, map_location="cpu", weights_only=False)
         core = build_policy_net(saved_ft)
         grow_report = dict(saved_ft["grow"], finetune=finetune)
+    elif ppo.arch == "gru":
+        if init:
+            raise ValueError("the GRU baseline starts from random weights; init must be empty")
+        from ai_embedded_dynamic_diversity.rl.actor import PlainGRU
+        core = PlainGRU(env.obs_dim, env.act_dim)
+        grow_report = dict(arch="gru", checkpoint=None, signal_dim=env.obs_dim, io_channels=env.act_dim)
     elif ppo.arch == "mlp":
         if init:
             raise ValueError("the plain baseline starts from random weights; init must be empty")
@@ -67,7 +73,7 @@ def train(env_cfg: EnvConfig, ppo: PPOConfig, init: str | None, out_dir: str, la
     elif ppo.arch == "core":
         core, grow_report = grow_core(env.obs_dim, env.act_dim, init, seed=ppo.seed)
     else:
-        raise ValueError("arch must be core or mlp, got %r" % ppo.arch)
+        raise ValueError("arch must be core, mlp or gru, got %r" % ppo.arch)
     actor = CoreActor(core, ppo.init_log_std).to(dev)
     critic = Critic(env.priv_dim).to(dev)
     obs_norm, priv_norm = RunningNorm(env.obs_dim).to(dev), RunningNorm(env.priv_dim).to(dev)
