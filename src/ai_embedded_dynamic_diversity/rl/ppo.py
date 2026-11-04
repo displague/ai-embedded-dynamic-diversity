@@ -89,7 +89,7 @@ def train(env_cfg: EnvConfig, ppo: PPOConfig, init: str | None, out_dir: str, la
         buf_done = torch.zeros(T, N, device=dev)
         mem0 = memory.detach().clone()
         it_success = it_damage = it_eps = it_wmini = 0
-        stand_frac = []
+        stand_frac, power, locked = [], [], []
         with torch.no_grad():
             for t in range(T):
                 o = torch.as_tensor(obs_np, device=dev)
@@ -110,6 +110,9 @@ def train(env_cfg: EnvConfig, ppo: PPOConfig, init: str | None, out_dir: str, la
                 buf_done[t] = dn
                 memory = memory * (1.0 - dn)[:, None, None]
                 stand_frac.append(float(info.standing.mean()))
+                if "power_w" in info.extras:
+                    power.append(float(info.extras["power_w"].mean()))
+                    locked.append(float(info.extras["locked"].mean()))
                 if done.any():
                     fin = np.nonzero(done)[0]
                     it_eps += len(fin)
@@ -183,13 +186,15 @@ def train(env_cfg: EnvConfig, ppo: PPOConfig, init: str | None, out_dir: str, la
                    episode_s=(N * T / it_eps * env.dt_ctrl) if it_eps else None,
                    damage_rate=(it_damage / it_eps) if it_eps else None,
                    kl=float(np.mean(kls)), lr=lr, policy_loss=float(np.mean(pls)), value_loss=float(np.mean(vls)),
-                   std=float(actor.log_std.detach().exp().mean()))
+                   std=float(actor.log_std.detach().exp().mean()),
+                   power_w=float(np.mean(power)) if power else None, locked=float(np.mean(locked)) if locked else None)
         log.append(rec)
         if it % 5 == 0 or it == ppo.iterations - 1:
             print("[%s] it %4d steps %9d fps %6d r %.3f stand %.3f eps %4d success %s damage %s std %.3f lr %.1e"
                   % (label, it, total_steps, rec["fps"], rec["reward"], rec["standing_fraction"], it_eps,
                      "%.2f" % rec["success_rate"] if it_eps else "-", "%.2f" % rec["damage_rate"] if it_eps else "-",
-                     rec["std"], lr), flush=True)
+                     rec["std"], lr) + (" W %.1f locked %.2f" % (rec["power_w"], rec["locked"]) if power else ""),
+                  flush=True)
         if (it + 1) % ppo.save_every == 0 or it == ppo.iterations - 1:
             _save(os.path.join(out_dir, label + ".pt"), actor, critic, obs_norm, priv_norm, env_cfg, ppo, grow_report, env)
             with open(os.path.join(out_dir, label + ".log.json"), "w") as f:

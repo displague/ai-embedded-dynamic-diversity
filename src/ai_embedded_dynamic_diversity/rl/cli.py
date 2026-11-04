@@ -33,9 +33,12 @@ def _range(text: str) -> tuple:
 
 
 def _cfgs(task, num_envs, iterations, seed, device, horizon, epochs, minibatches, body="tendon32", pad_dofs=32,
-          wind_mean="", wind_gust="", wind_tau=2.0, arch="core"):
+          wind_mean="", wind_gust="", wind_tau=2.0, arch="core", locks=False, power_cost=0.0, quiet=0.0,
+          hand_load="", episode_s=10.0):
     return (EnvConfig(task=task, num_envs=num_envs, seed=seed, body=body, pad_dofs=pad_dofs,
-                      wind_mean=_range(wind_mean), wind_gust=_range(wind_gust), wind_tau=wind_tau),
+                      wind_mean=_range(wind_mean), wind_gust=_range(wind_gust), wind_tau=wind_tau,
+                      locks=locks, power_cost=power_cost, quiet_fraction=quiet, hand_load=_range(hand_load),
+                      episode_s=episode_s),
             PPOConfig(iterations=iterations, seed=seed, device=device, horizon=horizon, epochs=epochs,
                       minibatches=minibatches, arch=arch))
 
@@ -44,12 +47,16 @@ def _cfgs(task, num_envs, iterations, seed, device, horizon, epochs, minibatches
 def train(task: str = "getup", init: str = "", body: str = "tendon32", pad_dofs: int = 32, teacher: str = "",
           num_envs: int = 2048, iterations: int = 300, seed: int = 0, device: str = "cuda", horizon: int = 24,
           epochs: int = 4, minibatches: int = 2, out: str = "artifacts/rl", label: str = "",
-          wind_mean: str = "", wind_gust: str = "", wind_tau: float = 2.0, arch: str = "core"):
+          wind_mean: str = "", wind_gust: str = "", wind_tau: float = 2.0, arch: str = "core",
+          locks: bool = False, power_cost: float = 0.0, quiet: float = 0.0, hand_load: str = "",
+          episode_s: float = 10.0):
     """`arch`: "core" (the model core) or "mlp" (the plain baseline, random weights only); `init`: a champion checkpoint to grow, or a policy from this trainer (any body, same padding) to start
     from; `teacher`: demonstrations to clone first (displague/robot tools/record_teacher.py); `wind_mean`,
-    `wind_gust`: 'lo,hi' m/s ranges of each model variant's mean wind and gust sigma (default: no wind)."""
+    `wind_gust`: 'lo,hi' m/s ranges of each model variant's mean wind and gust sigma (default: no wind);
+    rests and locks (issue #56): `locks` the drums self-lock, `power_cost` c in c log(1 + W / 10 W), `quiet` the fraction of
+    envs pushed only every 8 to 16 s, `hand_load` 'lo,hi' kg in one hand, `episode_s` the episode length."""
     env_cfg, ppo = _cfgs(task, num_envs, iterations, seed, device, horizon, epochs, minibatches, body, pad_dofs,
-                         wind_mean, wind_gust, wind_tau, arch)
+                         wind_mean, wind_gust, wind_tau, arch, locks, power_cost, quiet, hand_load, episode_s)
     label = label or "%s-%s-%s-s%d" % (body, task, "mlp" if arch == "mlp" else "init" if init else "random", seed)
     s = ppo_train(env_cfg, ppo, init or None, out, label, teacher=teacher or None)
     print(json.dumps(s, indent=1, default=str))

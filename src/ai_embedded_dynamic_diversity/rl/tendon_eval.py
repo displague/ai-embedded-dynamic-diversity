@@ -109,6 +109,48 @@ def power(rig) -> tuple[float, float]:
     return sum(s["e_j"] for s in st) / t, (sum(s["locked"] for s in st) / n if n else 0.0)
 
 
+REST_BAG_KG = 3.9                       # a gallon of milk in the left hand, arm hanging (the robot's docs/28)
+POWER_PASS_W = 7.2                      # the rest scenes' pass line: 2 x the hand-written controller standing
+
+
+def _runner(policy_path: str, locks: bool, bag_kg: float = 0.0):
+    """A runner whose rig carries `bag_kg` in the left hand (the robot's export_mjcf.BAGS, read at build)."""
+    import sys as _sys
+    st = _load_sim_tendon(find_robot_repo(None))
+    ex = _sys.modules["export_mjcf"]
+    before = dict(ex.BAGS)
+    if bag_kg > 0:
+        ex.BAGS.update({"hand.L": bag_kg})
+    try:
+        return _TeacherRunner() if policy_path == "teacher" else TendonPolicyRunner(policy_path, locks=locks)
+    finally:
+        ex.BAGS.clear()
+        ex.BAGS.update(before)
+
+
+def evaluate_rest(policy_path: str, locks: bool = True) -> dict:
+    """The rest scenes (issue #56): standing idle 30 s, and holding a 3.9 kg bag 20 s. Each: standing at the end,
+    mean electrical power and the fraction of drum-steps locked over the last 20 s (after settling)."""
+    out = {}
+    for name, kg, secs in (("idle30", 0.0, 30.0), ("bag20", REST_BAG_KG, 20.0)):
+        runner = _runner(policy_path, locks, kg)
+        runner.reset()
+        r = runner.rig
+        r.run(secs - 20.0 if secs > 20.0 else 0.0)
+        e0 = sum(s["e_j"] for s in r.stats.values())
+        n0 = sum(s["n"] for s in r.stats.values())
+        l0 = sum(s["locked"] for s in r.stats.values())
+        t0 = r.data.time
+        r.run(min(20.0, secs))
+        st_ = r.stats.values()
+        w = (sum(s["e_j"] for s in st_) - e0) / max(r.data.time - t0, 1e-9)
+        n = sum(s["n"] for s in st_) - n0
+        lk = (sum(s["locked"] for s in st_) - l0) / n if n else 0.0
+        out[name] = dict(stands=bool(r.standing()), power_w=float(w), locked=float(lk),
+                         passes=bool(r.standing() and w <= POWER_PASS_W * (1.0 if kg == 0 else 3.0)))
+    return out
+
+
 def evaluate(policy_path: str, pushes: int = 20, seed: int = 0, locks: bool = True) -> dict:
     """The gate scenes for a policy, or for the hand-written controller when `policy_path` is 'teacher'.
     `locks`: let the drums lock under the policy (the stillness gate on); False reproduces the gate before
@@ -173,6 +215,9 @@ def evaluate_teacher(pushes: int = 20, seed: int = 0) -> dict:
 
 
 if __name__ == "__main__":
+    if len(sys.argv) > 2 and sys.argv[2] == "rest":
+        print(json.dumps(evaluate_rest(sys.argv[1]), indent=1))
+        sys.exit(0)
     n = int(sys.argv[2]) if len(sys.argv) > 2 else 20
     out = evaluate(sys.argv[1], pushes=n)   # 'teacher': the hand-written controller on every scene
     print(json.dumps(out, indent=1))
