@@ -186,3 +186,24 @@ tendon model itself (`rl/tendon_env.py`), where the locks are the real ones, at 
 What made policies rest was a scene: a load in one hand (`--hand-load 0,4`), which cut the median idle power over
 five seeds from 175 W to 38 W (best 10.6 W, the hand-written controller 5.4 W) and lets 3 of 5 seeds hold a 3.9 kg
 bag (5 of 5 with `--quiet 0.5 --episode-s 20`). `tendon_eval <policy> rest [restmode]` runs the rest scenes.
+
+## Get-up from a half-kneel (issue #49, displague/robot docs/32)
+
+![The tendon humanoid rising from a half-kneel: plain MLP, curriculum, 74 M steps](assets/rl-tendon32-getup-halfkneel.gif)
+
+A two-knee kneel does not rest on this robot: with the shins flat the feet stand on their toes' edge, and with the
+knees bent further only the knees touch. A search over 32 half-kneels found one that rests upright (front hip flexed
+90 degrees, knee 95, ankle -5; back hip +5, knee 100; pelvis 0.46 m). The robot's static check
+(`tools/rise_static.py` there) shows it cannot rise slowly on one leg from below a pelvis height of 0.85 m (the
+ankle dorsiflexes 20 degrees), so the rise has to be dynamic.
+
+`--task getup --getup-start curriculum`: start half-kneeling, add fallen starts once the half-kneel succeeds on more
+than half of 200+ episodes, and keep half the resets on it (unlocking at a transient success after 50 episodes,
+with 15 % rehearsal, unlocked too early and forgot the half-kneel).
+
+| Plain MLP, 1,500 iterations | Rise and stand 1 s (64 starts) | Still standing at 10 s | Worst line / rating | Fallen starts |
+| --- | --- | --- | --- | --- |
+| seed 0 | 61 % | 28 % | forearms 2.3 | 0 % |
+| seed 1 | 55 % | 19 % | forearms 2.3 | 0 % |
+
+The rises are lunges of about half a second. Not yet: from a fall, on the tendon model, within the arms' ratings.

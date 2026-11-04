@@ -29,6 +29,8 @@
 
 - [x] Add a grounded embodiment with contact physics and a drive train that can be overloaded (`humanoid_tendon32`, the displague/robot tendon humanoid) (Closes #34).
 - [x] Train the model core by reward on grounded bodies: PPO on the tendon humanoid's fast stand-in, behaviour cloning from its hand-written controller, transfer between bodies (Closes #35).
+- [ ] Get-up (#49): done from a half-kneel in the stand-in (61 % rise); left: from a fall (0 %), on the tendon
+  model, without the arms over their line ratings.
 - [ ] Rests and locks (#56): done the power, the locks, held loads and the tendon-model fine-tune; left a policy
   within 2x the hand-written controller's idle power (best 10.6 W against 5.4 W) and the 8 m/s wind.
 - [ ] Close the stand-in to tendon-model gap until a learned stand policy passes the tendon gate (#48). Done: the drive's cascade fitted (stands 10 s, most pushes); left: the 30 N push, the 8 m/s wind, and the power (an energy term in the reward and the gate; then a fine-tune on the tendon model).

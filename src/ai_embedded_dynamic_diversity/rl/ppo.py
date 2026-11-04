@@ -211,12 +211,16 @@ def train(env_cfg: EnvConfig, ppo: PPOConfig, init: str | None, out_dir: str, la
                    kl=float(np.mean(kls)), lr=lr, policy_loss=float(np.mean(pls)), value_loss=float(np.mean(vls)),
                    std=float(actor.log_std.detach().exp().mean()),
                    power_w=float(np.mean(power)) if power else None, locked=float(np.mean(locked)) if locked else None)
+        if hasattr(env, "level_ema"):            # the get-up curriculum (#49): success by start, and the frontier
+            rec.update(curriculum=dict(zip(env.LEVELS, (float(x) for x in env.level_ema))), frontier=int(env.frontier))
         log.append(rec)
         if it % 5 == 0 or it == ppo.iterations - 1:
             print("[%s] it %4d steps %9d fps %6d r %.3f stand %.3f eps %4d success %s damage %s std %.3f lr %.1e"
                   % (label, it, total_steps, rec["fps"], rec["reward"], rec["standing_fraction"], it_eps,
                      "%.2f" % rec["success_rate"] if it_eps else "-", "%.2f" % rec["damage_rate"] if it_eps else "-",
-                     rec["std"], lr) + (" W %.1f locked %.2f" % (rec["power_w"], rec["locked"]) if power else ""),
+                     rec["std"], lr) + (" W %.1f locked %.2f" % (rec["power_w"], rec["locked"]) if power else "")
+                  + (" start %d %s" % (rec["frontier"], " ".join("%s %.2f" % kv for kv in rec["curriculum"].items()))
+                     if "curriculum" in rec else ""),
                   flush=True)
         if (it + 1) % ppo.save_every == 0 or it == ppo.iterations - 1:
             _save(os.path.join(out_dir, label + ".pt"), actor, critic, obs_norm, priv_norm, env_cfg, ppo, grow_report, env)
