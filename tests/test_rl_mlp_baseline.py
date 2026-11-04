@@ -27,3 +27,19 @@ def test_saved_roundtrip():
     x = torch.randn(3, 104)
     m = torch.zeros(3, 1, 1)
     assert torch.allclose(net(x, m)["io"], net2(x, m)["io"])
+
+
+def test_gru_baseline_size_memory_and_roundtrip():
+    from ai_embedded_dynamic_diversity.rl.actor import PlainGRU
+
+    net = PlainGRU(104, 32)
+    assert 48_000 < sum(p.numel() for p in net.parameters()) < 53_000
+    actor = CoreActor(net)
+    mem = actor.initial_state(2, "cpu")
+    x = torch.randn(2, 104)
+    mean1, mem1 = actor(x, mem)
+    mean2, _ = actor(x, mem1)
+    assert mean1.abs().max() < 0.1 and not torch.equal(mem, mem1)   # starts at the pose, and remembers
+    saved = dict(arch="gru", core=net.state_dict(), core_config=dict(signal_dim=104, io_channels=32, hidden=net.hidden))
+    net2 = build_policy_net(saved)
+    assert torch.allclose(net(x, mem)["io"], net2(x, mem)["io"])
