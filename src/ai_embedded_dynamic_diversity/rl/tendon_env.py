@@ -32,6 +32,7 @@ class TendonEnvConfig:
     episode_s: float = 20.0
     action_fraction: float = 0.2
     action_half: tuple | None = None       # per-DOF half-spans (the fine-tuned policy's own), overrides the fraction
+    ankle_torque: bool = False             # the ankles in torque mode (no outer-loop trim), as the policy was trained
     push_interval_s: tuple = (2.0, 5.0)
     push_n: tuple = (10.0, 30.0)
     quiet_fraction: float = 0.5
@@ -52,6 +53,8 @@ def _worker(conn, cfg: TendonEnvConfig, wid: int):
     if tools not in sys.path:
         sys.path.insert(0, tools)
     import sim_tendon as st
+    if cfg.ankle_torque:
+        st.OUTER_GAIN["foot"] = 0.0
     rng = np.random.default_rng([cfg.seed, wid])
     K = cfg.per_worker
     with contextlib.redirect_stdout(io.StringIO()):

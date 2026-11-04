@@ -35,12 +35,12 @@ def _range(text: str) -> tuple:
 def _cfgs(task, num_envs, iterations, seed, device, horizon, epochs, minibatches, body="tendon32", pad_dofs=32,
           wind_mean="", wind_gust="", wind_tau=2.0, arch="core", locks=False, power_cost=0.0, quiet=0.0,
           hand_load="", episode_s=10.0, init_log_std=-2.0, quiet_noise=1.0, action_half=None,
-          getup_start="fallen"):
+          getup_start="fallen", ankle_torque=False):
     return (EnvConfig(task=task, num_envs=num_envs, seed=seed, body=body, pad_dofs=pad_dofs,
                       wind_mean=_range(wind_mean), wind_gust=_range(wind_gust), wind_tau=wind_tau,
                       locks=locks, power_cost=power_cost, quiet_fraction=quiet, hand_load=_range(hand_load),
                       episode_s=episode_s, quiet_noise=quiet_noise, action_half=action_half,
-                      getup_start=getup_start),
+                      getup_start=getup_start, ankle_torque=ankle_torque),
             PPOConfig(iterations=iterations, seed=seed, device=device, horizon=horizon, epochs=epochs,
                       minibatches=minibatches, arch=arch, init_log_std=init_log_std))
 
@@ -52,7 +52,7 @@ def train(task: str = "getup", init: str = "", body: str = "tendon32", pad_dofs:
           wind_mean: str = "", wind_gust: str = "", wind_tau: float = 2.0, arch: str = "core",
           locks: bool = False, power_cost: float = 0.0, quiet: float = 0.0, hand_load: str = "",
           episode_s: float = 10.0, init_log_std: float = -2.0, quiet_noise: float = 1.0,
-          teacher_range: bool = False, getup_start: str = "fallen"):
+          teacher_range: bool = False, getup_start: str = "fallen", ankle_torque: bool = False):
     """`init_log_std`: the exploration noise's starting log std (rests: small enough that drums can lock, -4.5);
     `arch`: "core" (the model core) or "mlp" (the plain baseline, random weights only); `init`: a champion checkpoint to grow, or a policy from this trainer (any body, same padding) to start
     from; `teacher`: demonstrations to clone first (displague/robot tools/record_teacher.py); `wind_mean`,
@@ -62,7 +62,8 @@ def train(task: str = "getup", init: str = "", body: str = "tendon32", pad_dofs:
     env_cfg, ppo = _cfgs(task, num_envs, iterations, seed, device, horizon, epochs, minibatches, body, pad_dofs,
                          wind_mean, wind_gust, wind_tau, arch, locks, power_cost, quiet, hand_load, episode_s,
                          init_log_std, quiet_noise,
-                         teacher_action_half(teacher) if teacher_range and teacher else None, getup_start)
+                         teacher_action_half(teacher) if teacher_range and teacher else None, getup_start,
+                         ankle_torque)
     label = label or "%s-%s-%s-s%d" % (body, task, arch if arch in ("mlp", "gru") else "init" if init else "random", seed)
     s = ppo_train(env_cfg, ppo, init or None, out, label, teacher=teacher or None)
     print(json.dumps(s, indent=1, default=str))
@@ -83,7 +84,8 @@ def finetune(policy: str, workers: int = 20, per_worker: int = 8, iterations: in
     pe = torch.load(policy, map_location="cpu", weights_only=False)["env"]
     cfg = TendonEnvConfig(workers=workers, per_worker=per_worker, power_cost=power_cost, quiet_fraction=quiet,
                           wind_workers=wind_workers, wind_max=wind_max, episode_s=episode_s, seed=seed,
-                          action_fraction=pe.get("action_fraction") or 0.2, action_half=pe.get("action_half"))
+                          action_fraction=pe.get("action_fraction") or 0.2, action_half=pe.get("action_half"),
+                          ankle_torque=bool(pe.get("ankle_torque")))
     env = TendonVecEnv(cfg)
     try:
         ppo = PPOConfig(iterations=iterations, seed=seed, device=device, horizon=horizon, epochs=epochs,

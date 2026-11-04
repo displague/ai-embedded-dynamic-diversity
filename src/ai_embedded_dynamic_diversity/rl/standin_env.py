@@ -96,6 +96,10 @@ class EnvConfig:
     kp_scale: tuple = (0.5, 1.05)          # servo stiffness: down to half (one line run slack), per DOF
     kv_scale: tuple = (0.8, 1.2)
     lag_scale: tuple = (0.7, 1.5)          # the servo target's lag (timeconst), on a stand-in that has one
+    ankle_torque: bool = False             # the ankles in torque mode, as the robot's hand-written controller runs
+                                           # them (and as its demonstrations were recorded): no outer-loop trim, so
+                                           # the gear is placed and the lines stretch to carry the torque (a series
+                                           # spring); otherwise the outer loop trims them at its ankle gain (0.15)
     outer_loop: bool = True                # run the body's outer joint loop (the spec's `outer_loop`: integral
                                            # trim on the joint error at the control rate), if it has one
     torque_scale: tuple = (0.85, 1.0)      # clutch slip torque
@@ -230,6 +234,8 @@ class StandinEnv:
         self.trim = np.zeros((self.N, self.nu))
         if ol is not None:
             self.ol_gain = np.array(ol["gain"], dtype=float)
+            if cfg.ankle_torque:
+                self.ol_gain[[i for i, n in enumerate(self.dof_names) if n.startswith("foot.")]] = 0.0
         self.ctrl_lo, self.ctrl_hi = m.actuator_ctrlrange[:, 0].copy(), m.actuator_ctrlrange[:, 1].copy()
         self.i_act, self.na = 1 + m.nq + m.nv, m.na
         # the drive's electrical power (the robot's tools/sim_tendon.py count, in joint terms) and its lock rule
