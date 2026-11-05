@@ -530,3 +530,8 @@ Successor startup order:
 1. Add real sensor/actuator drivers behind the UDP HIL adapter.
 2. Implement quantization-aware training and compare with dynamic quantization.
 3. Add policy-level tasks on top of the current core adaptation objective.
+
+## License
+
+MIT ([LICENSE](LICENSE)). Vendored third-party material keeps its own licence: `third_party/roboparty_rpo`
+(see its `LICENSE` and `NOTICE.md`).
