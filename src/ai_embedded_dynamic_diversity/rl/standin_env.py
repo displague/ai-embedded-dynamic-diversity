@@ -31,6 +31,15 @@ wind is per model variant: every non-nominal variant draws its own mean, directi
 carries its own gust state, advanced each control tick; variant 0 stays calm. The policy observation has no
 wind channel (the robot has no anemometer); with wind on, the privileged observation gains two channels, the
 wind's world x and y speed / 10 m/s.
+
+A coach (off by default; rl/coach.py), both kinds meant to be withdrawn:
+- `coach="voice"`: spoken instruction heard through two ears, 17 more observation channels. The coach commands
+  ("get up" or "stand up", after "stay" for `coach_wait` seconds), then cues the rise and warns of an overloaded
+  line on a `coach_guide` share of episodes. With a wait, rising before the command is a false start: it earns
+  nothing and does not count as a success.
+- `help_cap` > 0: a helper's hands lift the trunk (a force, as the robot's get-up helper lifts under the arms),
+  up to that share of the weight, fading as helped episodes succeed. `help_free` of the episodes are never
+  helped, and the helper quits part-way through `help_quit` of those it helps.
 """
 from __future__ import annotations
 
@@ -140,6 +149,13 @@ class EnvConfig:
     quiet_push_s: tuple = (8.0, 16.0)      # s between pushes in a quiet env (time to rest, as standing idle is)
     quiet_noise: float = 1.0               # the exploration std's multiplier in quiet envs (0.2: drums can lock)
     hand_load: tuple = (0.0, 0.0)          # kg added to one hand on each non-nominal variant (a held bag)
+    coach: str = "off"                     # "voice": a coach's spoken instruction in the observation (rl/coach.py)
+    coach_guide: float = 1.0               # the share of episodes with cues after the command (else it is repeated)
+    coach_wait: tuple = (0.0, 0.0)         # s of "stay" before the command; beyond episode_s: never told to rise
+    help_cap: float = 0.0                  # a helper lifts the trunk by up to this share of the weight; 0: none
+    help_level: float = 1.0                # the helper's starting level (it fades itself from there)
+    help_free: float = 0.25                # the share of episodes never helped (the unassisted gate)
+    help_quit: float = 0.2                 # the share of helped episodes in which the helper quits part-way
     repo: str | None = None
 
 
@@ -267,10 +283,39 @@ class StandinEnv:
         self.queue = np.zeros((cfg.max_delay_steps + 1, self.N, self.nu))
         self.queue_mean = np.zeros((cfg.max_delay_steps + 1, self.N, self.nu))
         self.t = np.zeros(self.N, dtype=np.int64)
+        self._began = False
         self.over_t = np.zeros((self.N, self.nu))
         self.stand_t = np.zeros(self.N)
         self.push_at = np.zeros(self.N)
         self.ever_stood = np.zeros(self.N, dtype=bool)
+        self._coach_setup(names)
+
+    def _coach_setup(self, sensor_names):
+        """The coach's voice and the helper's hands (rl/coach.py), each on its own random stream so the rest of
+        the randomisation is the same with them on or off."""
+        from ai_embedded_dynamic_diversity.rl.coach import Hands, Voice
+        cfg, m, mj = self.cfg, self.base, self.mj
+        if cfg.coach not in ("off", "voice"):
+            raise ValueError("coach must be off or voice, got %r" % cfg.coach)
+        self.voice = self.hands = None
+        self.false_start = np.zeros(self.N, dtype=bool)
+        self.s_ears = None
+        if cfg.coach == "voice":
+            self.voice = Voice(self.N, np.random.default_rng([cfg.seed, 0x564F4943]), guide=cfg.coach_guide,
+                               wait=cfg.coach_wait)
+            if all("ear.%s_pos" % e in sensor_names for e in "LR"):
+                self.s_ears = [m.sensor_adr[m.sensor("ear.%s_pos" % e).id] for e in "LR"]
+        # the helper's force goes in with the controls: [ctrl, xfrc_applied] per step
+        self.control_spec = int(mj.mjtState.mjSTATE_CTRL)
+        if cfg.help_cap > 0.0:
+            self.hands = Hands(self.N, np.random.default_rng([cfg.seed, 0x48414E44]), self.weight, cap=cfg.help_cap,
+                               level=cfg.help_level, free=cfg.help_free, quit_p=cfg.help_quit)
+            self.control_spec |= int(mj.mjtState.mjSTATE_XFRC_APPLIED)
+            assert mj.mj_stateSize(m, self.control_spec) == m.nu + 6 * m.nbody
+            trunk = self.spec.get("trunk_body", "spine")
+            self.i_trunk = m.nu + 6 * m.body(trunk if trunk in [m.body(i).name for i in range(m.nbody)]
+                                             else self.root).id
+        self.xfrc = np.zeros((self.N, 6 * m.nbody if self.hands is not None else 0))
 
     # ---------------------------------------------------------------- randomisation
     def _variants(self):
@@ -348,11 +393,16 @@ class StandinEnv:
         return self.wind_v[self.variant_of_env]
 
     # ---------------------------------------------------------------- physics
-    def _roll(self, idx, ctrl, nstep):
-        """Advance envs `idx` by `nstep` physics steps holding `ctrl` (len(idx), nu)."""
+    def _roll(self, idx, ctrl, nstep, helped=False):
+        """Advance envs `idx` by `nstep` physics steps holding `ctrl` (len(idx), nu); `helped`: with the helper's
+        force (a control tick of every env), else without (a start settling)."""
         models = [self.model_of_env[i] for i in idx]
+        if self.hands is not None:         # the helper's force on the trunk, held over the tick
+            ctrl = np.concatenate([ctrl, self.xfrc[idx] if helped else np.zeros((len(idx), self.xfrc.shape[1]))],
+                                  axis=1)
         control = np.repeat(ctrl[:, None, :], nstep, axis=1)
-        st, sd = self.roller.rollout(models, self.datas, self.state[idx], control, nstep=nstep)
+        st, sd = self.roller.rollout(models, self.datas, self.state[idx], control, nstep=nstep,
+                                     control_spec=self.control_spec)
         self.state[idx] = st[:, -1, :]
         self.sens[idx] = sd[:, -1, :]
         if self.has_power and len(idx) == self.N:
@@ -497,6 +547,8 @@ class StandinEnv:
         feet = s[:, self.s_feet] / self.weight
         pad = self._pad
         obs = np.concatenate([pad(jq), pad(0.1 * jv), grav, 0.25 * gyro, feet, pad(self.prev_action)], axis=1)
+        if self.voice is not None:
+            obs = np.concatenate([obs, self.voice.hear(*self._ears(q, R), np.sqrt(np.square(jv).mean(axis=1)))], axis=1)
         tau = s[:, self.s_tau]
         line = self._line_force(tau) / self.f_cont
         impact = np.zeros((self.N, self.n_impact_slots))
@@ -508,8 +560,21 @@ class StandinEnv:
         if self.cfg.locks or self.cfg.power_cost > 0.0:   # only when resting is trained, likewise
             parts += [(self.power / 100.0)[:, None], self.locked.mean(axis=1)[:, None],
                       np.minimum(self.still_t, 5.0)[:, None] / 5.0]
+        if self.voice is not None or self.hands is not None:   # what the coach is doing, for the critic
+            parts.append(np.stack([self.voice.told if self.voice is not None else np.ones(self.N),
+                                   self.hands.lift / self.weight if self.hands is not None else np.zeros(self.N),
+                                   np.full(self.N, self.hands.level if self.hands is not None else 0.0)], axis=1))
         priv = np.concatenate(parts, axis=1)
         return obs.astype(np.float32), priv.astype(np.float32)
+
+    def _ears(self, q, R):
+        """The ears' world positions (N, 3) each: the stand-in's ear sensors (displague/robot export_standin.EARS),
+        or, on a body without them, 0.15 m apart at head height above the root."""
+        if self.s_ears is not None:
+            return tuple(self.sens[:, a:a + 3].copy() for a in self.s_ears)
+        up = 0.8 * self.stand_z
+        mid = q[:, 0:3] + up * R[:, :, 2]
+        return mid + 0.075 * R[:, :, 0], mid - 0.075 * R[:, :, 0]
 
     def _pad(self, x):
         if self.P == self.nu:
@@ -558,6 +623,14 @@ class StandinEnv:
         self.t[idx] = 0
         self.over_t[idx] = 0.0
         self.stand_t[idx] = 0.0
+        if self.hands is not None:
+            if self._began:
+                self.hands.record(idx, self.ever_stood[idx])
+            self.hands.reset(idx, self.cfg.episode_s)
+        if self.voice is not None:
+            self.voice.reset(idx, self.state[idx, self.i_qpos:self.i_qpos + 2])
+        self._began = True
+        self.false_start[idx] = False
         self.ever_stood[idx] = False
         self.delay[idx] = self.rng.integers(0, self.cfg.max_delay_steps + 1, size=len(idx))
         self.push_at[idx] = self._push_gap(idx)
@@ -598,7 +671,12 @@ class StandinEnv:
         if self.lk is not None:
             servo = self._lock(ctrl_mean, servo, self._servo_of(ctrl_mean) if mean is not None else servo)
         self.prev_ctrl = servo
-        self._roll(np.arange(self.N), servo, self.substeps)
+        if self.hands is not None:
+            self.xfrc[:] = 0.0
+            self.xfrc[:, self.i_trunk - self.nu:self.i_trunk - self.nu + 3] = self.hands.force(
+                self.t * self.dt_ctrl, self.state[:, self.i_qpos + 2], self.stand_z,
+                self.sens[:, self.s_feet].sum(axis=1), self.state[:, self.i_qvel:self.i_qvel + 2], self.dt_ctrl)
+        self._roll(np.arange(self.N), servo, self.substeps, helped=True)
         self.t += 1
         q, v, R, up, grav, lin = self._pelvis()
         s = self.sens
@@ -614,13 +692,19 @@ class StandinEnv:
         z = q[:, 2]
         standing = (z > cfg.stand_height * self.stand_z) & (up > cfg.stand_upright)
         self.stand_t = np.where(standing, self.stand_t + self.dt_ctrl, 0.0)
-        self.ever_stood |= self.stand_t > 1.0
+        told = self.voice.told if self.voice is not None else np.ones(self.N, dtype=bool)
+        self.ever_stood |= (self.stand_t > 1.0) & told
+        self.false_start |= standing & ~told
         # reward: progress to upright, then staying there; costs keep the hardware alive
         height = np.clip(z / self.stand_z, 0.0, 1.0)
         upright = np.clip(up, 0.0, 1.0)
         r = 0.5 * height + 0.5 * upright + 1.0 * standing
         if cfg.task == "stand":
             r = r + 0.5                                           # alive bonus
+        if self.voice is not None:
+            # told to stay: upright and low is what earns, until the command
+            r = np.where(told, r, 0.5 * upright + 0.5 * (1.0 - np.clip((height - 0.55) / 0.3, 0.0, 1.0)))
+            self.voice.speak(self.t * self.dt_ctrl, height, self.stand_t > 1.0, over.any(axis=1))
         r -= 0.5 * np.clip(line - 1.0, 0.0, None)[:, self.gated].sum(axis=1)
         r -= 0.05 * np.square(action - self.prev_action).mean(axis=1) * self.nu
         r -= 0.01 * np.square(tau / np.maximum(self.tau_max, 1e-3)).mean(axis=1) * self.nu
@@ -639,7 +723,8 @@ class StandinEnv:
                         impact=impact, extras=dict(z=z, up=up, ever_stood=self.ever_stood.copy(),
                                                    over_half_s=line_over_max > cfg.line_report_s,
                                                    wmini_over=((line > 1.0) & ~self.gated).any(axis=1),
-                                                   power_w=self.power.copy(), locked=self.locked.mean(axis=1)))
+                                                   power_w=self.power.copy(), locked=self.locked.mean(axis=1),
+                                                   false_start=self.false_start.copy()))
         if self.wind_on:
             info.extras["wind"] = self.wind_of_env().copy()
         obs_done = done.copy()
@@ -729,7 +814,7 @@ class StandinEnv:
 
     @property
     def obs_dim(self):
-        return 3 * self.P + 3 + 3 + len(self.s_feet)
+        return 3 * self.P + 3 + 3 + len(self.s_feet) + (self.voice.OBS if self.voice is not None else 0)
 
     @property
     def act_dim(self):
@@ -738,7 +823,8 @@ class StandinEnv:
     @property
     def priv_dim(self):
         return (self.obs_dim + 1 + 1 + 3 + self.n_impact_slots + self.P + 1 + (2 if self.wind_on else 0)
-                + (3 if self.cfg.locks or self.cfg.power_cost > 0.0 else 0))
+                + (3 if self.cfg.locks or self.cfg.power_cost > 0.0 else 0)
+                + (3 if self.voice is not None or self.hands is not None else 0))
 
     def close(self):
         self.roller.close()
