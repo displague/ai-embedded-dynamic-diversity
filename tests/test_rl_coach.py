@@ -113,14 +113,24 @@ def test_hands_fade_on_success_and_come_back_on_failure():
     h.reset(np.arange(4), 10.0)
     for _ in range(5):
         h.record(np.arange(4), np.ones(4, bool))
-    assert h.level == pytest.approx(0.8)        # 20 helped episodes, all risen: one step down
+    assert h.level[0] == pytest.approx(0.8)     # 20 helped episodes, all risen: one step down
     for _ in range(5):
         h.record(np.arange(4), np.zeros(4, bool))
-    assert h.level == pytest.approx(0.8 / 0.8 ** 0.5)   # they stopped rising at that level: part of the way back
-    h.level = 0.035
-    h.ema["helped"], h.count["at_level"] = 1.0, 100
+    assert h.level[0] == pytest.approx(0.8 / 0.8 ** 0.5)   # they stopped rising at that level: part of the way back
+    h.level[0] = 0.035
+    h.ema["helped"][0], h.count["at_level"][0] = 1.0, 100
     h.record(np.arange(4), np.ones(4, bool))
-    assert h.level == 0.0                       # withdrawn
+    assert h.level[0] == 0.0                    # withdrawn
+
+
+def test_each_start_has_its_own_level():
+    h = C.Hands(4, np.random.default_rng(0), weight=200.0, cap=0.5, free=0.0, quit_p=0.0, min_episodes=20, starts=2)
+    h.reset(np.arange(4), 10.0, np.array([0, 0, 1, 1]))
+    for _ in range(10):                         # the first start's episodes rise, the second's do not
+        h.record(np.arange(4), np.array([True, True, False, False]))
+    assert h.level[0] == pytest.approx(0.8) and h.level[1] == 1.0
+    h.reset(np.arange(4), 10.0, np.array([0, 0, 1, 1]))
+    assert (h.cap_env[:2] <= 0.8 * 0.5 * 200.0 + 1e-9).all() and (h.cap_env[2:] > 0.5 * 0.6 * 200.0 - 1e-9).all()
 
 
 def _env_available() -> bool:
@@ -166,3 +176,14 @@ def test_helper_lifts_a_kneeling_robot_and_rising_before_the_command_is_a_false_
     assert not env.voice.told.any()
     assert not info.extras["ever_stood"].any()         # nothing before the command counts as a rise
     assert info.extras["false_start"].any()
+
+
+def test_a_muted_coach_runs_its_script_in_silence():
+    v = _voice(self_noise=0.0)
+    _say(v, "get_up")
+    v.mute = True
+    assert (v.source() == 0.0).all()
+    v.speak(np.full(4, 5.0), np.full(4, 0.5), np.zeros(4, bool), np.zeros(4, bool))
+    v.word[:] = -1
+    v.speak(np.full(4, 6.0), np.full(4, 0.5), np.zeros(4, bool), np.zeros(4, bool))
+    assert v.told.all()

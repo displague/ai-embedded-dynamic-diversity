@@ -156,6 +156,7 @@ class EnvConfig:
     help_level: float = 1.0                # the helper's starting level (it fades itself from there)
     help_free: float = 0.25                # the share of episodes never helped (the unassisted gate)
     help_quit: float = 0.2                 # the share of helped episodes in which the helper quits part-way
+    help_fade_at: float = 0.6              # the helped success above which the helper's level steps down
     repo: str | None = None
 
 
@@ -309,7 +310,9 @@ class StandinEnv:
         self.control_spec = int(mj.mjtState.mjSTATE_CTRL)
         if cfg.help_cap > 0.0:
             self.hands = Hands(self.N, np.random.default_rng([cfg.seed, 0x48414E44]), self.weight, cap=cfg.help_cap,
-                               level=cfg.help_level, free=cfg.help_free, quit_p=cfg.help_quit)
+                               level=cfg.help_level, free=cfg.help_free, quit_p=cfg.help_quit,
+                               fade_at=cfg.help_fade_at,
+                               starts=len(self.LEVELS) if cfg.getup_start == "curriculum" else 1)
             self.control_spec |= int(mj.mjtState.mjSTATE_XFRC_APPLIED)
             assert mj.mj_stateSize(m, self.control_spec) == m.nu + 6 * m.nbody
             trunk = self.spec.get("trunk_body", "spine")
@@ -563,7 +566,7 @@ class StandinEnv:
         if self.voice is not None or self.hands is not None:   # what the coach is doing, for the critic
             parts.append(np.stack([self.voice.told if self.voice is not None else np.ones(self.N),
                                    self.hands.lift / self.weight if self.hands is not None else np.zeros(self.N),
-                                   np.full(self.N, self.hands.level if self.hands is not None else 0.0)], axis=1))
+                                   self.hands.level_env if self.hands is not None else np.zeros(self.N)], axis=1))
         priv = np.concatenate(parts, axis=1)
         return obs.astype(np.float32), priv.astype(np.float32)
 
@@ -592,6 +595,8 @@ class StandinEnv:
         idx = np.arange(self.N) if idx is None else np.asarray(idx)
         if len(idx) == 0:
             return
+        if self.hands is not None and self._began:      # the finished episodes, before their starts are redrawn
+            self.hands.record(idx, self.ever_stood[idx])
         if self.cfg.task == "getup" and self.cfg.getup_start == "curriculum":
             if not hasattr(self, "level"):
                 self._curriculum_setup()
@@ -624,9 +629,7 @@ class StandinEnv:
         self.over_t[idx] = 0.0
         self.stand_t[idx] = 0.0
         if self.hands is not None:
-            if self._began:
-                self.hands.record(idx, self.ever_stood[idx])
-            self.hands.reset(idx, self.cfg.episode_s)
+            self.hands.reset(idx, self.cfg.episode_s, self.level[idx] if hasattr(self, "level") else None)
         if self.voice is not None:
             self.voice.reset(idx, self.state[idx, self.i_qpos:self.i_qpos + 2])
         self._began = True

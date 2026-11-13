@@ -23,7 +23,8 @@ def evaluate_getup(policy: str, start: str = "curriculum", n: int = 64, seed: in
     """`start`: "curriculum" begins every episode at the first start (the half-kneel), "fallen" from a fall.
     Always without the helper's hands (the unassisted test). A policy trained with the coach's voice hears it here
     too: `guide` overrides the share of episodes with cues (0: the command only), `wait` 'lo,hi' s of "stay"
-    before the command, `mute` silences the coach (the ears hear noise only)."""
+    before the command, `mute` silences the coach (its script runs, so the command still starts the clock, but
+    the ears hear noise only)."""
     actor, norm, saved = load_policy(policy)
     pe = saved["env"]
     env = StandinEnv(EnvConfig(task="getup", num_envs=n, variants=16, nthread=16, seed=seed, getup_start=start,
@@ -32,7 +33,7 @@ def evaluate_getup(policy: str, start: str = "curriculum", n: int = 64, seed: in
                                coach_guide=pe.get("coach_guide", 1.0) if guide is None else guide,
                                coach_wait=tuple(float(x) for x in wait.split(",")) if wait else (0.0, 0.0)))
     if mute and env.voice is not None:
-        env.voice.speak = lambda *a, **k: None
+        env.voice.mute = True
     env.reset()
     obs, _ = env.observe()
     mem = actor.initial_state(n, "cpu")

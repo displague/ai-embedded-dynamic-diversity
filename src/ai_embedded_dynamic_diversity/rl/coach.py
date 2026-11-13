@@ -119,6 +119,7 @@ class Voice:
         self.pos = z((n, 3))                       # where the coach stands (world)
         self.pitch, self.tempo, self.loud, self.ambient = z(n), np.ones(n), np.ones(n), np.ones(n)
         self.heard = z((n, self.OBS))
+        self.mute = False                          # a test: the script runs, but the coach makes no sound
 
     def reset(self, idx, root_xy):
         """New episodes for envs `idx`, whose roots are at `root_xy` (len(idx), 2)."""
@@ -173,7 +174,7 @@ class Voice:
         i0 = np.floor(f).astype(int)
         fr = (f - i0)[:, None]
         e = (1.0 - fr) * TEMPLATE[wd, i0] + fr * TEMPLATE[wd, i0 + 1]
-        return _shift(e, self.pitch) * (self.loud * (self.word >= 0))[:, None]
+        return _shift(e, self.pitch) * (self.loud * ((self.word >= 0) & (not self.mute)))[:, None]
 
     def hear(self, ear_l, ear_r, joint_speed):
         """The observation (n, 2 BANDS + 1) at ears `ear_l`, `ear_r` (n, 3; world), with the joints' rms speed
@@ -201,47 +202,59 @@ class Voice:
 
 class Hands:
     """A helper lifting the trunk of each of N robots of weight `weight` (N). `cap` (of the weight) is the most it
-    lifts at level 1; the level fades by `fade` whenever the helped episodes' success (an average over
-    episodes) passes `fade_at`, and is raised again when it falls below `back_at`."""
+    lifts at level 1. Each of the task's `starts` (the get-up curriculum's half-kneel, fallen, ...) has its own
+    level: it fades by `fade` whenever that start's helped episodes succeed more often than `fade_at` (an average
+    over at least `min_episodes` of them), and is raised again when they succeed less often than `back_at`. So a
+    harder start being unlocked does not bring the help back on an easier one."""
 
     def __init__(self, n, rng, weight, cap=0.6, level=1.0, free=0.25, quit_p=0.2, fade=0.8, fade_at=0.6,
-                 back_at=0.25, min_episodes=300, damp=60.0, ease_m=0.10, floor=0.03):
+                 back_at=0.25, min_episodes=300, damp=60.0, ease_m=0.10, floor=0.03, starts=1):
         self.n, self.rng, self.weight = n, rng, weight
-        self.cap, self.level, self.free, self.quit_p = cap, level, free, quit_p
+        self.cap, self.free, self.quit_p = cap, free, quit_p
+        self.level = np.full(starts, float(level))
         self.fade, self.fade_at, self.back_at, self.min_episodes = fade, fade_at, back_at, min_episodes
         self.damp, self.ease_m, self.floor = damp, ease_m, floor
+        self.start = np.zeros(n, dtype=int)        # the start each env's episode began from
         self.helped = np.zeros(n, dtype=bool)
         self.cap_env = np.zeros(n)                 # N: this episode's cap
+        self.level_env = np.zeros(n)               # the level this episode was given at
         self.quit_at = np.full(n, np.inf)          # s: the helper lets go then
         self.impulse = np.zeros(n)                 # N s given this episode
         self.lift = np.zeros(n)
-        self.ema = dict(helped=0.0, free=0.0, impulse=0.0)
-        self.count = dict(helped=0, free=0, at_level=0)
+        self.ema = {k: np.zeros(starts) for k in ("helped", "free", "impulse")}
+        self.count = {k: np.zeros(starts, dtype=int) for k in ("helped", "free", "at_level")}
 
     def record(self, idx, success):
-        """Fold finished episodes into the averages, and move the level."""
+        """Fold finished episodes into their start's averages, and move its level."""
         for k, ok in zip(idx, success):
+            s = self.start[k]
             key = "helped" if self.helped[k] else "free"
-            self.count[key] += 1
-            a = max(0.005, 1.0 / self.count[key])
-            self.ema[key] += a * (float(ok) - self.ema[key])
+            self.count[key][s] += 1
+            a = max(0.005, 1.0 / self.count[key][s])
+            self.ema[key][s] += a * (float(ok) - self.ema[key][s])
             if self.helped[k]:
-                self.count["at_level"] += 1
-                b = max(0.005, 1.0 / self.count["at_level"])
-                self.ema["impulse"] += b * (self.impulse[k] / self.weight - self.ema["impulse"])
-        if self.level > 0.0 and self.count["at_level"] >= self.min_episodes:
-            if self.ema["helped"] > self.fade_at:
-                self.level = self.level * self.fade if self.level * self.fade >= self.floor else 0.0
-                self.count["at_level"] = self.count["helped"] = 0      # a new level is judged afresh
-            elif self.ema["helped"] < self.back_at and self.level < 1.0:
-                self.level = min(1.0, self.level / math.sqrt(self.fade))
-                self.count["at_level"] = self.count["helped"] = 0
+                self.count["at_level"][s] += 1
+                b = max(0.005, 1.0 / self.count["at_level"][s])
+                self.ema["impulse"][s] += b * (self.impulse[k] / self.weight - self.ema["impulse"][s])
+        for s in range(len(self.level)):
+            if self.level[s] <= 0.0 or self.count["at_level"][s] < self.min_episodes:
+                continue
+            if self.ema["helped"][s] > self.fade_at:
+                self.level[s] = self.level[s] * self.fade if self.level[s] * self.fade >= self.floor else 0.0
+                self.count["at_level"][s] = self.count["helped"][s] = 0      # a new level is judged afresh
+            elif self.ema["helped"][s] < self.back_at and self.level[s] < 1.0:
+                self.level[s] = min(1.0, self.level[s] / math.sqrt(self.fade))
+                self.count["at_level"][s] = self.count["helped"][s] = 0
 
-    def reset(self, idx, episode_s):
+    def reset(self, idx, episode_s, start=None):
+        """New episodes for envs `idx`, beginning from `start` (len(idx),; None: the only start)."""
         k = len(idx)
-        self.helped[idx] = (self.rng.random(k) >= self.free) & (self.level > 0.0)
+        self.start[idx] = 0 if start is None else start
+        lv = self.level[self.start[idx]]
+        self.level_env[idx] = lv
+        self.helped[idx] = (self.rng.random(k) >= self.free) & (lv > 0.0)
         # the helper's strength differs from one episode to the next, and it may walk away part-way
-        self.cap_env[idx] = self.cap * self.level * self.weight * self.rng.uniform(0.6, 1.0, k)
+        self.cap_env[idx] = self.cap * lv * self.weight * self.rng.uniform(0.6, 1.0, k)
         quits = self.rng.random(k) < self.quit_p
         self.quit_at[idx] = np.where(quits, self.rng.uniform(0.1, 1.0, k) * episode_s, np.inf)
         self.impulse[idx] = 0.0
@@ -252,12 +265,17 @@ class Hands:
         on = self.helped & (t < self.quit_at)
         ease = np.clip((0.98 * z_stand - z) / self.ease_m, 0.0, 1.0)
         lift = np.where(on, np.minimum(self.cap_env, np.maximum(self.weight - feet_load, 0.0)) * ease, 0.0)
-        steady = -self.damp * self.level * v_xy * (on & (ease > 0.0))[:, None]
+        steady = -(self.damp * self.level_env * (on & (ease > 0.0)))[:, None] * v_xy
         self.lift = lift
         self.impulse += (lift + np.linalg.norm(steady, axis=1)) * dt
         return np.concatenate([steady, lift[:, None]], axis=1)
 
     def summary(self):
-        return dict(level=float(self.level), helped_success=float(self.ema["helped"]),
-                    free_success=float(self.ema["free"]), impulse_weight_s=float(self.ema["impulse"]),
-                    episodes=dict(self.count))
+        """The first start's figures as scalars (the log's columns), and every start's under `by_start`."""
+        f = lambda a: [float(x) for x in a]
+        return dict(level=float(self.level[0]), helped_success=float(self.ema["helped"][0]),
+                    free_success=float(self.ema["free"][0]), impulse_weight_s=float(self.ema["impulse"][0]),
+                    by_start=dict(level=f(self.level), helped_success=f(self.ema["helped"]),
+                                  free_success=f(self.ema["free"]), impulse_weight_s=f(self.ema["impulse"]),
+                                  helped_episodes=[int(x) for x in self.count["helped"]],
+                                  free_episodes=[int(x) for x in self.count["free"]]))
