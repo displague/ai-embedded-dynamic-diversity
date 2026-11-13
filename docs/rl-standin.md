@@ -226,7 +226,8 @@ back. The ears are sites on the robot's stand-in (`ear.L_pos`, `ear.R_pos`).
 
 ### What it measured
 
-Plain MLP, half-kneel curriculum, 800 iterations (39 M steps), seed 0, one run each. The test is `rl.getup_eval`:
+Plain MLP, half-kneel curriculum, 800 iterations (39 M steps). Every arm on seed 0; the no-support and early-fade
+arms on seeds 1 and 2 as well. The test is `rl.getup_eval`:
 64 half-kneel starts, mean action, never with the hands.
 
 ![Unassisted success during training, and the helper's level](assets/rl-coach-arms.png)
@@ -250,12 +251,25 @@ told to rise (`--coach-wait 0.5,12` on 10 s episodes).
 Both end as a policy that never rises, with the voice or muted. A memoryless network did not learn to tell "stay"
 from "get up" in 20 M steps of trying, even with the last second's echo in its inputs.
 
-What it shows (one seed each; the half-kneel's two seeds differ by 6 points at 1,500 iterations):
+The two arms that matter, on three seeds (0, 1, 2):
+
+| Arm | Rise and stand 1 s | Still standing at 10 s | Ended by a line over its rating (of 64) | The helper |
+| --- | --- | --- | --- | --- |
+| No support | 48, 53, 53 %: **52 %** | 19, 5, 16 %: 13 % | 34, 17, 25: 25 | |
+| Hands, early fade | 47, 47, 44 %: **46 %** | 25, 13, 3 %: 14 % | 11, 22, 17: 17 | Withdrawn in training on every seed (by iteration 632, 621, 736) |
+
+| An unaided get-up after the early-fade helper (seed 0) |
+| --- |
+| ![get-up](assets/rl-tendon32-getup-earlyfade.gif) |
+
+What it shows (the other arms are one seed each, so only their large gaps count):
 1. **Help that stays becomes the skill.** With the late fade, the policy rose 53 % of the time with the hands and
    22 % without. This is the dependence the robot's withdrawal laws (its D-069) were written against.
-2. **Help that leaves early costs nothing and may teach restraint.** The early fade matches the unsupported rise
-   rate (47 % against 48 %), stays standing a little more often and ends a third as many episodes by overloading a
-   line. The helper is gone before the end, so the withdrawal law is met in training, not only in the test.
+2. **Help that leaves early can be withdrawn, at a small cost and no gain.** Over three seeds the early fade
+   rises 46 % against 52 % with no support (lower on every seed), is still standing as often (14 % against 13 %),
+   and ends fewer episodes by overloading a line (17 against 25 of 64; on two seeds of three). The helper is gone
+   before the end on every seed, so the withdrawal law is met in training, not only in the test. Seed 0 alone
+   suggested it cost nothing and cut overloads to a third; the other two seeds did not bear that out.
 3. **Spoken cues were not used.** Without a wait the voice carries nothing the policy needs, and 17 more noisy
    inputs cost some rise rate at equal steps. A simple listener (the nearest word by long-term spectrum) names the
    word 69 % of the time at 3 m with the robot still, 46 % with the joints at 0.5 rad/s and 15 % at 2 rad/s (chance

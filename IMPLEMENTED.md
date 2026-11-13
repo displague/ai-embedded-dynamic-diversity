@@ -8,10 +8,10 @@
   echo of the last second (`--coach voice`, 25 observation channels). `Hands`: a lift on the trunk that takes only
   what the soles leave, with a level per start that fades as helped episodes succeed, episodes never helped, and a
   helper that may quit part-way (`--help-cap`). `getup_eval` is the unassisted test (`--guide`, `--wait`, `--mute`).
-  Plain MLP, 800 iterations, one seed each, rise from the half-kneel without help: no support 48 %; hands fading
-  early (at 35 % helped success, half the episodes unhelped) 47 %, with 25 % still standing at 10 s against 19 % and
-  11 of 64 episodes ended by an overloaded line against 34, the helper fully withdrawn by iteration 632; hands
-  fading late (at 60 %) 22 %, the policy having learned to lean on them; voice cues 38 %, and unused (42 % muted).
+  Plain MLP, 800 iterations, rise from the half-kneel without help. Three seeds: no support 52 %; hands fading
+  early (at 35 % helped success, half the episodes unhelped) 46 %, the helper fully withdrawn in training on every
+  seed, as often still standing at 10 s (14 % against 13 %), 17 against 25 of 64 episodes ended by an overloaded
+  line. One seed: hands fading late (at 60 %) 22 %, the policy having learned to lean on them; voice cues 38 %, and unused (42 % muted).
   Waiting for the spoken command was not learned (0 % rise, staged or not). Skill: `skills/grounded-rl`.
   Tests: `tests/test_rl_coach.py`.
 - Pre-release review fixes (v0.4.0): the gate runs a policy saved with `hand_ankles` as the hybrid without the

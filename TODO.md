@@ -29,9 +29,9 @@
 
 - [x] Add a grounded embodiment with contact physics and a drive train that can be overloaded (`humanoid_tendon32`, the displague/robot tendon humanoid) (Closes #34).
 - [x] Train the model core by reward on grounded bodies: PPO on the tendon humanoid's fast stand-in, behaviour cloning from its hand-written controller, transfer between bodies (Closes #35).
-- [ ] The coach (#66): done a voice through two ears and a helper's hands that fade (early fade: 47 % unassisted,
-  fewer overloaded lines); left: obeying a spoken command (0 %: try `--arch gru`, a start where staying down is
-  not an option), more seeds, fallen starts with the helper, the tendon gate with ears, "come here".
+- [ ] The coach (#66): done a voice through two ears and a helper's hands that fade (early fade, three seeds: 46 %
+  unassisted against 52 % alone, withdrawn in training); left: obeying a spoken command (#68), fallen starts with
+  the helper (#69), the tendon gate with ears (#70), "come here".
 - [ ] Get-up (#49): done from a half-kneel in the stand-in (61 % rise, `rl.getup_eval`); left: from a fall (0 %),
   on the tendon model, without the arms over their line ratings.
 - [ ] The 8 m/s wind for a policy on its own: only the hybrid (hand-written ankles under it) holds it, at 77 of 100

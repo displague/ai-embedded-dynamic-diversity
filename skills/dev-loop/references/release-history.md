@@ -1,5 +1,25 @@
 # Release History
 
+## v0.5.0 (2026-11-13) — A coach for the get-up: a voice through two ears, and a helper's hands that fade
+
+**Key changes:**
+- `rl/coach.py` (#67; closes #66): `Voice` (a coach's words as syllables over 8 frequency bands, heard at two ears on
+  the robot's stand-in: spreading, head shadow, ambient and own-drive noise, the time difference, an echo of the
+  last second; 25 observation channels) and `Hands` (a lift on the trunk that takes only what the soles leave, a
+  level per start that fades, episodes never helped, a helper that may quit part-way).
+- `getup_eval --guide/--wait/--mute`, the unassisted test; `render` shows what the coach says.
+- `skills/grounded-rl`: how to train and judge on grounded bodies.
+
+**Findings:** three seeds: the early-fade helper is withdrawn in training every time and leaves 46 % unassisted
+rise against 52 % with no support. One seed: a late fade leaves 22 % (dependence: 53 % with the hands); spoken cues
+are unused (38 %, 42 % muted); a spoken command is not obeyed (0 %, staged or not).
+
+**Champion:** unchanged (v09). Nothing here beats training alone on the half-kneel.
+
+**Issues opened:** #68 (obey a spoken command), #69 (the helper on fallen starts), #70 (the tendon gate with ears).
+
+**PRs:** #67, #71.
+
 ## v0.4.0 (2026-11-04) — A plain baseline, rests and locks, and the tendon gate as the target
 
 **Key changes:**
