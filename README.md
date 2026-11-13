@@ -438,7 +438,16 @@ python -m ai_embedded_dynamic_diversity.rl.cli train --task stand --arch mlp --t
 python -m ai_embedded_dynamic_diversity.rl.tendon_eval artifacts/rl/<policy>.pt 20 handankles   # the hybrid
 python -m ai_embedded_dynamic_diversity.rl.tendon_eval artifacts/rl/<policy>.pt rest            # idle 30 s, a 3.9 kg bag
 python -m ai_embedded_dynamic_diversity.rl.getup_eval artifacts/rl/<get-up policy>.pt
+python -m ai_embedded_dynamic_diversity.rl.cli train --task getup --getup-start curriculum --arch mlp --help-cap 0.6 --help-free 0.5 --help-fade-at 0.35   # a helper's hands that fade
+python -m ai_embedded_dynamic_diversity.rl.cli train --task getup --getup-start curriculum --arch mlp --coach voice   # a coach's voice through two ears
 ```
+
+The get-up stages can train with a coach (`rl/coach.py`, issue #66): a helper's hands that lift, fade and may quit,
+and spoken instruction heard through two ears. A helper that fades early leaves the unassisted rise as good as
+training alone with a third as many overloaded lines; one that fades late leaves a policy that needs it. Spoken
+cues were not used, and obeying a spoken command is not learned yet (`docs/rl-standin.md`).
+
+![Unassisted success during training, and the helper's level](docs/assets/rl-coach-arms.png)
 
 ## Staged curriculum training (new_env_v1)
 

@@ -2,6 +2,18 @@
 
 ## Completed
 
+- A coach for the get-up stages (#66; displague/robot docs/49): `rl/coach.py`. `Voice`: a coach's words ("stay",
+  "get up" or "stand up", cues, "good") as syllables over 8 frequency bands, heard at two ears on the robot's
+  stand-in with spreading, head shadow, ambient and own-drive noise, the time difference between the ears and an
+  echo of the last second (`--coach voice`, 25 observation channels). `Hands`: a lift on the trunk that takes only
+  what the soles leave, with a level per start that fades as helped episodes succeed, episodes never helped, and a
+  helper that may quit part-way (`--help-cap`). `getup_eval` is the unassisted test (`--guide`, `--wait`, `--mute`).
+  Plain MLP, 800 iterations, one seed each, rise from the half-kneel without help: no support 48 %; hands fading
+  early (at 35 % helped success, half the episodes unhelped) 47 %, with 25 % still standing at 10 s against 19 % and
+  11 of 64 episodes ended by an overloaded line against 34, the helper fully withdrawn by iteration 632; hands
+  fading late (at 60 %) 22 %, the policy having learned to lean on them; voice cues 38 %, and unused (42 % muted).
+  Waiting for the spoken command was not learned (0 % rise, staged or not). Skill: `skills/grounded-rl`.
+  Tests: `tests/test_rl_coach.py`.
 - Pre-release review fixes (v0.4.0): the gate runs a policy saved with `hand_ankles` as the hybrid without the
   flag; in the hybrid the hand-written ankles keep the model's ankle gain even under a torque-mode policy; the
   hand-written controller restores that gain after one; `render` passes `ankle_torque` and `locks`;

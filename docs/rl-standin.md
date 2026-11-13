@@ -211,3 +211,59 @@ with 15 % rehearsal, unlocked too early and forgot the half-kneel).
 `python -m ai_embedded_dynamic_diversity.rl.getup_eval <policy> [--start fallen]` is that test (deterministic, 64
 starts, seed 7); it reproduces the table from `gu2-mlp-s0` and `-s1`. The rises are lunges of about half a second.
 Not yet: from a fall, on the tendon model, within the arms' ratings.
+
+## A coach for the get-up stages: a voice and a helper's hands (issue #66, displague/robot docs/49)
+
+A physical trainer gives two kinds of support and withdraws both. `rl/coach.py` adds them to the get-up stages:
+
+| Support | What it is | Flags |
+| --- | --- | --- |
+| **Voice** (hands off) | A coach somewhere around the robot says "stay", then "get up" or "stand up", then cues from what it sees ("lean", "push", "tall", "easy" when a gated line is over its rating) and "good". A word is two or three syllables, each a pattern over 8 frequency bands. Each ear hears it with spreading, the head's shadow, ambient noise and the robot's own drive noise. The observation gains 25 channels: 8 bands per ear, the time difference between the ears, and an 8-band echo of the last second | `--coach voice`, `--coach-guide`, `--coach-wait lo,hi`, `--coach-wait-after` |
+| **Hands** | A lift on the trunk: only what the soles leave uncarried, up to a cap, easing off below standing height. A level per start fades as helped episodes succeed and comes back if they stop. Some episodes are never helped, and the helper walks away part-way through others | `--help-cap`, `--help-free`, `--help-quit`, `--help-fade-at` |
+
+No waveform is synthesised: the model is band energies at the control rate. Two bare ears cannot tell front from
+back. The ears are sites on the robot's stand-in (`ear.L_pos`, `ear.R_pos`).
+
+### What it measured
+
+Plain MLP, half-kneel curriculum, 800 iterations (39 M steps), seed 0, one run each. The test is `rl.getup_eval`:
+64 half-kneel starts, mean action, never with the hands.
+
+![Unassisted success during training, and the helper's level](assets/rl-coach-arms.png)
+
+| Arm | Rise and stand 1 s | Still standing at 10 s | Ended by a line over its rating | In training |
+| --- | --- | --- | --- | --- |
+| No support | 48 % | 19 % | 34 of 64 | |
+| Voice, cues on every episode (17 channels, before the echo) | 38 % (39 % with the command only, 42 % muted) | 2 % | 26 | The policy does not use the voice: muted, it rises as often |
+| Hands, fading at 60 % helped success | 22 % | 2 % | 41 | Full help for 610 of 800 iterations; helped episodes rose 53 %, unhelped 15 % |
+| Voice and hands (the same fade) | 14 % | 0 % | 43 | Fallen starts unlocked and their failures brought the help back to full |
+| **Hands, fading at 35 %, half the episodes unhelped, a level per start** | **47 %** | **25 %** | **11** | Full help to iteration 419, withdrawn by 632; its impulse fell from 4.3 to 0.13 weight-seconds an episode before it left |
+
+**Waiting for the word was not learned.** Rising before the command is a false start; some episodes are never
+told to rise (`--coach-wait 0.5,12` on 10 s episodes).
+
+| Arm | Rises when told | Stays when not told | In training |
+| --- | --- | --- | --- |
+| The wait from the first step (17 channels) | 0 of 51 | 13 of 13 | Never rose: staying down is safe, and it is what the wait rewards |
+| The wait begun once 30 % rise, with the echo (25 channels, 1,200 iterations) | 0 of 52 | 12 of 12 | Rose 27 % before the wait began; then false starts in up to half the episodes, falling to 3 %, and no rise on command |
+
+Both end as a policy that never rises, with the voice or muted. A memoryless network did not learn to tell "stay"
+from "get up" in 20 M steps of trying, even with the last second's echo in its inputs.
+
+What it shows (one seed each; the half-kneel's two seeds differ by 6 points at 1,500 iterations):
+1. **Help that stays becomes the skill.** With the late fade, the policy rose 53 % of the time with the hands and
+   22 % without. This is the dependence the robot's withdrawal laws (its D-069) were written against.
+2. **Help that leaves early costs nothing and may teach restraint.** The early fade matches the unsupported rise
+   rate (47 % against 48 %), stays standing a little more often and ends a third as many episodes by overloading a
+   line. The helper is gone before the end, so the withdrawal law is met in training, not only in the test.
+3. **Spoken cues were not used.** Without a wait the voice carries nothing the policy needs, and 17 more noisy
+   inputs cost some rise rate at equal steps. A simple listener (the nearest word by long-term spectrum) names the
+   word 69 % of the time at 3 m with the robot still, 46 % with the joints at 0.5 rad/s and 15 % at 2 rad/s (chance
+   is 11 %): a robot that is lunging hears little. The side the voice comes from stays readable (98 % at 3 m and
+   2 rad/s).
+4. **Obeying a spoken command is not learned yet.** Staged or not, the wait ends in staying down. The next
+   things to try are a recurrent policy (`--arch gru`), a reward that does not pay more for kneeling than for a
+   failed rise, and a start where staying down is not an option (standing, with "sit" and "stand").
+
+Not yet: more seeds; the fallen starts (0 % in every arm); the tendon gate (it computes its observation from the
+rig and has no ears yet); "come here"; a recurrent policy, which is what words that take time really call for.
