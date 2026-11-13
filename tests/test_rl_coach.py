@@ -36,17 +36,17 @@ def test_a_voice_at_the_left_is_louder_and_earlier_in_the_left_ear():
     ear_l, ear_r = np.tile([0.075, 0.0, 1.6], (4, 1)), np.tile([-0.075, 0.0, 1.6], (4, 1))
     v.pos[:] = [2.0, 0.0, 1.6]                         # at the robot's left (+x)
     h = v.hear(ear_l, ear_r, np.zeros(4))
-    left, right, itd = h[:, :C.BANDS], h[:, C.BANDS:2 * C.BANDS], h[:, -1]
+    left, right, itd = h[:, :C.BANDS], h[:, C.BANDS:2 * C.BANDS], h[:, 2 * C.BANDS]
     assert (left.sum(axis=1) > right.sum(axis=1) + 0.5).all()
     assert (itd > 0.5).all()
     # the head shadows the high bands more than the low ones
     assert ((left - right)[:, 5].mean() > (left - right)[:, 1].mean())
     v.pos[:] = [0.0, -2.0, 1.6]                        # in front: both ears alike
     front = v.hear(ear_l, ear_r, np.zeros(4))
-    assert np.abs(front[:, -1]).max() < 0.3
+    assert np.abs(front[:, 2 * C.BANDS]).max() < 0.3
     v.pos[:] = [0.0, 2.0, 1.6]                         # behind: two bare ears cannot tell it from in front
     back = v.hear(ear_l, ear_r, np.zeros(4))
-    assert np.abs(front[:, :-1].mean(axis=0) - back[:, :-1].mean(axis=0)).max() < 0.6
+    assert np.abs(front[:, :2 * C.BANDS].mean(axis=0) - back[:, :2 * C.BANDS].mean(axis=0)).max() < 0.6
 
 
 def test_the_robots_own_noise_masks_the_voice():
@@ -187,3 +187,29 @@ def test_a_muted_coach_runs_its_script_in_silence():
     v.word[:] = -1
     v.speak(np.full(4, 6.0), np.full(4, 0.5), np.zeros(4, bool), np.zeros(4, bool))
     assert v.told.all()
+
+
+def test_the_echo_remembers_a_word_through_the_pause_after_it():
+    ear_l, ear_r = np.tile([0.075, 0.0, 1.6], (4, 1)), np.tile([-0.075, 0.0, 1.6], (4, 1))
+    echoes = {}
+    for word in ("stay", "get_up"):
+        v = _voice(self_noise=0.0)
+        v.pos[:] = [0.0, -2.0, 1.6]
+        v.pitch[:], v.loud[:], v.ambient[:] = 0.0, 1.0, C.E_REF
+        for k in range(40):                              # the word, then 0.4 s of silence
+            v.word[:] = v.wi[word] if k < C.TEMPLATE_LEN[v.wi[word]] else -1
+            v.word_t[:] = k
+            h = v.hear(ear_l, ear_r, np.zeros(4))
+        echoes[word] = h[:, -C.BANDS:].mean(axis=0)
+        assert (h[:, :C.BANDS].mean(axis=0) < 1.5).all()                # the ears hear only noise now
+    assert np.abs(echoes["stay"] - echoes["get_up"]).max() > 0.1        # but the echo still tells the words apart
+
+
+def test_the_wait_begins_only_when_armed():
+    v = C.Voice(4, np.random.default_rng(0), wait=(2.0, 3.0))
+    v.armed = False
+    v.reset(np.arange(4), np.zeros((4, 2)))
+    assert (v.t_cmd == 0.0).all()
+    v.armed = True
+    v.reset(np.arange(4), np.zeros((4, 2)))
+    assert (v.t_cmd >= 2.0).all()

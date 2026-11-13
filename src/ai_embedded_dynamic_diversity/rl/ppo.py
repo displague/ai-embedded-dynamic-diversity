@@ -217,7 +217,7 @@ def train(env_cfg: EnvConfig, ppo: PPOConfig, init: str | None, out_dir: str, la
         if getattr(env, "hands", None) is not None:      # the helper's fade and the unassisted gate (rl/coach.py)
             rec.update(help=env.hands.summary())
         if getattr(env, "voice", None) is not None:
-            rec.update(false_start_rate=(it_false / it_eps) if it_eps else None)
+            rec.update(false_start_rate=(it_false / it_eps) if it_eps else None, waiting=bool(env.voice.armed))
         log.append(rec)
         if it % 5 == 0 or it == ppo.iterations - 1:
             print("[%s] it %4d steps %9d fps %6d r %.3f stand %.3f eps %4d success %s damage %s std %.3f lr %.1e"

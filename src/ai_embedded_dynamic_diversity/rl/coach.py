@@ -11,8 +11,11 @@ Two kinds of support a physical trainer gives, both outside the policy and both 
     band energies per ear. Each episode's voice has its own pitch (a shift along the bands), tempo and loudness.
   - To each ear: spreading (1 / r^2), the head's shadow on the far ear (more in the high bands), ambient noise, and
     the robot's own drive noise (it grows with the joints' speed, so a thrashing robot hears less).
-  - The observation: log band energies for the left and the right ear, and the interaural time difference
-    (the path difference over the speed of sound, noisy when the voice is faint): 2 BANDS + 1 channels.
+  - The observation: log band energies for the left and the right ear, the interaural time difference (the
+    path difference over the speed of sound, noisy when the voice is faint), and an echo: the bands' energy
+    averaged over about the last second (`ECHO_S`), both ears together. 3 BANDS + 1 channels. The echo is what
+    lets a policy without memory know what was said a moment ago: words take 0.3 s and the coach pauses between
+    them, and without it nothing in a silent tick says whether the command has been given.
   - Two bare microphones cannot tell front from back, here as on a real head without shaped ears.
 
 `Hands`: a helper that lifts under the arms (a force on the trunk), as displague/robot's get-up helper does
@@ -34,6 +37,7 @@ SOUND_C = 343.0                # m/s
 TICK_S = 0.02                  # the word templates' frame (the control tick at 50 Hz)
 SYLLABLE_S = 0.14              # a syllable's length at tempo 1
 E_REF = 0.01                   # the energy the log observation is scaled by (about the ambient floor)
+ECHO_S = 1.0                   # s: the echo's time constant
 ITD_SCALE = 0.5e-3             # s: the time difference channel is ITD / this (0.44 ms across a 0.15 m head)
 SHADOW_DB = np.linspace(0.0, 12.0, BANDS)       # the far ear's loss, low band to high, for a source at one side
 SELF_PROFILE = np.exp(-0.5 * ((np.arange(BANDS) - 2.0) / 1.5) ** 2)   # the drives' noise sits in the low-mid bands
@@ -96,7 +100,7 @@ class Voice:
     others hear only the command, repeated); `wait`: (lo, hi) s before the command, during which the coach says
     "stay" (hi beyond the episode: some episodes are never told to rise)."""
 
-    OBS = 2 * BANDS + 1
+    OBS = 3 * BANDS + 1
 
     def __init__(self, n, rng, guide=1.0, wait=(0.0, 0.0), dist=(1.2, 3.0), height=(1.2, 1.7),
                  loud_db=(-6.0, 6.0), pitch=(-0.5, 0.5), tempo=(0.8, 1.25), ambient=(0.5, 2.0),
@@ -119,6 +123,8 @@ class Voice:
         self.pos = z((n, 3))                       # where the coach stands (world)
         self.pitch, self.tempo, self.loud, self.ambient = z(n), np.ones(n), np.ones(n), np.ones(n)
         self.heard = z((n, self.OBS))
+        self.echo = z((n, BANDS))
+        self.armed = True                          # False: no wait yet (the env arms it once the rise is learned)
         self.mute = False                          # a test: the script runs, but the coach makes no sound
 
     def reset(self, idx, root_xy):
@@ -133,7 +139,8 @@ class Voice:
         self.loud[idx] = 10.0 ** (u(self.loud_db) / 10.0)
         self.ambient[idx] = E_REF * u(self.ambient_r)
         self.word[idx], self.word_t[idx] = -1, 0.0
-        self.t_cmd[idx] = u(self.wait)
+        self.t_cmd[idx] = u(self.wait) if self.armed else 0.0
+        self.echo[idx] = 0.0
         self.next_at[idx] = rng.uniform(0.0, 0.3, k)
         self.cmd[idx] = [self.wi[RISE_COMMANDS[i]] for i in rng.integers(0, len(RISE_COMMANDS), k)]
         self.told[idx] = False
@@ -156,7 +163,7 @@ class Voice:
         cue = np.where(over, w["easy"], np.where(height < self.lean_h, w["lean"],
                                                  np.where(height < self.push_h, w["push"], w["tall"])))
         after = np.where(stood, np.where(self.praised, -1, w["good"]), np.where(self.guide, cue, self.cmd))
-        say = np.where(before, w["stay"] if self.wait[1] > 0.0 else -1, np.where(self.told, after, self.cmd))
+        say = np.where(before, w["stay"], np.where(self.told, after, self.cmd))
         i = np.nonzero(due)[0]
         self.word[i], self.word_t[i] = say[i], 0.0
         self.praised[i] |= (say[i] == w["good"])
@@ -176,8 +183,8 @@ class Voice:
         e = (1.0 - fr) * TEMPLATE[wd, i0] + fr * TEMPLATE[wd, i0 + 1]
         return _shift(e, self.pitch) * (self.loud * ((self.word >= 0) & (not self.mute)))[:, None]
 
-    def hear(self, ear_l, ear_r, joint_speed):
-        """The observation (n, 2 BANDS + 1) at ears `ear_l`, `ear_r` (n, 3; world), with the joints' rms speed
+    def hear(self, ear_l, ear_r, joint_speed, dt=TICK_S):
+        """The observation (n, 3 BANDS + 1) at ears `ear_l`, `ear_r` (n, 3; world), with the joints' rms speed
         `joint_speed` (n,) rad/s for the robot's own noise."""
         src = self.source()
         mid = 0.5 * (ear_l + ear_r)
@@ -196,7 +203,9 @@ class Voice:
         present = snr / (1.0 + snr)                 # how far the voice stands out of the noise
         itd = (r_r - r_l) / SOUND_C / ITD_SCALE     # positive: the left ear hears it first
         itd = present * itd + (1.0 - present) * 0.3 * self.rng.standard_normal(self.n)
-        self.heard = np.concatenate([np.log1p(e_l / E_REF), np.log1p(e_r / E_REF), itd[:, None]], axis=1)
+        left, right = np.log1p(e_l / E_REF), np.log1p(e_r / E_REF)
+        self.echo += (dt / (ECHO_S + dt)) * (0.5 * (left + right) - self.echo)
+        self.heard = np.concatenate([left, right, itd[:, None], self.echo], axis=1)
         return self.heard
 
 

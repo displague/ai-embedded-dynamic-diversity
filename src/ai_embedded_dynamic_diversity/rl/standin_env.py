@@ -33,10 +33,11 @@ wind channel (the robot has no anemometer); with wind on, the privileged observa
 wind's world x and y speed / 10 m/s.
 
 A coach (off by default; rl/coach.py), both kinds meant to be withdrawn:
-- `coach="voice"`: spoken instruction heard through two ears, 17 more observation channels. The coach commands
+- `coach="voice"`: spoken instruction heard through two ears, 25 more observation channels. The coach commands
   ("get up" or "stand up", after "stay" for `coach_wait` seconds), then cues the rise and warns of an overloaded
   line on a `coach_guide` share of episodes. With a wait, rising before the command is a false start: it earns
-  nothing and does not count as a success.
+  nothing and does not count as a success. The wait begins only once the first start's success passes
+  `coach_wait_after`: a policy asked to wait from the first step learns never to rise.
 - `help_cap` > 0: a helper's hands lift the trunk (a force, as the robot's get-up helper lifts under the arms),
   up to that share of the weight, fading as helped episodes succeed. `help_free` of the episodes are never
   helped, and the helper quits part-way through `help_quit` of those it helps.
@@ -152,6 +153,8 @@ class EnvConfig:
     coach: str = "off"                     # "voice": a coach's spoken instruction in the observation (rl/coach.py)
     coach_guide: float = 1.0               # the share of episodes with cues after the command (else it is repeated)
     coach_wait: tuple = (0.0, 0.0)         # s of "stay" before the command; beyond episode_s: never told to rise
+    coach_wait_after: float = 0.0          # the wait begins once the first start's success (its average over
+                                           # episodes) passes this; 0: from the first episode
     help_cap: float = 0.0                  # a helper lifts the trunk by up to this share of the weight; 0: none
     help_level: float = 1.0                # the helper's starting level (it fades itself from there)
     help_free: float = 0.25                # the share of episodes never helped (the unassisted gate)
@@ -304,6 +307,7 @@ class StandinEnv:
         if cfg.coach == "voice":
             self.voice = Voice(self.N, np.random.default_rng([cfg.seed, 0x564F4943]), guide=cfg.coach_guide,
                                wait=cfg.coach_wait)
+            self.voice.armed = cfg.coach_wait_after <= 0.0
             if all("ear.%s_pos" % e in sensor_names for e in "LR"):
                 self.s_ears = [m.sensor_adr[m.sensor("ear.%s_pos" % e).id] for e in "LR"]
         # the helper's force goes in with the controls: [ctrl, xfrc_applied] per step
@@ -551,7 +555,8 @@ class StandinEnv:
         pad = self._pad
         obs = np.concatenate([pad(jq), pad(0.1 * jv), grav, 0.25 * gyro, feet, pad(self.prev_action)], axis=1)
         if self.voice is not None:
-            obs = np.concatenate([obs, self.voice.hear(*self._ears(q, R), np.sqrt(np.square(jv).mean(axis=1)))], axis=1)
+            obs = np.concatenate([obs, self.voice.hear(*self._ears(q, R), np.sqrt(np.square(jv).mean(axis=1)),
+                                                       self.dt_ctrl)], axis=1)
         tau = s[:, self.s_tau]
         line = self._line_force(tau) / self.f_cont
         impact = np.zeros((self.N, self.n_impact_slots))
@@ -631,6 +636,8 @@ class StandinEnv:
         if self.hands is not None:
             self.hands.reset(idx, self.cfg.episode_s, self.level[idx] if hasattr(self, "level") else None)
         if self.voice is not None:
+            if not self.voice.armed and hasattr(self, "level_ema"):      # the rise is learned: now learn to wait
+                self.voice.armed = bool(self.level_ema[0] > self.cfg.coach_wait_after)
             self.voice.reset(idx, self.state[idx, self.i_qpos:self.i_qpos + 2])
         self._began = True
         self.false_start[idx] = False
