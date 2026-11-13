@@ -58,13 +58,15 @@ keeps the coach's script but silences it (the control for "does the policy liste
 4. **A new demand goes in after the skill, not with it, and even then check it was learned.** Asked to wait for
    the command from the first step, the policy learned never to rise (0 of 64). Staged (`--coach-wait-after`), it
    rose first and then unlearned rising: still 0. Obeying a spoken command is open; do not claim it.
-5. **Early fade is the setting that worked:** `--help-cap 0.6 --help-free 0.5 --help-fade-at 0.35` (47 % unassisted,
-   11 of 64 ended by an overloaded line, against 48 % and 34 with no support).
+5. **Early fade is the setting that withdraws:** `--help-cap 0.6 --help-free 0.5 --help-fade-at 0.35`. Three seeds:
+   46 % unassisted against 52 % with no support, the helper gone in training every time. It is not an improvement
+   on training alone for the half-kneel; its use is for starts that are not learned alone (#69).
 6. **A memoryless policy needs the past in its inputs.** Words last 0.3 s and the coach pauses; the echo channels
    carry what was said through the silence. That was not enough here: try `--arch gru`.
 7. **Extra inputs are not free.** 17 hearing channels with nothing to say cost rise rate at equal steps (38 %
    against 48 %, one seed).
-8. **One seed is an anecdote.** The half-kneel's two seeds differ by 6 points at 1,500 iterations. Quote a
+8. **One seed is an anecdote.** Seed 0 said the early fade cost nothing and cut overloaded lines to a third (11
+   against 34 of 64); seeds 1 and 2 said 22 against 17 and 17 against 25. Run three before writing a claim. Quote a
    difference only when it is larger than that, and say how many seeds.
 9. **Changing the observation orphans old policies.** A policy saved with 17 hearing channels does not load into a
    25-channel environment; re-train, and record which code a number came from.

@@ -443,11 +443,14 @@ python -m ai_embedded_dynamic_diversity.rl.cli train --task getup --getup-start 
 ```
 
 The get-up stages can train with a coach (`rl/coach.py`, issue #66): a helper's hands that lift, fade and may quit,
-and spoken instruction heard through two ears. A helper that fades early leaves the unassisted rise as good as
-training alone with a third as many overloaded lines; one that fades late leaves a policy that needs it. Spoken
+and spoken instruction heard through two ears. Over three seeds a helper that fades early is fully withdrawn in
+training and leaves the unassisted rise a little below training alone (46 % against 52 %); one that fades late
+leaves a policy that needs it. Spoken
 cues were not used, and obeying a spoken command is not learned yet (`docs/rl-standin.md`).
 
-![Unassisted success during training, and the helper's level](docs/assets/rl-coach-arms.png)
+| Unassisted success in training, and the helper's level (seed 0) | An unaided get-up after the early-fade helper |
+| --- | --- |
+| ![arms](docs/assets/rl-coach-arms.png) | ![get-up](docs/assets/rl-tendon32-getup-earlyfade.gif) |
 
 ## Staged curriculum training (new_env_v1)
 

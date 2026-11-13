@@ -4,6 +4,7 @@
         --seconds 8 --out docs/assets/rl-tendon32-stand.gif
 
 One environment, the nominal model (no randomisation), the policy's mean action; pushes as in the stand task.
+Never with the helper's hands; a policy trained with the coach's voice hears it, and the caption shows the word.
 Frames from a camera tracking the root body; a caption with the time, pelvis height and push markers.
 """
 from __future__ import annotations
@@ -38,7 +39,8 @@ def main(policy: str, body: str = "tendon32", task: str = "stand", seconds: floa
                     pad_dofs=saved["env"].get("pad_dofs", 32) or 32, max_delay_steps=0,
                     action_fraction=saved["env"].get("action_fraction"), action_half=saved["env"].get("action_half"),
                     getup_start=saved["env"].get("getup_start", "fallen"), episode_s=max(seconds + 1.0, 10.0),
-                    ankle_torque=bool(saved["env"].get("ankle_torque")), locks=bool(saved["env"].get("locks")))
+                    ankle_torque=bool(saved["env"].get("ankle_torque")), locks=bool(saved["env"].get("locks")),
+                    coach=saved["env"].get("coach", "off"), coach_guide=saved["env"].get("coach_guide", 1.0))
     e = StandinEnv(env)
     e.reset()
     obs, _ = e.observe()
@@ -74,6 +76,9 @@ def main(policy: str, body: str = "tendon32", task: str = "stand", seconds: floa
         t = k * e.dt_ctrl
         text = "%s  t=%.1f s  pelvis %.2f m%s" % (label or body, t, float(info.extras["z"][0]),
                                                  "  PUSH" if t - pushed_at < 0.4 else "")
+        if e.voice is not None and e.voice.word[0] >= 0:      # what the coach is saying (rl/coach.py)
+            from ai_embedded_dynamic_diversity.rl.coach import WORD_NAMES
+            text += '  coach: "%s"' % WORD_NAMES[e.voice.word[0]].replace("_", " ")
         draw.rectangle([0, 0, width, 22], fill=(0, 0, 0))
         draw.text((6, 5), text, fill=(255, 255, 255))
         frames.append(img)
