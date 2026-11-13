@@ -29,6 +29,12 @@
   - `assets/handoff-packet-example.json`
   - `scripts/validate_handoff_packet.py`
 
+4. "Need to train, fade a support for, or judge a policy on a body with contact physics"
+- skill: `grounded-rl`
+- load first:
+  - `SKILL.md`
+  - `docs/rl-standin.md`
+
 ## Unique/Edge Scenarios
 
 1. "Cross-platform agent compatibility drift"

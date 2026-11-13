@@ -108,7 +108,7 @@ def train(env_cfg: EnvConfig, ppo: PPOConfig, init: str | None, out_dir: str, la
         buf_rew = torch.zeros(T, N, device=dev)
         buf_done = torch.zeros(T, N, device=dev)
         mem0 = memory.detach().clone()
-        it_success = it_damage = it_eps = it_wmini = 0
+        it_success = it_damage = it_eps = it_wmini = it_false = 0
         stand_frac, power, locked = [], [], []
         with torch.no_grad():
             for t in range(T):
@@ -138,6 +138,7 @@ def train(env_cfg: EnvConfig, ppo: PPOConfig, init: str | None, out_dir: str, la
                     it_eps += len(fin)
                     it_success += int(info.extras["ever_stood"][fin].sum())
                     it_damage += int(info.damage[fin].sum())
+                    it_false += int(info.extras["false_start"][fin].sum()) if "false_start" in info.extras else 0
             last_val = critic(priv_norm(torch.as_tensor(priv_np, device=dev)))
         # GAE
         adv = torch.zeros(T, N, device=dev)
@@ -213,6 +214,10 @@ def train(env_cfg: EnvConfig, ppo: PPOConfig, init: str | None, out_dir: str, la
                    power_w=float(np.mean(power)) if power else None, locked=float(np.mean(locked)) if locked else None)
         if hasattr(env, "level_ema"):            # the get-up curriculum (#49): success by start, and the frontier
             rec.update(curriculum=dict(zip(env.LEVELS, (float(x) for x in env.level_ema))), frontier=int(env.frontier))
+        if getattr(env, "hands", None) is not None:      # the helper's fade and the unassisted gate (rl/coach.py)
+            rec.update(help=env.hands.summary())
+        if getattr(env, "voice", None) is not None:
+            rec.update(false_start_rate=(it_false / it_eps) if it_eps else None, waiting=bool(env.voice.armed))
         log.append(rec)
         if it % 5 == 0 or it == ppo.iterations - 1:
             print("[%s] it %4d steps %9d fps %6d r %.3f stand %.3f eps %4d success %s damage %s std %.3f lr %.1e"
@@ -220,7 +225,12 @@ def train(env_cfg: EnvConfig, ppo: PPOConfig, init: str | None, out_dir: str, la
                      "%.2f" % rec["success_rate"] if it_eps else "-", "%.2f" % rec["damage_rate"] if it_eps else "-",
                      rec["std"], lr) + (" W %.1f locked %.2f" % (rec["power_w"], rec["locked"]) if power else "")
                   + (" start %d %s" % (rec["frontier"], " ".join("%s %.2f" % kv for kv in rec["curriculum"].items()))
-                     if "curriculum" in rec else ""),
+                     if "curriculum" in rec else "")
+                  + (" help %.2f helped %.2f free %.2f imp %.2f" % (rec["help"]["level"], rec["help"]["helped_success"],
+                                                                   rec["help"]["free_success"],
+                                                                   rec["help"]["impulse_weight_s"])
+                     if "help" in rec else "")
+                  + (" false %.2f" % rec["false_start_rate"] if rec.get("false_start_rate") is not None else ""),
                   flush=True)
         if (it + 1) % ppo.save_every == 0 or it == ppo.iterations - 1:
             _save(os.path.join(out_dir, label + ".pt"), actor, critic, obs_norm, priv_norm, env_cfg, ppo, grow_report, env)

@@ -34,3 +34,12 @@
   - contract/mirror synchronization checks
   - reference subset generation
 - definition: `skills/agent-management/SKILL.md`
+
+## grounded-rl
+
+- purpose: Train and judge policies by reward on bodies with contact physics (`rl/`): the tendon humanoid's stand-in, the tendon gate, the get-up stages, and a coach's voice and helping hands.
+- triggers:
+  - PPO or cloning on the stand-in, the tendon gate, the get-up test
+  - a curriculum support (helper, spoken instruction) added, faded or evaluated
+  - a learned-control number about to be published
+- definition: `skills/grounded-rl/SKILL.md`
