@@ -41,6 +41,9 @@ class PPOConfig:
     save_every: int = 50
     arch: str = "core"           # "core": the model core (grown from `init`, or random); "mlp": the plain baseline
     critic_warmup: int = 0       # iterations at the start that train only the critic (a fine-tune's fresh critic)
+    anchor: float = 0.0          # a grown core's weights that came from the checkpoint are held near it: the loss
+                                 # gains anchor * |w - w0|^2 / |w0|^2 over them (rehearsal by weight, so learning a
+                                 # body costs less of the old world: docs/rl-standin.md "Forgetting")
 
 
 def train(env_cfg: EnvConfig, ppo: PPOConfig, init: str | None, out_dir: str, label: str,
@@ -86,6 +89,19 @@ def train(env_cfg: EnvConfig, ppo: PPOConfig, init: str | None, out_dir: str, la
     if teacher:
         from ai_embedded_dynamic_diversity.rl.bc import clone, load_teacher
         bc_log = clone(actor, obs_norm, load_teacher(teacher, env.half), dev, epochs=bc_epochs, seed=ppo.seed)
+    anchored = []                # (parameter, its checkpoint value, the mask of entries that came from it)
+    if ppo.anchor > 0.0 and grow_report.get("checkpoint"):
+        named = dict(actor.core.named_parameters())
+        for k in grow_report["copied"] + grow_report["grown"]:
+            if k not in named:
+                continue
+            p, mask = named[k], torch.ones_like(named[k])
+            if k == "passive.encoder.0.weight":
+                mask[:, grow_report["old_signal_dim"]:] = 0.0
+            elif k == "router.base_map":
+                mask[grow_report["old_io_channels"]:] = 0.0
+            anchored.append((p, p.detach().clone(), mask))
+        anchor_norm = sum(float((w0 * m).pow(2).sum()) for _, w0, m in anchored) + 1e-9
     params = list(actor.parameters()) + list(critic.parameters())
     opt = torch.optim.Adam(params, lr=ppo.lr)
     lr = ppo.lr
@@ -178,6 +194,8 @@ def train(env_cfg: EnvConfig, ppo: PPOConfig, init: str | None, out_dir: str, la
                 ent = gaussian_entropy(actor.log_std)
                 pw = 0.0 if it < ppo.critic_warmup else 1.0
                 loss = pw * pl + ppo.value_coef * vl - pw * ppo.entropy * ent
+                if anchored:
+                    loss = loss + ppo.anchor * sum(((p - w0) * m).pow(2).sum() for p, w0, m in anchored) / anchor_norm
                 opt.zero_grad()
                 loss.backward()
                 torch.nn.utils.clip_grad_norm_(params, ppo.max_grad_norm)
@@ -212,6 +230,9 @@ def train(env_cfg: EnvConfig, ppo: PPOConfig, init: str | None, out_dir: str, la
                    kl=float(np.mean(kls)), lr=lr, policy_loss=float(np.mean(pls)), value_loss=float(np.mean(vls)),
                    std=float(actor.log_std.detach().exp().mean()),
                    power_w=float(np.mean(power)) if power else None, locked=float(np.mean(locked)) if locked else None)
+        if anchored:                             # how far the checkpoint's weights have moved, relative to their size
+            with torch.no_grad():
+                rec.update(drift=float(sum(((p - w0) * m).pow(2).sum() for p, w0, m in anchored) / anchor_norm) ** 0.5)
         if hasattr(env, "level_ema"):            # the get-up curriculum (#49): success by start, and the frontier
             rec.update(curriculum=dict(zip(env.LEVELS, (float(x) for x in env.level_ema))), frontier=int(env.frontier))
         if getattr(env, "hands", None) is not None:      # the helper's fade and the unassisted gate (rl/coach.py)

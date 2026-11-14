@@ -19,21 +19,31 @@ app = typer.Typer(add_completion=False)
 
 
 def evaluate_getup(policy: str, start: str = "curriculum", n: int = 64, seed: int = 7, guide: float | None = None,
-                   wait: str = "", mute: bool = False) -> dict:
+                   wait: str = "", mute: bool = False, hide: bool = False, shut: bool = False,
+                   light: str = "") -> dict:
     """`start`: "curriculum" begins every episode at the first start (the half-kneel), "fallen" from a fall.
     Always without the helper's hands (the unassisted test). A policy trained with the coach's voice hears it here
     too: `guide` overrides the share of episodes with cues (0: the command only), `wait` 'lo,hi' s of "stay"
     before the command, `mute` silences the coach (its script runs, so the command still starts the clock, but
-    the ears hear noise only)."""
+    the ears hear noise only). A policy trained with eyes sees here too: `hide` takes the trainer's body away (its
+    script still runs), `shut` closes the eyes, `light` 'lo,hi' sets the light level (0.02: near dark)."""
     actor, norm, saved = load_policy(policy)
     pe = saved["env"]
     env = StandinEnv(EnvConfig(task="getup", num_envs=n, variants=16, nthread=16, seed=seed, getup_start=start,
                                action_fraction=pe.get("action_fraction"), action_half=pe.get("action_half"),
                                ankle_torque=bool(pe.get("ankle_torque")), coach=pe.get("coach", "off"),
                                coach_guide=pe.get("coach_guide", 1.0) if guide is None else guide,
-                               coach_wait=tuple(float(x) for x in wait.split(",")) if wait else (0.0, 0.0)))
+                               coach_wait=tuple(float(x) for x in wait.split(",")) if wait else (0.0, 0.0),
+                               eyes=pe.get("eyes", "off"), trainer=pe.get("trainer", "off"),
+                               trainer_arc=pe.get("trainer_arc", 40.0),
+                               light=tuple(float(x) for x in light.split(",")) if light else tuple(
+                                   pe.get("light", (0.08, 1.0)))))
     if mute and env.voice is not None:
         env.voice.mute = True
+    if hide and env.figure is not None:
+        env.figure.hidden = True
+    if shut and env.eyes is not None:
+        env.eyes.shut = True
     env.reset()
     obs, _ = env.observe()
     mem = actor.initial_state(n, "cpu")
@@ -46,7 +56,8 @@ def evaluate_getup(policy: str, start: str = "curriculum", n: int = 64, seed: in
     impact = np.zeros(n)
     z_end = np.zeros(n)
     with torch.no_grad():
-        for _ in range(env.max_steps - 1):
+        extra = int(min(env.cfg.coach_wait[1], env.cfg.episode_s) / env.dt_ctrl) if env.voice is not None else 0
+        for _ in range(env.max_steps - 1 + extra):       # an episode runs its full length from the command
             m, mem = actor(norm(torch.as_tensor(obs)), mem)
             obs, _, _, done, info = env.step(m.clamp(-1, 1).numpy())
             line = env._line_force(env.sens[:, env.s_tau]) / env.f_cont
@@ -74,9 +85,10 @@ def evaluate_getup(policy: str, start: str = "curriculum", n: int = 64, seed: in
 
 @app.command()
 def main(policy: str, start: str = "curriculum", n: int = 64, seed: int = 7, guide: float = -1.0, wait: str = "",
-         mute: bool = False):
+         mute: bool = False, hide: bool = False, shut: bool = False, light: str = ""):
     import json
-    print(json.dumps(evaluate_getup(policy, start, n, seed, None if guide < 0 else guide, wait, mute), indent=1))
+    print(json.dumps(evaluate_getup(policy, start, n, seed, None if guide < 0 else guide, wait, mute, hide, shut,
+                                    light), indent=1))
 
 
 if __name__ == "__main__":

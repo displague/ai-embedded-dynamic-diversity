@@ -127,11 +127,15 @@ class Voice:
         self.armed = True                          # False: no wait yet (the env arms it once the rise is learned)
         self.mute = False                          # a test: the script runs, but the coach makes no sound
 
-    def reset(self, idx, root_xy):
-        """New episodes for envs `idx`, whose roots are at `root_xy` (len(idx), 2)."""
+    def reset(self, idx, root_xy, facing=None, arc=math.pi):
+        """New episodes for envs `idx`, whose roots are at `root_xy` (len(idx), 2). The coach stands anywhere
+        around the robot, or, given the way each robot faces (`facing`, rad), within `arc` rad either side of
+        straight ahead: a trainer who is to be seen stands where it can be."""
         k, rng = len(idx), self.rng
         u = lambda r: rng.uniform(r[0], r[1], k)
         a, d = rng.uniform(-math.pi, math.pi, k), u(self.dist)
+        if facing is not None:
+            a = facing + a * (arc / math.pi)
         self.pos[idx, 0] = root_xy[:, 0] + d * np.cos(a)
         self.pos[idx, 1] = root_xy[:, 1] + d * np.sin(a)
         self.pos[idx, 2] = u(self.height)
@@ -288,3 +292,151 @@ class Hands:
                                   free_success=f(self.ema["free"]), impulse_weight_s=f(self.ema["impulse"]),
                                   helped_episodes=[int(x) for x in self.count["helped"]],
                                   free_episodes=[int(x) for x in self.count["free"]]))
+
+
+# ---------------------------------------------------------------- the trainer's body, seen
+TORSO_RGB, HAND_RGB, HEAD_RGB, LIMB_RGB = (0.85, 0.15, 0.12), (0.95, 0.85, 0.10), (0.85, 0.65, 0.50), (0.30, 0.38, 0.60)
+INSTRUCTORS = ("demo", "tendon32", "rpo23")
+# joint offsets from standing (rad) for the low pose of a body that has no recorded demonstration: by a fragment of
+# the joint's name
+LOW_POSE = {"rpo23": {"thigh_pitch": -1.0, "knee": 2.0, "ankle_pitch": -1.0}}
+
+
+def _look(name):
+    """(radius m, rgb) of the ball drawn for a body called `name`."""
+    n = name.lower()
+    if any(k in n for k in ("hand", "elbow_yaw")):
+        return 0.05, HAND_RGB
+    if "head" in n:
+        return 0.09, HEAD_RGB
+    if any(k in n for k in ("pelvis", "spine", "torso", "base_link")):
+        return 0.10, TORSO_RGB
+    return 0.05, LIMB_RGB
+
+
+def _fk_frames(body, repo, steps=12):
+    """Keypoints of a stand-in body from a low pose to standing by forward kinematics: (frames (T, J, 3), names).
+    The low pose is the tendon humanoid's half-kneel, or LOW_POSE for another body; each frame rests on the floor."""
+    import json
+
+    import mujoco
+
+    from ai_embedded_dynamic_diversity.rl import standin_env as se
+    xml, spec_path = se.body_paths(body, repo)
+    with open(spec_path) as fh:
+        spec = json.load(fh)
+    m = mujoco.MjModel.from_xml_path(xml)
+    d = mujoco.MjData(m)
+    names = [x["name"] for x in spec["dofs"]]
+    qadr = np.array([m.jnt_qposadr[m.joint(n).id] for n in names])
+    if "stand_qpos" in spec:
+        q_stand = np.array(spec["stand_qpos"], dtype=float)
+    else:
+        q_stand = np.zeros(m.nq)
+        q_stand[3] = 1.0
+        for s in "LR":
+            q_stand[qadr[names.index("foot.%s_pitch" % s)]] = se.STAND_LEAN
+    low = q_stand[qadr].copy()
+    if body == "tendon32":
+        for key, v in dict(se.StandinEnv.KNEEL_STARTS)["halfkneel"].items():
+            low[names.index(key.replace(".F_", ".L_").replace(".B_", ".R_"))] = v
+    else:
+        for i, n in enumerate(names):
+            for frag, v in LOW_POSE[body].items():
+                if frag in n:
+                    low[i] += v
+    low = np.clip(low, [x["lo"] for x in spec["dofs"]], [x["hi"] for x in spec["dofs"]])
+    fwd = np.array(spec.get("eyes", {}).get("forward", (1.0, 0.0, 0.0)), dtype=float)
+    left = np.array(spec.get("eyes", {}).get("left", (0.0, 1.0, 0.0)), dtype=float)
+    ids = list(range(1, m.nbody))
+    feet = [m.body(n).id - 1 for n in spec["feet"]]
+    frames = []
+    for s in np.linspace(0.0, 1.0, steps):
+        q = q_stand.copy()
+        q[qadr] = low + s * (q_stand[qadr] - low)
+        q[0:3], q[3:7] = (0.0, 0.0, 2.0), (1.0, 0.0, 0.0, 0.0)
+        d.qpos[:] = q
+        mujoco.mj_forward(m, d)
+        # down until the lowest geom meets the floor
+        lowest = min(float(d.geom_xpos[g, 2] + d.geom_xmat[g].reshape(3, 3)[2] @ m.geom_aabb[g, :3]
+                           - np.abs(d.geom_xmat[g].reshape(3, 3)[2]) @ m.geom_aabb[g, 3:])
+                     for g in range(m.ngeom) if m.geom_bodyid[g] > 0)
+        p = d.xpos[ids].copy()
+        p[:, 2] -= lowest
+        p[:, :2] -= p[feet, :2].mean(axis=0)
+        frames.append(np.stack([p @ fwd, p @ left, p[:, 2]], axis=1))
+    return np.array(frames), [m.body(i).name for i in ids]
+
+
+def figure_frames(instructor="demo", repo=None):
+    """(frames (T, J, 3), names) of the trainer's rise, in its own frame (x forward, y left, z up, the floor at 0):
+    - "demo": the hand-written get-up recorded on the full tendon model (displague/robot sim/getup_demo.json, its
+      tools/eyes.py --demo): the robot's own controller as the instructor;
+    - "tendon32", "rpo23": that stand-in body moved from a low pose to standing by forward kinematics (rpo23:
+      Roboparty's open humanoid as the instructor)."""
+    if instructor == "demo":
+        import json
+        import os
+
+        from ai_embedded_dynamic_diversity.sim.robot_tendon import find_robot_repo
+        with open(os.path.join(find_robot_repo(repo), "sim", "getup_demo.json")) as fh:
+            d = json.load(fh)
+        return np.array(d["frames"], dtype=float), list(d["bodies"])
+    if instructor not in INSTRUCTORS:
+        raise ValueError("instructor must be one of %s, got %r" % (", ".join(INSTRUCTORS), instructor))
+    return _fk_frames(instructor, repo)
+
+
+class Figure:
+    """The trainer's body in front of each of N robots: balls at the keypoints of a skeleton, which the eyes
+    (rl/vision.py) see. Its motion is the guidance, and unlike a word it is held:
+
+    - before the command it waits in the low pose (the demonstration's first frame);
+    - at the command it rises. With guidance it paces the learner: its place in the rise is the learner's own
+      progress plus `lead`, so it always shows the next part; without, it rises at its own pace;
+    - its arms are raised (an "up" gesture) from the command until the learner stands.
+
+    `frames` (T, J, 3) and `names` from `figure_frames`. The figure stands where the coach's voice comes from."""
+
+    def __init__(self, n, frames, names, lead=0.35, rate=0.5, low_h=0.5, lift=0.25):
+        self.n, self.frames, self.names = n, np.asarray(frames, dtype=float), list(names)
+        self.T, self.J = self.frames.shape[:2]
+        feet = [i for i, x in enumerate(names) if "foot" in x.lower() or "ankle_roll" in x.lower()]
+        if feet:                                   # it rises on the spot: every frame centred between its feet
+            self.frames[:, :, :2] -= self.frames[:, feet, :2].mean(axis=1, keepdims=True)
+        look = [_look(x) for x in names]
+        self.radius = np.array([r for r, _ in look])
+        self.rgb = np.array([c for _, c in look])
+        self.lead, self.rate, self.low_h, self.lift = lead, rate, low_h, lift
+        # the gesture: the forearms and hands lift forward and up
+        self.arm_mask = np.array([any(k in x.lower() for k in ("forearm", "hand", "elbow")) for x in names], dtype=float)
+        self.phase = np.zeros(n)                   # 0: the low pose, 1: standing
+        self.arms = np.zeros(n)                    # 0: down, 1: raised
+        self.pos = np.zeros((n, 2))                # where it stands (world x, y)
+        self.yaw = np.zeros(n)                     # the way it faces
+        self.hidden = False                        # a test: the trainer is not there to be seen
+
+    def reset(self, idx, pos_xy, learner_xy):
+        self.phase[idx], self.arms[idx] = 0.0, 0.0
+        self.pos[idx] = pos_xy
+        to = learner_xy - pos_xy
+        self.yaw[idx] = np.arctan2(to[:, 1], to[:, 0])
+
+    def step(self, told, guide, height, stood, dt):
+        """`told` the command has been given, `guide` this episode is paced, `height` the learner's root height
+        over its standing height, `stood` it has stood for a second."""
+        progress = np.clip((height - self.low_h) / (1.0 - self.low_h), 0.0, 1.0)
+        target = np.where(told, np.where(guide, np.clip(progress + self.lead, 0.0, 1.0), 1.0), 0.0)
+        self.phase += np.clip(target - self.phase, -self.rate * dt, self.rate * dt)
+        self.arms += np.clip((told & ~stood).astype(float) - self.arms, -2.0 * dt, 2.0 * dt)
+
+    def balls(self):
+        """(n, J, 3) the balls' world positions now."""
+        f = self.phase * (self.T - 1)
+        i0 = np.minimum(np.floor(f).astype(int), self.T - 2)
+        fr = (f - i0)[:, None, None]
+        p = (1.0 - fr) * self.frames[i0] + fr * self.frames[i0 + 1]
+        p = p + (self.arms[:, None] * self.arm_mask[None, :])[:, :, None] * np.array([self.lift, 0.0, self.lift])
+        c, s = np.cos(self.yaw)[:, None], np.sin(self.yaw)[:, None]
+        return np.stack([self.pos[:, 0:1] + c * p[:, :, 0] - s * p[:, :, 1],
+                         self.pos[:, 1:2] + s * p[:, :, 0] + c * p[:, :, 1], p[:, :, 2]], axis=2)

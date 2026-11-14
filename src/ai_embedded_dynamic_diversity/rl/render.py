@@ -30,7 +30,7 @@ def load(path: str):
 
 @app.command()
 def main(policy: str, body: str = "tendon32", task: str = "stand", seconds: float = 8.0, out: str = "policy.gif",
-         fps: int = 25, width: int = 480, height: int = 360, seed: int = 1, label: str = ""):
+         fps: int = 25, width: int = 480, height: int = 360, seed: int = 1, label: str = "", wait: str = ""):
     import mujoco
     from PIL import Image, ImageDraw
 
@@ -40,7 +40,10 @@ def main(policy: str, body: str = "tendon32", task: str = "stand", seconds: floa
                     action_fraction=saved["env"].get("action_fraction"), action_half=saved["env"].get("action_half"),
                     getup_start=saved["env"].get("getup_start", "fallen"), episode_s=max(seconds + 1.0, 10.0),
                     ankle_torque=bool(saved["env"].get("ankle_torque")), locks=bool(saved["env"].get("locks")),
-                    coach=saved["env"].get("coach", "off"), coach_guide=saved["env"].get("coach_guide", 1.0))
+                    coach=saved["env"].get("coach", "off"), coach_guide=saved["env"].get("coach_guide", 1.0),
+                    coach_wait=tuple(float(x) for x in wait.split(",")) if wait else (0.0, 0.0),
+                    eyes=saved["env"].get("eyes", "off"), trainer=saved["env"].get("trainer", "off"),
+                    trainer_arc=saved["env"].get("trainer_arc", 40.0))
     e = StandinEnv(env)
     e.reset()
     obs, _ = e.observe()
@@ -71,12 +74,21 @@ def main(policy: str, body: str = "tendon32", task: str = "stand", seconds: floa
         d.qvel[:] = e.state[0, e.i_qvel:e.i_qvel + e.nv]
         mujoco.mj_forward(m, d)
         r.update_scene(d, camera=cam, scene_option=opt)
+        if e.figure is not None:        # the trainer's body, as the eyes are given it: balls at its keypoints
+            for p, rad, rgb in zip(e.figure.balls()[0], e.figure.radius, e.figure.rgb):
+                if r.scene.ngeom >= r.scene.maxgeom:
+                    break
+                mujoco.mjv_initGeom(r.scene.geoms[r.scene.ngeom], mujoco.mjtGeom.mjGEOM_SPHERE, np.full(3, rad), p,
+                                    np.eye(3).flatten(), np.array([*rgb, 1.0], dtype=np.float32))
+                r.scene.ngeom += 1
         img = Image.fromarray(r.render())
         draw = ImageDraw.Draw(img)
         t = k * e.dt_ctrl
         text = "%s  t=%.1f s  pelvis %.2f m%s" % (label or body, t, float(info.extras["z"][0]),
                                                  "  PUSH" if t - pushed_at < 0.4 else "")
-        if e.voice is not None and e.voice.word[0] >= 0:      # what the coach is saying (rl/coach.py)
+        if e.figure is not None:
+            text += "  trainer %s" % ("waits" if not e.voice.told[0] else "rises" if e.figure.phase[0] < 0.99 else "up")
+        if e.hearing and e.voice.word[0] >= 0:      # what the coach is saying (rl/coach.py)
             from ai_embedded_dynamic_diversity.rl.coach import WORD_NAMES
             text += '  coach: "%s"' % WORD_NAMES[e.voice.word[0]].replace("_", " ")
         draw.rectangle([0, 0, width, 22], fill=(0, 0, 0))
