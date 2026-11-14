@@ -2,6 +2,17 @@
 
 ## Completed
 
+- Eyes, a trainer to watch and cross-training (#73; displague/robot docs/50). `rl/vision.py`: a pair of eyes (a
+  coarse periphery with a colour fovea overlaid) and a third eye that reads range, computed from geometry on the GPU
+  (`--eyes pair|third|three`, up to 96 observation channels). `rl/coach.Figure`: a trainer's body the eyes see,
+  which waits low, rises at the command and paces the learner (`--trainer demo|tendon32|rpo23|squat`); `demo` is
+  the robot's hand-written get-up. A `mirror` task and `rl.mirror_eval`. `sim/world.py`: the same eye layout in
+  the cellular world's free observation slots (`ADD_WORLD_EYES=1`, off by default). `scripts/cross_train.py`
+  (evolve from any seeds; score over many evaluation seeds), `rl.cli train --anchor` and `--finetune`. The coach's
+  wait was reworked: the clock starts at the command, the script runs from the first episode, a false start
+  forfeits the rise's pay. Measured: a commanded get-up was not learned in four designs, seen or heard; the mirror
+  task was not learned (two seeds; the squat is not readable on this retina); nine evolutions did not beat
+  `model-core-champion-v09` beyond noise. Tests: `tests/test_rl_vision.py`, `tests/test_world_eyes.py`.
 - A coach for the get-up stages (#66; displague/robot docs/49): `rl/coach.py`. `Voice`: a coach's words ("stay",
   "get up" or "stand up", cues, "good") as syllables over 8 frequency bands, heard at two ears on the robot's
   stand-in with spreading, head shadow, ambient and own-drive noise, the time difference between the ears and an

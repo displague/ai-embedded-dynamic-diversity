@@ -186,3 +186,19 @@ def test_other_bodies_can_be_the_instructor(who):
         pytest.skip(str(exc))
     top = frames[:, :, 2].max(axis=1)
     assert top[-1] > top[0] + 0.2 and frames[:, :, 2].min() > -0.02
+
+
+@needs_robot
+def test_the_mirror_task_pays_for_following_the_trainers_squat():
+    from ai_embedded_dynamic_diversity.rl.standin_env import EnvConfig, StandinEnv
+    e = StandinEnv(EnvConfig(task="mirror", num_envs=8, variants=2, nthread=2, seed=2, eyes="three", trainer="squat"))
+    e.reset()
+    for _ in range(150):
+        _, _, r, _, info = e.step(np.zeros((8, e.act_dim)))
+    depth = 1.0 - e.figure.phase
+    assert depth.max() > 0.2                                           # the trainer has gone down somewhere
+    assert np.allclose(info.extras["mirror_target"], 1.0 - e.cfg.mirror_depth * depth)
+    assert not info.extras["false_start"].any()                        # no command to wait for in this task
+    with pytest.raises(ValueError):
+        StandinEnv(EnvConfig(task="mirror", num_envs=2, variants=1, nthread=1)).step(np.zeros((2, 32)))
+    e.close()

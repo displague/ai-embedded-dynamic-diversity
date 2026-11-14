@@ -59,8 +59,10 @@ def train(task: str = "getup", init: str = "", body: str = "tendon32", pad_dofs:
           coach: str = "off", coach_guide: float = 1.0, coach_wait: str = "", help_cap: float = 0.0,
           help_free: float = 0.25, help_quit: float = 0.2, help_fade_at: float = 0.6,
           coach_wait_after: float = 0.0, eyes: str = "off", trainer: str = "off", trainer_arc: float = 40.0,
-          anchor: float = 0.0):
-    """`anchor`: with `init` and the core, hold the checkpoint's weights near their values (rehearsal by weight: the
+          anchor: float = 0.0, finetune: str = "", critic_warmup: int = 0):
+    """`finetune`: a policy saved by this command to continue (its network, noise and input scaling; the critic
+    is new, so give it `critic_warmup` iterations first): a second stage with other settings, such as the coach's
+    wait enforced from the first episode after a stage that learned the rise; `anchor`: with `init` and the core, hold the checkpoint's weights near their values (rehearsal by weight: the
     loss gains anchor times their relative squared drift), so a body is learned at less cost to the old world;
     `init_log_std`: the exploration noise's starting log std (rests: small enough that drums can lock, -4.5);
     `arch`: "core" (the model core) or "mlp" (the plain baseline, random weights only); `init`: a champion checkpoint to grow, or a policy from this trainer (any body, same padding) to start
@@ -83,7 +85,8 @@ def train(task: str = "getup", init: str = "", body: str = "tendon32", pad_dofs:
                          ankle_torque, coach, coach_guide, coach_wait, help_cap, help_free, help_quit,
                          help_fade_at, coach_wait_after, eyes, trainer, trainer_arc, anchor)
     label = label or "%s-%s-%s-s%d" % (body, task, arch if arch in ("mlp", "gru") else "init" if init else "random", seed)
-    s = ppo_train(env_cfg, ppo, init or None, out, label, teacher=teacher or None)
+    ppo.critic_warmup = critic_warmup
+    s = ppo_train(env_cfg, ppo, init or None, out, label, teacher=teacher or None, finetune=finetune or None)
     print(json.dumps(s, indent=1, default=str))
 
 

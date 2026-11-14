@@ -124,7 +124,9 @@ class Voice:
         self.pitch, self.tempo, self.loud, self.ambient = z(n), np.ones(n), np.ones(n), np.ones(n)
         self.heard = z((n, self.OBS))
         self.echo = z((n, BANDS))
-        self.armed = True                          # False: no wait yet (the env arms it once the rise is learned)
+        self.armed = True                          # False: the script runs (the wait, "stay", the command), but
+                                                   # the wait is not enforced yet: the env arms it once the rise is
+                                                   # learned. So nothing in what is heard or seen is new on that day
         self.mute = False                          # a test: the script runs, but the coach makes no sound
 
     def reset(self, idx, root_xy, facing=None, arc=math.pi):
@@ -143,7 +145,7 @@ class Voice:
         self.loud[idx] = 10.0 ** (u(self.loud_db) / 10.0)
         self.ambient[idx] = E_REF * u(self.ambient_r)
         self.word[idx], self.word_t[idx] = -1, 0.0
-        self.t_cmd[idx] = u(self.wait) if self.armed else 0.0
+        self.t_cmd[idx] = u(self.wait)
         self.echo[idx] = 0.0
         self.next_at[idx] = rng.uniform(0.0, 0.3, k)
         self.cmd[idx] = [self.wi[RISE_COMMANDS[i]] for i in rng.integers(0, len(RISE_COMMANDS), k)]
@@ -296,7 +298,8 @@ class Hands:
 
 # ---------------------------------------------------------------- the trainer's body, seen
 TORSO_RGB, HAND_RGB, HEAD_RGB, LIMB_RGB = (0.85, 0.15, 0.12), (0.95, 0.85, 0.10), (0.85, 0.65, 0.50), (0.30, 0.38, 0.60)
-INSTRUCTORS = ("demo", "tendon32", "rpo23")
+INSTRUCTORS = ("demo", "tendon32", "rpo23", "squat")
+SQUAT_DEG = 30.0               # the squat demonstration's hip and ankle angle at its lowest (the knee bends twice it)
 # joint offsets from standing (rad) for the low pose of a body that has no recorded demonstration: by a fragment of
 # the joint's name
 LOW_POSE = {"rpo23": {"thigh_pitch": -1.0, "knee": 2.0, "ankle_pitch": -1.0}}
@@ -314,7 +317,7 @@ def _look(name):
     return 0.05, LIMB_RGB
 
 
-def _fk_frames(body, repo, steps=12):
+def _fk_frames(body, repo, steps=12, squat=False):
     """Keypoints of a stand-in body from a low pose to standing by forward kinematics: (frames (T, J, 3), names).
     The low pose is the tendon humanoid's half-kneel, or LOW_POSE for another body; each frame rests on the floor."""
     import json
@@ -337,7 +340,13 @@ def _fk_frames(body, repo, steps=12):
         for s in "LR":
             q_stand[qadr[names.index("foot.%s_pitch" % s)]] = se.STAND_LEAN
     low = q_stand[qadr].copy()
-    if body == "tendon32":
+    if squat:                              # both legs folding: hips back, knees forward, the trunk upright
+        a = math.radians(SQUAT_DEG)
+        for s in "LR":
+            low[names.index("thigh.%s_pitch" % s)] -= a
+            low[names.index("shank.%s_pitch" % s)] += 2.0 * a
+            low[names.index("foot.%s_pitch" % s)] -= a
+    elif body == "tendon32":
         for key, v in dict(se.StandinEnv.KNEEL_STARTS)["halfkneel"].items():
             low[names.index(key.replace(".F_", ".L_").replace(".B_", ".R_"))] = v
     else:
@@ -384,6 +393,8 @@ def figure_frames(instructor="demo", repo=None):
         return np.array(d["frames"], dtype=float), list(d["bodies"])
     if instructor not in INSTRUCTORS:
         raise ValueError("instructor must be one of %s, got %r" % (", ".join(INSTRUCTORS), instructor))
+    if instructor == "squat":              # the tendon humanoid from a squat to standing (the mirror task)
+        return _fk_frames("tendon32", repo, squat=True)
     return _fk_frames(instructor, repo)
 
 
@@ -429,6 +440,23 @@ class Figure:
         target = np.where(told, np.where(guide, np.clip(progress + self.lead, 0.0, 1.0), 1.0), 0.0)
         self.phase += np.clip(target - self.phase, -self.rate * dt, self.rate * dt)
         self.arms += np.clip((told & ~stood).astype(float) - self.arms, -2.0 * dt, 2.0 * dt)
+
+    def lead_squat(self, rng, t, dt, hold=(2.0, 4.0)):
+        """The mirror task's guidance: the trainer squats to a depth it picks afresh every `hold` s and holds it,
+        its arms coming forward as it goes down (as a person's do). `t` (n,) s into each episode. Returns the
+        depth it shows now, 0 standing to 1 at its lowest."""
+        if not hasattr(self, "depth"):
+            self.depth, self.next_at = np.zeros(self.n), np.zeros(self.n)
+        self.next_at = np.where(t < dt * 1.5, 0.0, self.next_at)          # a new episode: choose at once
+        due = t >= self.next_at
+        k = int(due.sum())
+        if k:
+            self.depth[due] = np.where(rng.random(k) < 0.25, 0.0, rng.random(k))
+            self.next_at[due] = t[due] + rng.uniform(hold[0], hold[1], k)
+        target = 1.0 - self.depth
+        self.phase += np.clip(target - self.phase, -self.rate * dt, self.rate * dt)
+        self.arms = 1.0 - self.phase
+        return 1.0 - self.phase
 
     def balls(self):
         """(n, J, 3) the balls' world positions now."""

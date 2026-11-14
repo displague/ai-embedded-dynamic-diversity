@@ -20,6 +20,8 @@ The W-mini joints (neck, wrist) are excluded from the line gate: they are above 
 
 Tasks:
 - `stand`: start standing, random pushes; survive and stay upright.
+- `mirror`: start standing, a trainer in view squats to changing depths (`trainer="squat"`, with eyes); the reward
+  is for the pelvis following it down and up by `mirror_depth` of the standing height. Do as I do.
 - `getup`: start fallen (dropped from a random orientation and pose, settled), reach standing and hold it;
   falling does not end the episode, damage does.
 
@@ -158,8 +160,10 @@ class EnvConfig:
     coach_guide: float = 1.0               # the share of episodes with cues after the command (else it is repeated)
     coach_wait: tuple = (0.0, 0.0)         # s of "stay" before the command; beyond episode_s: never told to rise.
                                            # The episode runs episode_s from the command
-    coach_wait_after: float = 0.0          # the wait begins once the first start's success (its average over
-                                           # episodes) passes this; 0: from the first episode
+    coach_wait_after: float = 0.0          # the wait is enforced once the first start's success (its average over
+                                           # episodes) passes this; 0: from the first episode. Before that the coach
+                                           # runs the same script (it says "stay", the trainer waits low), and a
+                                           # rise before the command is paid as any rise
     help_cap: float = 0.0                  # a helper lifts the trunk by up to this share of the weight; 0: none
     help_level: float = 1.0                # the helper's starting level (it fades itself from there)
     help_free: float = 0.25                # the share of episodes never helped (the unassisted gate)
@@ -173,6 +177,9 @@ class EnvConfig:
                                            # "rpo23" (that body, from a low pose to standing). It follows the
                                            # coach's script (the wait, the command, the pacing) with or without the voice
     trainer_arc: float = 40.0              # degrees either side of straight ahead within which the trainer stands
+    mirror_depth: float = 0.07             # mirror: the pelvis follows the trainer's squat down by this share of the
+                                           # standing height at its lowest (the trainer itself goes deeper)
+    mirror_tol: float = 0.02               # mirror: the height error (share of standing height) that halves the pay
     repo: str | None = None
 
 
@@ -221,7 +228,8 @@ class StandinEnv:
                 self.default[self.dof_names.index("foot.%s_pitch" % side)] = STAND_LEAN
         self.P = max(cfg.pad_dofs, m.nu)   # slots per per-joint channel block
         self.n_impact_slots = 3            # impact channels in the privileged observation (padded)
-        frac = cfg.action_fraction if cfg.action_fraction is not None else (0.2 if cfg.task == "stand" else 1.0)
+        self.upright_task = cfg.task in ("stand", "mirror")       # starts standing; a fall ends the episode
+        frac = cfg.action_fraction if cfg.action_fraction is not None else {"stand": 0.2, "mirror": 0.6}.get(cfg.task, 1.0)
         self.half = 0.5 * (self.hi - self.lo) * frac
         if cfg.action_half is not None:
             self.half = np.asarray(cfg.action_half, dtype=float)[:len(self.lo)].copy()
@@ -354,6 +362,8 @@ class StandinEnv:
             self.i_trunk = m.nu + 6 * m.body(trunk if trunk in [m.body(i).name for i in range(m.nbody)]
                                              else self.root).id
         self.xfrc = np.zeros((self.N, 6 * m.nbody if self.hands is not None else 0))
+        self._mirror_rng = np.random.default_rng([cfg.seed, 0x4D495252])
+        self.mirror_target, self.mirror_err = np.ones(self.N), np.zeros(self.N)
 
     # ---------------------------------------------------------------- randomisation
     def _variants(self):
@@ -732,7 +742,7 @@ class StandinEnv:
                                 self.lo, self.hi)
         else:
             ctrl_mean = ctrl
-        if cfg.task == "stand":
+        if self.upright_task:
             self._push()
         if self.wind_on:
             self._blow(self.dt_ctrl)
@@ -761,20 +771,33 @@ class StandinEnv:
         z = q[:, 2]
         standing = (z > cfg.stand_height * self.stand_z) & (up > cfg.stand_upright)
         self.stand_t = np.where(standing, self.stand_t + self.dt_ctrl, 0.0)
-        told = self.voice.told if self.voice is not None else np.ones(self.N, dtype=bool)
-        self.ever_stood |= (self.stand_t > 1.0) & told
-        self.false_start |= standing & ~told
+        # told to rise, or free to: until the wait is armed, rising early is neither a false start nor unpaid
+        told = (self.voice.told | (not self.voice.armed)) if self.voice is not None else np.ones(self.N, dtype=bool)
+        if cfg.task == "getup":            # only the get-up has a command to wait for
+            self.false_start |= standing & ~told
+        self.ever_stood |= (self.stand_t > 1.0) & told & ~self.false_start
         # reward: progress to upright, then staying there; costs keep the hardware alive
         height = np.clip(z / self.stand_z, 0.0, 1.0)
         upright = np.clip(up, 0.0, 1.0)
         r = 0.5 * height + 0.5 * upright + 1.0 * standing
-        if cfg.task == "stand":
+        if self.upright_task:
             r = r + 0.5                                           # alive bonus
-        if self.voice is not None:
+        if cfg.task == "mirror":
+            if self.figure is None:
+                raise ValueError("the mirror task needs eyes and trainer='squat'")
+            shown = self.figure.lead_squat(self._mirror_rng, (self.t - 1) * self.dt_ctrl, self.dt_ctrl)
+            self.mirror_target = 1.0 - cfg.mirror_depth * shown
+            self.mirror_err = np.abs(z / self.stand_z - self.mirror_target)
+            r = 0.5 * upright + 0.5 + 2.0 * np.exp(-math.log(2.0) * np.square(self.mirror_err / cfg.mirror_tol))
+        if self.voice is not None and cfg.task == "getup":
             # told to stay: upright and low is what earns, until the command
             r = np.where(told, r, 0.5 * upright + 0.5 * (1.0 - np.clip((height - 0.55) / 0.3, 0.0, 1.0)))
+            # a false start forfeits the rise's pay for the rest of the episode. Without this, rising early and
+            # standing through the command paid best: half a point lost a tick during the wait, two gained after
+            r = np.where(self.false_start, 0.5 * upright, r)
+        if self.voice is not None:
             self.voice.speak(self.t * self.dt_ctrl, height, self.stand_t > 1.0, over.any(axis=1))
-            if self.figure is not None:
+            if self.figure is not None and cfg.task != "mirror":
                 self.figure.step(self.voice.told, self.voice.guide, height, self.stand_t > 1.0, self.dt_ctrl)
         r -= 0.5 * np.clip(line - 1.0, 0.0, None)[:, self.gated].sum(axis=1)
         r -= 0.05 * np.square(action - self.prev_action).mean(axis=1) * self.nu
@@ -784,7 +807,7 @@ class StandinEnv:
         if cfg.power_cost > 0.0:
             r -= cfg.power_cost * np.log1p(self.power / cfg.power_ref_w)
         damage = (line_over_max > cfg.line_over_s) | (impact > cfg.impact_end_n)
-        if cfg.task == "stand":
+        if self.upright_task:
             damage |= (z < cfg.fall_height * self.stand_z)        # in the stand task a fall ends it
         r = np.where(damage, -10.0, r)
         # the episode's clock starts at the command: a robot told late has as long to rise and stand as one told
@@ -803,6 +826,8 @@ class StandinEnv:
                                                    wmini_over=((line > 1.0) & ~self.gated).any(axis=1),
                                                    power_w=self.power.copy(), locked=self.locked.mean(axis=1),
                                                    false_start=self.false_start.copy()))
+        if cfg.task == "mirror":
+            info.extras.update(mirror_err=self.mirror_err.copy(), mirror_target=self.mirror_target.copy())
         if self.wind_on:
             info.extras["wind"] = self.wind_of_env().copy()
         obs_done = done.copy()

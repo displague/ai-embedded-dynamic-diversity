@@ -1,6 +1,6 @@
 ---
 name: grounded-rl
-description: Train and judge policies by reward on bodies with contact physics (rl/): the tendon humanoid's stand-in, the tendon gate, the get-up stages, and a coach's voice and helping hands.
+description: Train and judge policies by reward on bodies with contact physics (rl/): the tendon humanoid's stand-in, the tendon gate, the get-up stages, a coach's voice and helping hands, eyes and a trainer to watch, and cross-training with the cellular world.
 ---
 
 # Grounded RL Skill
@@ -42,6 +42,11 @@ pytest tests/test_rl_*.py                                                       
 | `--coach-wait 0.5,12 --coach-wait-after 0.3` | "Stay" for that long before the command (beyond the episode: never told); the wait begins once the first start's success passes 0.3 |
 | `--help-cap 0.6` | A helper lifts the trunk by up to that share of the weight, with a level per start that fades |
 | `--help-free 0.5 --help-quit 0.2 --help-fade-at 0.35` | The share never helped, the share the helper walks away from, the helped success at which the level steps down |
+| `--eyes pair|third|three` | Retinas in the observation (`rl/vision.py`): two overlaid eyes (84 channels), a range eye (12), or all (96) |
+| `--trainer demo|tendon32|rpo23|squat --trainer-arc 15` | A trainer's body the eyes see, within that many degrees of straight ahead; it follows the coach's script with or without the voice |
+| `--task mirror --trainer squat` | Start standing and follow the trainer's squat; judge with `rl.mirror_eval [--hide] [--shut]` |
+| `--finetune <policy> --critic-warmup 20` | Continue a policy as a second stage with other settings |
+| `--anchor 10` | With `--arch core --init <champion>`: hold the champion's weights near their values (not measured yet) |
 
 `getup_eval` never uses the hands. `--guide 0` leaves the command only, `--wait 0.5,12` adds the wait, `--mute`
 keeps the coach's script but silences it (the control for "does the policy listen?").
@@ -70,6 +75,19 @@ keeps the coach's script but silences it (the control for "does the policy liste
    difference only when it is larger than that, and say how many seeds.
 9. **Changing the observation orphans old policies.** A policy saved with 17 hearing channels does not load into a
    25-channel environment; re-train, and record which code a number came from.
+10. **Probe before you train.** Fit a linear reader to one frame of the new sense and ask it for the thing the task
+    needs (`up or waiting`: 97 %; a squat's depth: correlation 0.40). The mirror task spent 1,300 iterations on a
+    signal the probe would have shown was not there. Gate a run on the probe.
+11. **Check what the reward pays before blaming the policy.** The commanded get-up failed for three reasons that
+    were the task's: the wait ate the time a rise pays back in, the waiting trainer was a new sight on the day the
+    wait began, and rising early and standing through the command paid best. Work out the best policy under the
+    reward by hand first.
+12. **A condition is learned on a skill that is safe to attempt.** With all three fixed the policy still chose never
+    to rise, seen or heard: the rise fails half the time. Teach commands on standing and squatting first.
+13. **Render on the GPU, or not at all.** The retina in numpy took twice the physics at 2,048 robots; in torch on
+    the GPU, 7 ms. MuJoCo's renderer costs about a hundred control ticks a frame.
+14. **The cellular world's fitness is noisy.** One evaluation's spread is about 0.006 against differences of 0.003:
+    score with `scripts/cross_train.py score --evals 16` and compare arms over three evolutions, not one.
 
 ## Reference Loading (On Demand)
 

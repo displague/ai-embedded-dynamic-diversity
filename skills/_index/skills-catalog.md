@@ -37,9 +37,11 @@
 
 ## grounded-rl
 
-- purpose: Train and judge policies by reward on bodies with contact physics (`rl/`): the tendon humanoid's stand-in, the tendon gate, the get-up stages, and a coach's voice and helping hands.
+- purpose: Train and judge policies by reward on bodies with contact physics (`rl/`): the tendon humanoid's stand-in, the tendon gate, the get-up stages, a coach's voice and helping hands, eyes and a trainer to watch, and cross-training with the cellular world.
 - triggers:
   - PPO or cloning on the stand-in, the tendon gate, the get-up test
   - a curriculum support (helper, spoken instruction) added, faded or evaluated
+  - a new sense (eyes, ears) or a trainer's guidance added to an observation
+  - a core moved between the cellular world and a grounded body (`scripts/cross_train.py`)
   - a learned-control number about to be published
 - definition: `skills/grounded-rl/SKILL.md`

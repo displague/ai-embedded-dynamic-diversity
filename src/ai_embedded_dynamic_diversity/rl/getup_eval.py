@@ -51,6 +51,7 @@ def evaluate_getup(policy: str, start: str = "curriculum", n: int = 64, seed: in
     stood = np.zeros(n, bool)
     false_start = np.zeros(n, bool)
     told = np.zeros(n, bool)
+    damaged = np.zeros(n, bool)
     line_max = np.zeros(env.nu)
     over_any = 0.0
     impact = np.zeros(n)
@@ -69,6 +70,7 @@ def evaluate_getup(policy: str, start: str = "curriculum", n: int = 64, seed: in
             if env.voice is not None:
                 told |= alive & env.voice.told
             z_end = np.where(alive, info.extras["z"], z_end)
+            damaged |= alive & info.damage
             alive &= ~done
     k = np.argsort(-line_max)[:5]
     heard = {}
@@ -77,7 +79,7 @@ def evaluate_getup(policy: str, start: str = "curriculum", n: int = 64, seed: in
                      false_start=float(false_start.mean()),
                      stayed_when_not_told=float((~false_start[~told]).mean()) if (~told).any() else None)
     return dict(n=n, start=start, **heard, rise=float(stood.mean()), standing_end=float((z_end > 0.85 * env.stand_z).mean()),
-                ended_by_damage=int((~alive).sum()),
+                ended_by_damage=int(damaged.sum()),
                 worst_lines={env.dof_names[i]: float(line_max[i]) for i in k},
                 longest_over_rating_s=over_any, peak_impact_n=float(impact.max()),
                 median_impact_n=float(np.median(impact)))

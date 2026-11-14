@@ -205,11 +205,24 @@ def test_the_echo_remembers_a_word_through_the_pause_after_it():
     assert np.abs(echoes["stay"] - echoes["get_up"]).max() > 0.1        # but the echo still tells the words apart
 
 
-def test_the_wait_begins_only_when_armed():
+@needs_env
+def test_the_script_waits_from_the_start_and_the_wait_counts_only_when_armed():
     v = C.Voice(4, np.random.default_rng(0), wait=(2.0, 3.0))
     v.armed = False
     v.reset(np.arange(4), np.zeros((4, 2)))
-    assert (v.t_cmd == 0.0).all()
-    v.armed = True
-    v.reset(np.arange(4), np.zeros((4, 2)))
-    assert (v.t_cmd >= 2.0).all()
+    assert (v.t_cmd >= 2.0).all()                  # the coach says "stay" first, armed or not
+    from ai_embedded_dynamic_diversity.rl.standin_env import EnvConfig, StandinEnv
+    e = StandinEnv(EnvConfig(task="getup", num_envs=4, variants=1, nthread=1, getup_start="curriculum", coach="voice",
+                             coach_wait=(5.0, 5.0), coach_wait_after=0.3))
+    e.reset()
+    assert e.voice.armed is False
+    e.state[:, e.i_qpos + 2] = e.stand_z + 0.3     # lifted to standing height before the command
+    e.state[:, e.i_qpos + 3:e.i_qpos + 7] = (1.0, 0.0, 0.0, 0.0)
+    _, _, _, _, info = e.step(np.zeros((4, e.act_dim)))
+    assert not info.extras["false_start"].any()    # not armed: no false start
+    e.voice.armed = True
+    e.state[:, e.i_qpos + 2] = e.stand_z + 0.3
+    e.state[:, e.i_qpos + 3:e.i_qpos + 7] = (1.0, 0.0, 0.0, 0.0)
+    _, _, _, _, info = e.step(np.zeros((4, e.act_dim)))
+    assert info.extras["false_start"].all()        # armed: it is one
+    e.close()

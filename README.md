@@ -452,6 +452,19 @@ cues were not used, and obeying a spoken command is not learned yet (`docs/rl-st
 | --- | --- |
 | ![arms](docs/assets/rl-coach-arms.png) | ![get-up](docs/assets/rl-tendon32-getup-earlyfade.gif) |
 
+The stages can also train with eyes and a trainer to watch (`rl/vision.py`, `rl/coach.Figure`, issue #73):
+
+```bash
+python -m ai_embedded_dynamic_diversity.rl.cli train --task getup --getup-start curriculum --arch mlp --eyes three --trainer demo --coach-wait 0.5,6 --coach-wait-after 0.3
+python -m ai_embedded_dynamic_diversity.rl.cli train --task mirror --arch mlp --eyes three --trainer squat   # follow a trainer's squat by sight
+ADD_WORLD_EYES=1 python scripts/cross_train.py evolve --eyes --seeds artifacts/model-core-champion-v09.pt --out artifacts/cross/evo.pt
+python scripts/cross_train.py score artifacts/model-core-champion-v09.pt "artifacts/cross/*.pt" --evals 16
+```
+
+A pair of eyes (a coarse periphery with a colour fovea overlaid) and a third eye that reads range; a trainer that
+waits, rises at the command and paces the learner. So far nothing learned uses the trainer: see
+`docs/rl-standin.md`.
+
 ## Staged curriculum training (new_env_v1)
 
 The flat 40-generation run in `eval_evolve_new_env.py` exposes all environment
