@@ -20,6 +20,8 @@ The W-mini joints (neck, wrist) are excluded from the line gate: they are above 
 
 Tasks:
 - `stand`: start standing, random pushes; survive and stay upright.
+- `mirror`: start standing, a trainer in view squats to changing depths (`trainer="squat"`, with eyes); the reward
+  is for the pelvis following it down and up by `mirror_depth` of the standing height. Do as I do.
 - `getup`: start fallen (dropped from a random orientation and pose, settled), reach standing and hold it;
   falling does not end the episode, damage does.
 
@@ -38,6 +40,10 @@ A coach (off by default; rl/coach.py), both kinds meant to be withdrawn:
   line on a `coach_guide` share of episodes. With a wait, rising before the command is a false start: it earns
   nothing and does not count as a success. The wait begins only once the first start's success passes
   `coach_wait_after`: a policy asked to wait from the first step learns never to rise.
+- `eyes`: retinas at several scales and wavelengths (rl/vision.py): a pair of eyes, each a coarse wide periphery
+  with a fine colour fovea overlaid, and a third eye that measures range. `trainer`: a body they can see, which
+  waits low, rises at the command and paces the learner (rl/coach.Figure): motion guidance, with or without
+  the voice.
 - `help_cap` > 0: a helper's hands lift the trunk (a force, as the robot's get-up helper lifts under the arms),
   up to that share of the weight, fading as helped episodes succeed. `help_free` of the episodes are never
   helped, and the helper quits part-way through `help_quit` of those it helps.
@@ -152,14 +158,28 @@ class EnvConfig:
     hand_load: tuple = (0.0, 0.0)          # kg added to one hand on each non-nominal variant (a held bag)
     coach: str = "off"                     # "voice": a coach's spoken instruction in the observation (rl/coach.py)
     coach_guide: float = 1.0               # the share of episodes with cues after the command (else it is repeated)
-    coach_wait: tuple = (0.0, 0.0)         # s of "stay" before the command; beyond episode_s: never told to rise
-    coach_wait_after: float = 0.0          # the wait begins once the first start's success (its average over
-                                           # episodes) passes this; 0: from the first episode
+    coach_wait: tuple = (0.0, 0.0)         # s of "stay" before the command; beyond episode_s: never told to rise.
+                                           # The episode runs episode_s from the command
+    coach_wait_after: float = 0.0          # the wait is enforced once the first start's success (its average over
+                                           # episodes) passes this; 0: from the first episode. Before that the coach
+                                           # runs the same script (it says "stay", the trainer waits low), and a
+                                           # rise before the command is paid as any rise
     help_cap: float = 0.0                  # a helper lifts the trunk by up to this share of the weight; 0: none
     help_level: float = 1.0                # the helper's starting level (it fades itself from there)
     help_free: float = 0.25                # the share of episodes never helped (the unassisted gate)
     help_quit: float = 0.2                 # the share of helped episodes in which the helper quits part-way
     help_fade_at: float = 0.6              # the helped success above which the helper's level steps down
+    eyes: str = "off"                      # "pair" (two overlaid eyes: a coarse periphery and a colour fovea each),
+                                           # "third" (a range eye alone), "three" (all): rl/vision.py
+    light: tuple = (0.08, 1.0)             # each episode's light level, log-uniform (dusk to daylight)
+    trainer: str = "off"                   # a trainer's body the eyes can see, moving as guidance (rl/coach.Figure):
+                                           # "demo" (the robot's hand-written get-up, recorded), "tendon32" or
+                                           # "rpo23" (that body, from a low pose to standing). It follows the
+                                           # coach's script (the wait, the command, the pacing) with or without the voice
+    trainer_arc: float = 40.0              # degrees either side of straight ahead within which the trainer stands
+    mirror_depth: float = 0.07             # mirror: the pelvis follows the trainer's squat down by this share of the
+                                           # standing height at its lowest (the trainer itself goes deeper)
+    mirror_tol: float = 0.02               # mirror: the height error (share of standing height) that halves the pay
     repo: str | None = None
 
 
@@ -208,7 +228,8 @@ class StandinEnv:
                 self.default[self.dof_names.index("foot.%s_pitch" % side)] = STAND_LEAN
         self.P = max(cfg.pad_dofs, m.nu)   # slots per per-joint channel block
         self.n_impact_slots = 3            # impact channels in the privileged observation (padded)
-        frac = cfg.action_fraction if cfg.action_fraction is not None else (0.2 if cfg.task == "stand" else 1.0)
+        self.upright_task = cfg.task in ("stand", "mirror")       # starts standing; a fall ends the episode
+        frac = cfg.action_fraction if cfg.action_fraction is not None else {"stand": 0.2, "mirror": 0.6}.get(cfg.task, 1.0)
         self.half = 0.5 * (self.hi - self.lo) * frac
         if cfg.action_half is not None:
             self.half = np.asarray(cfg.action_half, dtype=float)[:len(self.lo)].copy()
@@ -297,14 +318,32 @@ class StandinEnv:
     def _coach_setup(self, sensor_names):
         """The coach's voice and the helper's hands (rl/coach.py), each on its own random stream so the rest of
         the randomisation is the same with them on or off."""
-        from ai_embedded_dynamic_diversity.rl.coach import Hands, Voice
+        from ai_embedded_dynamic_diversity.rl.coach import Figure, Hands, Voice, figure_frames
         cfg, m, mj = self.cfg, self.base, self.mj
         if cfg.coach not in ("off", "voice"):
             raise ValueError("coach must be off or voice, got %r" % cfg.coach)
-        self.voice = self.hands = None
+        self.voice = self.hands = self.eyes = self.figure = None
         self.false_start = np.zeros(self.N, dtype=bool)
-        self.s_ears = None
-        if cfg.coach == "voice":
+        self.s_ears = self.s_eyes = None
+        self.hearing = cfg.coach == "voice"            # the voice is in the observation
+        ey = self.spec.get("eyes", {})
+        # the head's (forward, left, up) in its own frame; a body without the key: x forward, y left, z up
+        self.head_axes = np.array([ey.get("forward", (1, 0, 0)), ey.get("left", (0, 1, 0)), ey.get("up", (0, 0, 1))],
+                                  dtype=float)
+        if cfg.eyes != "off":
+            from ai_embedded_dynamic_diversity.rl.vision import Eyes
+            self.eyes = Eyes(self.N, np.random.default_rng([cfg.seed, 0x45594553]), cfg.eyes, self.head_axes,
+                             light=cfg.light)
+            if all("eye.%s_pos" % e in sensor_names for e in "LRC") and "head_quat" in sensor_names:
+                self.s_eyes = {e: m.sensor_adr[m.sensor("eye.%s_pos" % e).id] for e in "LRC"}
+                self.s_head = m.sensor_adr[m.sensor("head_quat").id]
+        if cfg.trainer != "off":
+            if self.eyes is None:
+                raise ValueError("a trainer is there to be seen: set eyes with trainer=%r" % cfg.trainer)
+            self.figure = Figure(self.N, *figure_frames(cfg.trainer, cfg.repo))
+            sc = self.eyes.scene
+            sc.ball_pos, sc.ball_r, sc.ball_rgb = np.zeros((self.N, self.figure.J, 3)), self.figure.radius, self.figure.rgb
+        if self.hearing or self.figure is not None:     # the coach's script: spoken, shown, or both
             self.voice = Voice(self.N, np.random.default_rng([cfg.seed, 0x564F4943]), guide=cfg.coach_guide,
                                wait=cfg.coach_wait)
             self.voice.armed = cfg.coach_wait_after <= 0.0
@@ -323,6 +362,8 @@ class StandinEnv:
             self.i_trunk = m.nu + 6 * m.body(trunk if trunk in [m.body(i).name for i in range(m.nbody)]
                                              else self.root).id
         self.xfrc = np.zeros((self.N, 6 * m.nbody if self.hands is not None else 0))
+        self._mirror_rng = np.random.default_rng([cfg.seed, 0x4D495252])
+        self.mirror_target, self.mirror_err = np.ones(self.N), np.zeros(self.N)
 
     # ---------------------------------------------------------------- randomisation
     def _variants(self):
@@ -554,9 +595,14 @@ class StandinEnv:
         feet = s[:, self.s_feet] / self.weight
         pad = self._pad
         obs = np.concatenate([pad(jq), pad(0.1 * jv), grav, 0.25 * gyro, feet, pad(self.prev_action)], axis=1)
-        if self.voice is not None:
+        if self.hearing:
             obs = np.concatenate([obs, self.voice.hear(*self._ears(q, R), np.sqrt(np.square(jv).mean(axis=1)),
                                                        self.dt_ctrl)], axis=1)
+        if self.eyes is not None:
+            if self.figure is not None:
+                self.eyes.scene.ball_pos = self.figure.balls()
+                self.eyes.scene.shown[:] = not self.figure.hidden
+            obs = np.concatenate([obs, self.eyes.see(*self._eye_places(q, R))], axis=1)
         tau = s[:, self.s_tau]
         line = self._line_force(tau) / self.f_cont
         impact = np.zeros((self.N, self.n_impact_slots))
@@ -572,17 +618,31 @@ class StandinEnv:
             parts.append(np.stack([self.voice.told if self.voice is not None else np.ones(self.N),
                                    self.hands.lift / self.weight if self.hands is not None else np.zeros(self.N),
                                    self.hands.level_env if self.hands is not None else np.zeros(self.N)], axis=1))
+        if self.eyes is not None:          # what there is to see, for the critic
+            parts.append(np.stack([self.eyes.scene.light,
+                                   self.figure.phase if self.figure is not None else np.zeros(self.N),
+                                   self.figure.arms if self.figure is not None else np.zeros(self.N)], axis=1))
         priv = np.concatenate(parts, axis=1)
         return obs.astype(np.float32), priv.astype(np.float32)
+
+    def _eye_places(self, q, R):
+        """({"L", "R", "C"} -> (N, 3) world, the head's orientation (N, 3, 3)): the stand-in's eye sensors
+        (displague/robot export_mjcf.EYES), or, on a body without them, at head height above the root, turning
+        with it."""
+        if self.s_eyes is not None:
+            return ({e: self.sens[:, a:a + 3].copy() for e, a in self.s_eyes.items()},
+                    _quat_to_mat(self.sens[:, self.s_head:self.s_head + 4]))
+        mid = q[:, 0:3] + 0.8 * self.stand_z * (R @ self.head_axes[2])
+        return {e: mid + R @ off for e, off in self.eyes.offsets().items()}, R
 
     def _ears(self, q, R):
         """The ears' world positions (N, 3) each: the stand-in's ear sensors (displague/robot export_standin.EARS),
         or, on a body without them, 0.15 m apart at head height above the root."""
         if self.s_ears is not None:
             return tuple(self.sens[:, a:a + 3].copy() for a in self.s_ears)
-        up = 0.8 * self.stand_z
-        mid = q[:, 0:3] + up * R[:, :, 2]
-        return mid + 0.075 * R[:, :, 0], mid - 0.075 * R[:, :, 0]
+        mid = q[:, 0:3] + 0.8 * self.stand_z * (R @ self.head_axes[2])
+        left = R @ self.head_axes[1]
+        return mid + 0.075 * left, mid - 0.075 * left
 
     def _pad(self, x):
         if self.P == self.nu:
@@ -638,7 +698,16 @@ class StandinEnv:
         if self.voice is not None:
             if not self.voice.armed and hasattr(self, "level_ema"):      # the rise is learned: now learn to wait
                 self.voice.armed = bool(self.level_ema[0] > self.cfg.coach_wait_after)
-            self.voice.reset(idx, self.state[idx, self.i_qpos:self.i_qpos + 2])
+            root = self.state[idx, self.i_qpos:self.i_qpos + self.nq]
+            if self.figure is not None:                # the trainer stands where the robot can see it
+                fwd = _quat_to_mat(root[:, 3:7]) @ self.head_axes[0]
+                self.voice.reset(idx, root[:, 0:2], np.arctan2(fwd[:, 1], fwd[:, 0]),
+                                 math.radians(self.cfg.trainer_arc))
+                self.figure.reset(idx, self.voice.pos[idx, 0:2], root[:, 0:2])
+            else:
+                self.voice.reset(idx, root[:, 0:2])
+        if self.eyes is not None:
+            self.eyes.reset(idx)
         self._began = True
         self.false_start[idx] = False
         self.ever_stood[idx] = False
@@ -673,7 +742,7 @@ class StandinEnv:
                                 self.lo, self.hi)
         else:
             ctrl_mean = ctrl
-        if cfg.task == "stand":
+        if self.upright_task:
             self._push()
         if self.wind_on:
             self._blow(self.dt_ctrl)
@@ -702,19 +771,34 @@ class StandinEnv:
         z = q[:, 2]
         standing = (z > cfg.stand_height * self.stand_z) & (up > cfg.stand_upright)
         self.stand_t = np.where(standing, self.stand_t + self.dt_ctrl, 0.0)
-        told = self.voice.told if self.voice is not None else np.ones(self.N, dtype=bool)
-        self.ever_stood |= (self.stand_t > 1.0) & told
-        self.false_start |= standing & ~told
+        # told to rise, or free to: until the wait is armed, rising early is neither a false start nor unpaid
+        told = (self.voice.told | (not self.voice.armed)) if self.voice is not None else np.ones(self.N, dtype=bool)
+        if cfg.task == "getup":            # only the get-up has a command to wait for
+            self.false_start |= standing & ~told
+        self.ever_stood |= (self.stand_t > 1.0) & told & ~self.false_start
         # reward: progress to upright, then staying there; costs keep the hardware alive
         height = np.clip(z / self.stand_z, 0.0, 1.0)
         upright = np.clip(up, 0.0, 1.0)
         r = 0.5 * height + 0.5 * upright + 1.0 * standing
-        if cfg.task == "stand":
+        if self.upright_task:
             r = r + 0.5                                           # alive bonus
-        if self.voice is not None:
+        if cfg.task == "mirror":
+            if self.figure is None:
+                raise ValueError("the mirror task needs eyes and trainer='squat'")
+            shown = self.figure.lead_squat(self._mirror_rng, (self.t - 1) * self.dt_ctrl, self.dt_ctrl)
+            self.mirror_target = 1.0 - cfg.mirror_depth * shown
+            self.mirror_err = np.abs(z / self.stand_z - self.mirror_target)
+            r = 0.5 * upright + 0.5 + 2.0 * np.exp(-math.log(2.0) * np.square(self.mirror_err / cfg.mirror_tol))
+        if self.voice is not None and cfg.task == "getup":
             # told to stay: upright and low is what earns, until the command
             r = np.where(told, r, 0.5 * upright + 0.5 * (1.0 - np.clip((height - 0.55) / 0.3, 0.0, 1.0)))
+            # a false start forfeits the rise's pay for the rest of the episode. Without this, rising early and
+            # standing through the command paid best: half a point lost a tick during the wait, two gained after
+            r = np.where(self.false_start, 0.5 * upright, r)
+        if self.voice is not None:
             self.voice.speak(self.t * self.dt_ctrl, height, self.stand_t > 1.0, over.any(axis=1))
+            if self.figure is not None and cfg.task != "mirror":
+                self.figure.step(self.voice.told, self.voice.guide, height, self.stand_t > 1.0, self.dt_ctrl)
         r -= 0.5 * np.clip(line - 1.0, 0.0, None)[:, self.gated].sum(axis=1)
         r -= 0.05 * np.square(action - self.prev_action).mean(axis=1) * self.nu
         r -= 0.01 * np.square(tau / np.maximum(self.tau_max, 1e-3)).mean(axis=1) * self.nu
@@ -723,10 +807,17 @@ class StandinEnv:
         if cfg.power_cost > 0.0:
             r -= cfg.power_cost * np.log1p(self.power / cfg.power_ref_w)
         damage = (line_over_max > cfg.line_over_s) | (impact > cfg.impact_end_n)
-        if cfg.task == "stand":
+        if self.upright_task:
             damage |= (z < cfg.fall_height * self.stand_z)        # in the stand task a fall ends it
         r = np.where(damage, -10.0, r)
-        timeout = self.t >= self.max_steps
+        # the episode's clock starts at the command: a robot told late has as long to rise and stand as one told
+        # at once. Without this a wait ate the time a rise pays back in, and staying down won (issue #68). An
+        # episode whose command falls beyond episode_s is never told and ends at episode_s.
+        limit = self.max_steps
+        if self.voice is not None:
+            limit = self.max_steps + np.where(self.voice.t_cmd < cfg.episode_s,
+                                              np.round(self.voice.t_cmd / self.dt_ctrl), 0.0)
+        timeout = self.t >= limit
         done = damage | timeout
         self.prev_action = action.copy()
         info = StepInfo(standing=standing, damage=damage, timeout=timeout & ~damage, line_over_max=line_over_max,
@@ -735,6 +826,8 @@ class StandinEnv:
                                                    wmini_over=((line > 1.0) & ~self.gated).any(axis=1),
                                                    power_w=self.power.copy(), locked=self.locked.mean(axis=1),
                                                    false_start=self.false_start.copy()))
+        if cfg.task == "mirror":
+            info.extras.update(mirror_err=self.mirror_err.copy(), mirror_target=self.mirror_target.copy())
         if self.wind_on:
             info.extras["wind"] = self.wind_of_env().copy()
         obs_done = done.copy()
@@ -824,7 +917,8 @@ class StandinEnv:
 
     @property
     def obs_dim(self):
-        return 3 * self.P + 3 + 3 + len(self.s_feet) + (self.voice.OBS if self.voice is not None else 0)
+        return (3 * self.P + 3 + 3 + len(self.s_feet) + (self.voice.OBS if self.hearing else 0)
+                + (self.eyes.OBS if self.eyes is not None else 0))
 
     @property
     def act_dim(self):
@@ -834,7 +928,8 @@ class StandinEnv:
     def priv_dim(self):
         return (self.obs_dim + 1 + 1 + 3 + self.n_impact_slots + self.P + 1 + (2 if self.wind_on else 0)
                 + (3 if self.cfg.locks or self.cfg.power_cost > 0.0 else 0)
-                + (3 if self.voice is not None or self.hands is not None else 0))
+                + (3 if self.voice is not None or self.hands is not None else 0)
+                + (3 if self.eyes is not None else 0))
 
     def close(self):
         self.roller.close()

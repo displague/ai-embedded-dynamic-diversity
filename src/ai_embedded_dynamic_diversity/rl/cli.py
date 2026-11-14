@@ -36,15 +36,16 @@ def _cfgs(task, num_envs, iterations, seed, device, horizon, epochs, minibatches
           wind_mean="", wind_gust="", wind_tau=2.0, arch="core", locks=False, power_cost=0.0, quiet=0.0,
           hand_load="", episode_s=10.0, init_log_std=-2.0, quiet_noise=1.0, action_half=None,
           getup_start="fallen", ankle_torque=False, coach="off", coach_guide=1.0, coach_wait="", help_cap=0.0,
-          help_free=0.25, help_quit=0.2, help_fade_at=0.6, coach_wait_after=0.0):
-    return (EnvConfig(coach_wait_after=coach_wait_after, coach=coach, coach_guide=coach_guide, coach_wait=_range(coach_wait), help_cap=help_cap,
+          help_free=0.25, help_quit=0.2, help_fade_at=0.6, coach_wait_after=0.0, eyes="off", trainer="off",
+          trainer_arc=40.0, anchor=0.0):
+    return (EnvConfig(eyes=eyes, trainer=trainer, trainer_arc=trainer_arc, coach_wait_after=coach_wait_after, coach=coach, coach_guide=coach_guide, coach_wait=_range(coach_wait), help_cap=help_cap,
                       help_free=help_free, help_quit=help_quit, help_fade_at=help_fade_at, task=task, num_envs=num_envs, seed=seed, body=body, pad_dofs=pad_dofs,
                       wind_mean=_range(wind_mean), wind_gust=_range(wind_gust), wind_tau=wind_tau,
                       locks=locks, power_cost=power_cost, quiet_fraction=quiet, hand_load=_range(hand_load),
                       episode_s=episode_s, quiet_noise=quiet_noise, action_half=action_half,
                       getup_start=getup_start, ankle_torque=ankle_torque),
             PPOConfig(iterations=iterations, seed=seed, device=device, horizon=horizon, epochs=epochs,
-                      minibatches=minibatches, arch=arch, init_log_std=init_log_std))
+                      minibatches=minibatches, arch=arch, init_log_std=init_log_std, anchor=anchor))
 
 
 @app.command()
@@ -57,8 +58,13 @@ def train(task: str = "getup", init: str = "", body: str = "tendon32", pad_dofs:
           teacher_range: bool = False, getup_start: str = "fallen", ankle_torque: bool = False,
           coach: str = "off", coach_guide: float = 1.0, coach_wait: str = "", help_cap: float = 0.0,
           help_free: float = 0.25, help_quit: float = 0.2, help_fade_at: float = 0.6,
-          coach_wait_after: float = 0.0):
-    """`init_log_std`: the exploration noise's starting log std (rests: small enough that drums can lock, -4.5);
+          coach_wait_after: float = 0.0, eyes: str = "off", trainer: str = "off", trainer_arc: float = 40.0,
+          anchor: float = 0.0, finetune: str = "", critic_warmup: int = 0):
+    """`finetune`: a policy saved by this command to continue (its network, noise and input scaling; the critic
+    is new, so give it `critic_warmup` iterations first): a second stage with other settings, such as the coach's
+    wait enforced from the first episode after a stage that learned the rise; `anchor`: with `init` and the core, hold the checkpoint's weights near their values (rehearsal by weight: the
+    loss gains anchor times their relative squared drift), so a body is learned at less cost to the old world;
+    `init_log_std`: the exploration noise's starting log std (rests: small enough that drums can lock, -4.5);
     `arch`: "core" (the model core) or "mlp" (the plain baseline, random weights only); `init`: a champion checkpoint to grow, or a policy from this trainer (any body, same padding) to start
     from; `teacher`: demonstrations to clone first (displague/robot tools/record_teacher.py); `wind_mean`,
     `wind_gust`: 'lo,hi' m/s ranges of each model variant's mean wind and gust sigma (default: no wind);
@@ -69,15 +75,18 @@ def train(task: str = "getup", init: str = "", body: str = "tendon32", pad_dofs:
     success passes `coach_wait_after`; `help_cap` a helper's hands
     lift the trunk by up to this share of the weight and fade, `help_free` the share of episodes never helped,
     `help_quit` the share of helped episodes the helper walks away from, `help_fade_at` the helped success
-    above which its level steps down."""
+    above which its level steps down; `eyes` "pair", "third" or "three" adds retinas to the observation
+    (rl/vision.py), `trainer` "demo", "tendon32" or "rpo23" a body they can see that waits, rises at the command
+    and paces the learner, within `trainer_arc` degrees of straight ahead."""
     env_cfg, ppo = _cfgs(task, num_envs, iterations, seed, device, horizon, epochs, minibatches, body, pad_dofs,
                          wind_mean, wind_gust, wind_tau, arch, locks, power_cost, quiet, hand_load, episode_s,
                          init_log_std, quiet_noise,
                          teacher_action_half(teacher) if teacher_range and teacher else None, getup_start,
                          ankle_torque, coach, coach_guide, coach_wait, help_cap, help_free, help_quit,
-                         help_fade_at, coach_wait_after)
+                         help_fade_at, coach_wait_after, eyes, trainer, trainer_arc, anchor)
     label = label or "%s-%s-%s-s%d" % (body, task, arch if arch in ("mlp", "gru") else "init" if init else "random", seed)
-    s = ppo_train(env_cfg, ppo, init or None, out, label, teacher=teacher or None)
+    ppo.critic_warmup = critic_warmup
+    s = ppo_train(env_cfg, ppo, init or None, out, label, teacher=teacher or None, finetune=finetune or None)
     print(json.dumps(s, indent=1, default=str))
 
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+import os
 from dataclasses import dataclass
 from typing import List
 
@@ -90,7 +91,13 @@ class DynamicDiversityWorld:
         phys_mass: float = 1.0,
         phys_friction: float = 0.85,
         hazard_zones: List[HazardZoneConfig] | None = None,
+        eyes: bool | None = None,
     ):
+        # eyes: the observation's free slots (EYE_SLOT onward) carry what an eye at the world's centre sees, looking
+        # down the z axis (see `_eyes`). None: the ADD_WORLD_EYES environment variable ("1" turns them on), so every
+        # tool that builds a world (training, cross-eval, visualisation) can run with or without them. Off by
+        # default: a checkpoint's scores are only comparable between runs with the same setting.
+        self.eyes = (os.environ.get("ADD_WORLD_EYES", "0") == "1") if eyes is None else bool(eyes)
         self.x = x
         self.y = y
         self.z = z
@@ -486,6 +493,39 @@ class DynamicDiversityWorld:
     # Observation encoding
     # ------------------------------------------------------------------
 
+    EYE_SLOT = 28        # the first observation slot the eyes fill: 0-19 are the pooled channels, 20-27 peer signals
+    EYE_CHANNELS = 20
+
+    def _eyes(self, state: WorldState) -> torch.Tensor:
+        """[B, 20] what eyes at the world's centre see, looking down z (the volume averaged along it). The same
+        layout as the grounded bodies' eyes (rl/vision.py), on this world's fields:
+
+        - a periphery, wide and coarse: life as brightness, the whole plane in 2 x 2 (4 channels);
+        - a fovea, narrow and fine, overlaid on its centre: life as brightness over the middle third in 2 x 2 (4),
+          and two colour-opponent pairs of the resource channels there (the first against the second, the third
+          against their mean), 2 x 2 each (8);
+        - a third eye for another property: stress (as heat), the whole plane in 2 x 2 (4).
+
+        Brightness and colour need light: they are weighted by the light field and dimmed behind an occlusion.
+        The third eye is not."""
+        if self._prev_controls is not None:
+            light = self._light_field(self._prev_controls)
+        else:
+            light = self._light_field(self.default_controls(state.life.size(0)))
+        lit = (light / (light.amax(dim=(2, 3, 4), keepdim=True) + 1e-6)) * (1.0 - 0.6 * state.occlusion_mask)
+        plane = lambda f: f.mean(dim=2)                                   # [B, C, Y, X]
+        quad = lambda f: F.adaptive_avg_pool2d(f, 2).flatten(1)          # [B, C * 4]
+        y0, y1, x0, x1 = self.y // 3, self.y - self.y // 3, self.x // 3, self.x - self.x // 3
+        centre = lambda f: f[:, :, y0:y1, x0:x1]
+        bright = plane(state.life * lit)
+        res = plane(state.resources * lit)
+        r = [res[:, i:i + 1] if i < res.size(1) else torch.zeros_like(res[:, :1]) for i in range(3)]
+        eps = 1e-3
+        rg = (r[0] - r[1]) / (r[0] + r[1] + eps)
+        by = (r[2] - 0.5 * (r[0] + r[1])) / (r[2] + 0.5 * (r[0] + r[1]) + eps)
+        return torch.cat([quad(bright), quad(centre(bright)), quad(centre(rg)), quad(centre(by)),
+                          quad(plane(state.stress))], dim=1)
+
     def encode_observation(self, state: WorldState, signal_dim: int) -> torch.Tensor:
         # Aggregate anonymous signal channels; do not encode modality identity.
         # Use the last applied controls if available, otherwise fall back to defaults
@@ -532,6 +572,9 @@ class DynamicDiversityWorld:
         else:
             pad = torch.zeros(pooled.size(0), signal_dim - pooled.size(1), device=pooled.device)
             obs = torch.cat([pooled, pad], dim=1)
+        if self.eyes and signal_dim >= self.EYE_SLOT + self.EYE_CHANNELS and pooled.size(1) <= self.EYE_SLOT:
+            obs = obs.clone()
+            obs[:, self.EYE_SLOT:self.EYE_SLOT + self.EYE_CHANNELS] = self._eyes(state)
         if self.sensor_latency_steps > 0:
             self._obs_buffer.append(obs.clone())
             if len(self._obs_buffer) <= self.sensor_latency_steps:

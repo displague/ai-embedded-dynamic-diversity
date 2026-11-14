@@ -281,3 +281,89 @@ What it shows (the other arms are one seed each, so only their large gaps count)
 
 Not yet: more seeds; the fallen starts (0 % in every arm); the tendon gate (it computes its observation from the
 rig and has no ears yet); "come here"; a recurrent policy, which is what words that take time really call for.
+
+## Eyes, a trainer to watch, and cross-training (issue #73, displague/robot docs/50)
+
+The coach of #66 was heard and not obeyed. This adds sight, a trainer's body to look at, the same eyes in the
+cellular world, and tools to move a core between that world and the grounded bodies.
+
+| Piece | What it is | Flags |
+| --- | --- | --- |
+| **Eyes** (`rl/vision.py`) | A pair of eyes 60 mm apart, each a wide coarse periphery (5 x 3 over 120 x 72 degrees, brightness) with a narrow fine fovea overlaid (3 x 3 over 24 degrees: brightness, red against green, blue against yellow), and a third eye that reads range (4 x 3 over 80 x 60 degrees). Receptor responses are computed from the scene's geometry on the GPU (7 ms for 2,048 robots); nothing is rendered. Colour's noise grows as the light falls; range does not depend on the light | `--eyes pair`, `third`, `three` |
+| **Trainer** (`rl/coach.Figure`) | A body in front of the robot, drawn as balls at a skeleton's keypoints. It waits low, rises at the command and paces the learner. Its motion is the robot's hand-written get-up recorded on the full tendon model (`demo`), the stand-in's (`tendon32`), Roboparty's RPO (`rpo23`: an open robot instructing), or a squat (`squat`) | `--trainer`, `--trainer-arc` |
+| **Mirror task** | Start standing; the trainer squats to changing depths and the pelvis is paid for following | `--task mirror --trainer squat`, `rl.mirror_eval` |
+| **Eyes in the cellular world** (`sim/world.py`) | The same layout on the world's fields, in observation slots 28 to 47: life as brightness and resource channels as colour where the light falls, stress for the third eye. Off by default | `ADD_WORLD_EYES=1` |
+| **Cross-training** | Evolve in `new_env_v1` from any seed checkpoints and score them over many evaluation seeds; hold a grown core's old weights near the champion while it learns a body; continue a policy as a second stage | `scripts/cross_train.py`, `--anchor`, `--finetune` |
+
+Controls for the tests: `rl.getup_eval --hide` (the trainer gone, its script still running), `--shut` (eyes
+closed), `--light 0.02,0.02` (near dark).
+
+### What a simple reader can tell from one frame
+
+A linear fit, the trainer 1.2 to 3 m away, the robot in the half-kneel:
+
+| Eyes | Trainer within | Light | Trainer up or waiting (chance 50 %) | Its side | Distance error, m (0.44 guessing) |
+| --- | --- | --- | --- | --- | --- |
+| Pair | 15 degrees | Day | 95 % | 95 % | 0.25 |
+| Pair | 15 degrees | Near dark | 77 % | 80 % | 0.38 |
+| Third | 15 degrees | Day or near dark | 91 % | 94 % | 0.24 |
+| Three | 15 degrees | Day | 97 % | 96 % | 0.19 |
+| Three | 15 degrees | Near dark | 93 % | 94 % | 0.22 |
+| Three | 40 degrees | Day | 89 % | 95 % | 0.26 |
+
+The same reader recovers a squat's depth with a correlation of only 0.40: a 9 cm drop is below what this fovea
+resolves at that distance.
+
+### What it measured
+
+Plain MLP, 2,048 robots, the policy's mean action in every test.
+
+**Waiting for a command before getting up** (seed 0; shown by the trainer with three eyes, or spoken):
+
+| Design | Shown: rises when told / false starts | Spoken: rises when told / false starts |
+| --- | --- | --- |
+| 1. The wait begins once the rise is learned | 10 % / 53 % | 0 % / none (#66) |
+| 2. The wait from the first episode, the clock starting at the command | 0 % / 0 % | 0 % / 2 % |
+| 3. The script from the first episode, the wait enforced once the rise is learned | 0 % / 45 % | 7 % / 44 % |
+| 4. Design 3, then a false start forfeits the rise's pay (`--finetune`) | 0 % / 0 % | 0 % / 0 % |
+
+Three faults in the task were fixed on the way (all three are now how the environment works):
+1. A wait ate the time a rise pays back in. The episode now runs `episode_s` from the command.
+2. The trainer waiting low, and the word "stay", were new on the day the wait began. The script now runs from the
+   first episode, and `coach_wait_after` only decides when a rise before the command stops being paid.
+3. Rising early and standing through the command paid best. A false start now forfeits the rise's pay and does not
+   count as a success.
+
+None was enough. Once any rise can be punished, not rising is the safe policy: the rise succeeds about half the
+time and a third of episodes end on an overloaded line. The shown command needs no memory and fails as the
+spoken one does, so #66's reading (a memoryless policy cannot hold a word) is not the whole cause.
+
+**The mirror task** (seeds 0 and 1, 1,300 iterations, 64 robots for 20 s):
+
+| Test | Height error, seed 0 / 1 | Just standing still | Follows the trainer (correlation) | Fell, of 64 |
+| --- | --- | --- | --- | --- |
+| As trained | 0.019 / 0.020 | 0.019 / 0.019 | 0.02 / 0.03 | 3 / 12 |
+| Trainer hidden | 0.019 / 0.019 | 0.019 / 0.018 | 0.00 / 0.03 | 7 / 11 |
+| Eyes shut | 0.022 / 0.025 | 0.021 / 0.022 | -0.02 / -0.01 | 15 / 42 |
+
+It did not follow: both policies hold one height, the best a robot that cannot see the trainer can do. The squat
+is not readable on this retina (above), so this is a limit of the eyes, not of the learning.
+
+**Two eyes on the plain get-up** (seed 0, 800 iterations): 45 % unaided rise against 52 % without eyes (three
+seeds); with its eyes shut the policy never rises. It relies on them and gains nothing.
+
+**Evolution in the cellular world** (`scripts/cross_train.py`; three evolutions an arm, 40 generations of 6; fitness
+on `new_env_v1` over 16 evaluation seeds, one evaluation's spread about 0.006):
+
+| Arm | By seed | Mean |
+| --- | --- | --- |
+| `model-core-champion-v09`, not evolved further | | 0.0176 |
+| Evolved from it | 0.0231, 0.0182, 0.0154 | 0.0189 |
+| Evolved from it with the world's eyes, scored without them | 0.0239, 0.0224, 0.0164 | 0.0209 |
+| The same three, scored with the eyes | 0.0209, 0.0184, 0.0149 | 0.0181 |
+| Evolved from it, `cut-stand-grown` and `cut-getup-grown` (cores a body trained in MuJoCo) | 0.0223, 0.0168, 0.0171 | 0.0187 |
+
+No arm beats the champion beyond the spread between seeds. The champion is unchanged.
+
+Not yet: `--anchor` is not measured; `--body rpo23` as the learner with the trainer and the hands only
+smoke-tested; no second open robot; the tendon gate has no eyes or ears (#70).

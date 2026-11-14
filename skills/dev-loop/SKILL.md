@@ -183,15 +183,16 @@ git add TODO.md && git commit -m "docs(todo): mark #N closed"
 
 ```bash
 python scripts/eval_evolve_new_env.py
-# or for general purpose:
-python -m ai_embedded_dynamic_diversity.train.parallel_cli \
-  --variants 4 --profile pi5 --epochs 40 --device cuda \
-  --coevolution --population-size 6 \
-  --init-weights-cycle "artifacts/model-core-champion-v09.pt,artifacts/model-core-champion-v08.pt" \
-  --out-dir artifacts/parallel-new-feature
+# or, from any seed checkpoints (champions, or cores a body trained in MuJoCo and cut back), three seeds an arm:
+python scripts/cross_train.py evolve --seeds artifacts/model-core-champion-v09.pt,artifacts/model-core-champion-v08.pt --seed 1 --out artifacts/cross/evo-s1.pt
+python scripts/cross_train.py score artifacts/model-core-champion-v09.pt "artifacts/cross/evo-*.pt" --evals 16 --out artifacts/cross/score.json
 ```
 
+`train.parallel_cli` takes `--init-weights` only (one checkpoint); `--init-weights-cycle` belongs to `add-train`.
+
 Improvement threshold: new champion must exceed prior best on `new_env_v1` fitness OR improve GDI while maintaining transfer.
+One evaluation of that fitness spreads by about 0.006, so "exceeds" means the mean over 16 evaluation seeds, on
+every one of three evolutions, by more than the spread between them (v0.5.x: nine evolutions, none did).
 
 ### RELEASE
 **Entry:** Training complete, improvement confirmed.

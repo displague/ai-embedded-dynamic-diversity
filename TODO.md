@@ -29,6 +29,10 @@
 
 - [x] Add a grounded embodiment with contact physics and a drive train that can be overloaded (`humanoid_tendon32`, the displague/robot tendon humanoid) (Closes #34).
 - [x] Train the model core by reward on grounded bodies: PPO on the tendon humanoid's fast stand-in, behaviour cloning from its hand-written controller, transfer between bodies (Closes #35).
+- [ ] Eyes and a trainer (#73): built `rl/vision.py`, `rl/coach.Figure`, the mirror task, eyes in the cellular world,
+  `scripts/cross_train.py`, `--anchor`. Open: make a squat readable (a finer fovea or a closer trainer; gate on the
+  linear probe) and repeat the mirror task; a commanded skill on something safe to fail (stand and squat); measure
+  `--anchor`; a paired, lower-noise evaluation for the cellular world before judging more evolution.
 - [ ] The coach (#66): done a voice through two ears and a helper's hands that fade (early fade, three seeds: 46 %
   unassisted against 52 % alone, withdrawn in training); left: obeying a spoken command (#68), fallen starts with
   the helper (#69), the tendon gate with ears (#70), "come here".
