@@ -18,9 +18,9 @@ Cross-eval 0.574 against 0.567. From #74: a commanded get-up and following a tra
 **Champion:** v10. It is the best champion on the body, not the best controller for it (a plain network passes 22
 of 30); the gate's 30 N push and winds fail.
 
-**Issues opened:** #75 to #78 (from #74), and those listed in the release notes for v10's open ends.
+**Issues opened:** #75 to #78 (from #74), #81 (v10's open ends).
 
-**PRs:** #74, and the v10 PR.
+**PRs:** #74, #80.
 
 ## v0.5.0 (2026-11-13) — A coach for the get-up: a voice through two ears, and a helper's hands that fade
 
