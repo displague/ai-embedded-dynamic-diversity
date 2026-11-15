@@ -40,6 +40,10 @@ class PPOConfig:
     device: str = "cuda"
     save_every: int = 50
     arch: str = "core"           # "core": the model core (grown from `init`, or random); "mlp": the plain baseline
+    roots: bool = False          # the core keeps the checkpoint's inputs and outputs and gets the body's beside them
+    roots_from: str | None = None    # a rooted policy whose roots a new trunk starts with
+    freeze_trunk: bool = False   # with roots: only the roots learn (the body's input columns and router rows); the
+                                 # trunk stays the checkpoint's, bit for bit, so its own world is untouched
     critic_warmup: int = 0       # iterations at the start that train only the critic (a fine-tune's fresh critic)
     anchor: float = 0.0          # a grown core's weights that came from the checkpoint are held near it: the loss
                                  # gains anchor * |w - w0|^2 / |w0|^2 over them (rehearsal by weight, so learning a
@@ -74,7 +78,8 @@ def train(env_cfg: EnvConfig, ppo: PPOConfig, init: str | None, out_dir: str, la
         core = PlainMLP(env.obs_dim, env.act_dim)
         grow_report = dict(arch="mlp", checkpoint=None, signal_dim=env.obs_dim, io_channels=env.act_dim)
     elif ppo.arch == "core":
-        core, grow_report = grow_core(env.obs_dim, env.act_dim, init, seed=ppo.seed)
+        core, grow_report = grow_core(env.obs_dim, env.act_dim, init, seed=ppo.seed, roots=ppo.roots,
+                                      roots_from=ppo.roots_from)
     else:
         raise ValueError("arch must be core, mlp or gru, got %r" % ppo.arch)
     actor = CoreActor(core, ppo.init_log_std).to(dev)
@@ -85,10 +90,17 @@ def train(env_cfg: EnvConfig, ppo: PPOConfig, init: str | None, out_dir: str, la
                               else torch.full_like(saved_ft["log_std"], ppo.init_log_std)).to(dev)
         obs_norm.load_state_dict(saved_ft["obs_norm"])
         obs_norm.update = lambda x: None
-    bc_log = None
-    if teacher:
-        from ai_embedded_dynamic_diversity.rl.bc import clone, load_teacher
-        bc_log = clone(actor, obs_norm, load_teacher(teacher, env.half), dev, epochs=bc_epochs, seed=ppo.seed)
+    if ppo.freeze_trunk:
+        if not grow_report.get("roots"):
+            raise ValueError("freeze_trunk needs roots")
+        s0, o0 = grow_report["old_signal_dim"], grow_report["old_io_channels"]
+        for k, p in actor.core.named_parameters():
+            if k.endswith("passive.encoder.0.weight"):       # gradient only into the body's columns
+                p.register_hook(lambda g, s0=s0: torch.cat([torch.zeros_like(g[:, :s0]), g[:, s0:]], dim=1))
+            elif k.endswith("router.base_map"):              # and the body's rows
+                p.register_hook(lambda g, o0=o0: torch.cat([torch.zeros_like(g[:o0]), g[o0:]], dim=0))
+            else:
+                p.requires_grad_(False)
     anchored = []                # (parameter, its checkpoint value, the mask of entries that came from it)
     if ppo.anchor > 0.0 and grow_report.get("checkpoint"):
         named = dict(actor.core.named_parameters())
@@ -96,13 +108,19 @@ def train(env_cfg: EnvConfig, ppo: PPOConfig, init: str | None, out_dir: str, la
             if k not in named:
                 continue
             p, mask = named[k], torch.ones_like(named[k])
-            if k == "passive.encoder.0.weight":
+            if k.endswith("passive.encoder.0.weight"):
                 mask[:, grow_report["old_signal_dim"]:] = 0.0
-            elif k == "router.base_map":
+            elif k.endswith("router.base_map"):
                 mask[grow_report["old_io_channels"]:] = 0.0
             anchored.append((p, p.detach().clone(), mask))
         anchor_norm = sum(float((w0 * m).pow(2).sum()) for _, w0, m in anchored) + 1e-9
-    params = list(actor.parameters()) + list(critic.parameters())
+    bc_log = None
+    if teacher:
+        from ai_embedded_dynamic_diversity.rl.bc import clone, load_teacher
+        bc_log = clone(actor, obs_norm, load_teacher(teacher, env.half), dev, epochs=bc_epochs, seed=ppo.seed,
+                       extra_loss=(lambda: ppo.anchor * sum(((p - w0) * m).pow(2).sum() for p, w0, m in anchored)
+                                   / anchor_norm) if anchored else None)
+    params = [p for p in actor.parameters() if p.requires_grad] + list(critic.parameters())
     opt = torch.optim.Adam(params, lr=ppo.lr)
     lr = ppo.lr
     N, T, A = env.N, ppo.horizon, env.act_dim
@@ -264,7 +282,16 @@ def train(env_cfg: EnvConfig, ppo: PPOConfig, init: str | None, out_dir: str, la
 
 
 def _save(path, actor, critic, obs_norm, priv_norm, env_cfg, ppo, grow_report, env):
+    inner = getattr(actor.core, "inner", None)
     torch.save(dict(core=actor.core.state_dict(), log_std=actor.log_std.detach().cpu(),
+                    trunk_config=({k: getattr(inner, k) for k in ("edge_nodes", "hidden_dim", "memory_slots",
+                                                                   "memory_dim", "max_remap_groups")}
+                                  | dict(enable_multi_scale_gating=inner.enable_multi_scale_gating,
+                                         gating_mode=inner.active.gating_mode, topk_gating=inner.active.topk,
+                                         enable_dmd_gating=inner.active.enable_dmd_gating,
+                                         enable_phase_gating=inner.active.enable_phase_gating,
+                                         emergent_signal_dim=inner.emergent_signal_head[2].out_features)
+                                  if inner is not None else None),
                     arch=getattr(actor.core, "arch", "core"),
                     core_config={k: getattr(actor.core, k, None) for k in ("edge_nodes", "io_channels", "hidden_dim",
                                                                             "signal_dim", "memory_slots", "memory_dim",

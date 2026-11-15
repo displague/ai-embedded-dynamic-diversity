@@ -37,7 +37,8 @@ def _cfgs(task, num_envs, iterations, seed, device, horizon, epochs, minibatches
           hand_load="", episode_s=10.0, init_log_std=-2.0, quiet_noise=1.0, action_half=None,
           getup_start="fallen", ankle_torque=False, coach="off", coach_guide=1.0, coach_wait="", help_cap=0.0,
           help_free=0.25, help_quit=0.2, help_fade_at=0.6, coach_wait_after=0.0, eyes="off", trainer="off",
-          trainer_arc=40.0, anchor=0.0):
+          trainer_arc=40.0, anchor=0.0, roots=False, roots_from="",
+          freeze_trunk=False):
     return (EnvConfig(eyes=eyes, trainer=trainer, trainer_arc=trainer_arc, coach_wait_after=coach_wait_after, coach=coach, coach_guide=coach_guide, coach_wait=_range(coach_wait), help_cap=help_cap,
                       help_free=help_free, help_quit=help_quit, help_fade_at=help_fade_at, task=task, num_envs=num_envs, seed=seed, body=body, pad_dofs=pad_dofs,
                       wind_mean=_range(wind_mean), wind_gust=_range(wind_gust), wind_tau=wind_tau,
@@ -45,7 +46,8 @@ def _cfgs(task, num_envs, iterations, seed, device, horizon, epochs, minibatches
                       episode_s=episode_s, quiet_noise=quiet_noise, action_half=action_half,
                       getup_start=getup_start, ankle_torque=ankle_torque),
             PPOConfig(iterations=iterations, seed=seed, device=device, horizon=horizon, epochs=epochs,
-                      minibatches=minibatches, arch=arch, init_log_std=init_log_std, anchor=anchor))
+                      minibatches=minibatches, arch=arch, init_log_std=init_log_std, anchor=anchor, roots=roots,
+                      roots_from=roots_from or None, freeze_trunk=freeze_trunk))
 
 
 @app.command()
@@ -59,8 +61,13 @@ def train(task: str = "getup", init: str = "", body: str = "tendon32", pad_dofs:
           coach: str = "off", coach_guide: float = 1.0, coach_wait: str = "", help_cap: float = 0.0,
           help_free: float = 0.25, help_quit: float = 0.2, help_fade_at: float = 0.6,
           coach_wait_after: float = 0.0, eyes: str = "off", trainer: str = "off", trainer_arc: float = 40.0,
-          anchor: float = 0.0, finetune: str = "", critic_warmup: int = 0):
-    """`finetune`: a policy saved by this command to continue (its network, noise and input scaling; the critic
+          anchor: float = 0.0, finetune: str = "", critic_warmup: int = 0, roots: bool = False,
+          roots_from: str = "", bc_epochs: int = 30, freeze_trunk: bool = False):
+    """`freeze_trunk`: with `roots`, only the roots learn and the trunk stays the checkpoint's exactly;
+    `roots`: with `init` and the core, the body's observation and action get input columns and router rows of
+    their own beside the champion's (rl/actor.RootedCore), so only the trunk is shared with the champion's world;
+    `roots_from`: a rooted policy whose roots a new trunk starts with; `bc_epochs`: cloning epochs with `teacher`;
+    `finetune`: a policy saved by this command to continue (its network, noise and input scaling; the critic
     is new, so give it `critic_warmup` iterations first): a second stage with other settings, such as the coach's
     wait enforced from the first episode after a stage that learned the rise; `anchor`: with `init` and the core, hold the checkpoint's weights near their values (rehearsal by weight: the
     loss gains anchor times their relative squared drift), so a body is learned at less cost to the old world;
@@ -83,10 +90,12 @@ def train(task: str = "getup", init: str = "", body: str = "tendon32", pad_dofs:
                          init_log_std, quiet_noise,
                          teacher_action_half(teacher) if teacher_range and teacher else None, getup_start,
                          ankle_torque, coach, coach_guide, coach_wait, help_cap, help_free, help_quit,
-                         help_fade_at, coach_wait_after, eyes, trainer, trainer_arc, anchor)
+                         help_fade_at, coach_wait_after, eyes, trainer, trainer_arc, anchor, roots,
+                         roots_from, freeze_trunk)
     label = label or "%s-%s-%s-s%d" % (body, task, arch if arch in ("mlp", "gru") else "init" if init else "random", seed)
     ppo.critic_warmup = critic_warmup
-    s = ppo_train(env_cfg, ppo, init or None, out, label, teacher=teacher or None, finetune=finetune or None)
+    s = ppo_train(env_cfg, ppo, init or None, out, label, teacher=teacher or None, finetune=finetune or None,
+                  bc_epochs=bc_epochs)
     print(json.dumps(s, indent=1, default=str))
 
 

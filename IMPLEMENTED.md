@@ -2,6 +2,15 @@
 
 ## Completed
 
+- Champion v10 (#79; displague/robot docs/51): `model-core-champion-v10`, chosen on its cellular world and on the
+  tendon humanoid. `rl/actor.RootedCore` (`--roots`): a body's observation and action get input columns and router
+  rows of their own, so only the trunk is shared; `--freeze-trunk` trains the roots alone; `--anchor` now covers the
+  cloning stage. `rl/cut_back.py`: `cut` keeps the roots in the core file (`bodies`), `embody` puts them on a core,
+  `pack` writes a champion with a body. `scripts/cross_train.py score`: paired differences from the first
+  checkpoint with standard errors, `--seed0` for a fresh evaluation set. Measured: any trunk movement costs the
+  world (0.3 % of weight change: -0.012, seven standard errors); with the trunk frozen, v10 passes 12 of 30 named
+  gate scenes and 93 of 100 pushes over five seeds against v09's 8 and 74, and scores +0.018 (legacy) and +0.0068
+  (`new_env_v1`) over v09 on fresh evaluation seeds; cross-eval 0.574 against 0.567. Tests: `tests/test_rl_roots.py`.
 - Eyes, a trainer to watch and cross-training (#73; displague/robot docs/50). `rl/vision.py`: a pair of eyes (a
   coarse periphery with a colour fovea overlaid) and a third eye that reads range, computed from geometry on the GPU
   (`--eyes pair|third|three`, up to 96 observation channels). `rl/coach.Figure`: a trainer's body the eyes see,

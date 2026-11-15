@@ -63,7 +63,7 @@ def evolve(seeds: str, out: str, seed: int, epochs: int, eyes: bool) -> None:
                           training_fitness=ck.get("fitness"))))
 
 
-def score(paths: list[str], out: str, evals: int) -> None:
+def score(paths: list[str], out: str, evals: int, no_eyes: bool = False, seed0: int = 1000) -> None:
     from eval_evolve_new_env import EVAL_BATCH, EVAL_ENV_VOLATILITY, EVAL_STEPS
 
     from ai_embedded_dynamic_diversity.config import ModelConfig, WorldConfig, world_config_for_profile
@@ -90,23 +90,34 @@ def score(paths: list[str], out: str, evals: int) -> None:
         states = _build_transfer_states(["hexapod", "car", "drone", "polymorph120"], mcfg, dev, seed=9001)
         row = dict(checkpoint=path)
         for name, wcfg in wcfgs.items():
-            for eyes in (False, True):
+            for eyes in ((False,) if no_eyes else (False, True)):
                 vals = []
                 for k in range(evals):
-                    torch.manual_seed(1000 + k)
+                    torch.manual_seed(seed0 + k)
                     vals.append(evaluate_fitness(
                         model, world(wcfg, eyes), mcfg, wcfg, dev, steps=EVAL_STEPS, batch=EVAL_BATCH,
                         env_volatility=EVAL_ENV_VOLATILITY, transfer_states=states, transfer_fitness_weight=0.10,
                         transfer_samples_per_step=2, noise_profile="dropout-quant-v2", noise_strength=0.8,
-                        noise_seed=12345 + k, autopoietic_fitness_weight=0.15, genetic_memory_persistence_weight=0.05,
+                        noise_seed=seed0 + 11345 + k, autopoietic_fitness_weight=0.15, genetic_memory_persistence_weight=0.05,
                         force_curriculum_mode="continuous-blow", force_curriculum_strength=0.6))
                 t = torch.tensor(vals)
-                row["%s%s" % (name, "+eyes" if eyes else "")] = dict(mean=float(t.mean()), sd=float(t.std()))
+                row["%s%s" % (name, "+eyes" if eyes else "")] = dict(mean=float(t.mean()), sd=float(t.std()), vals=vals)
         rows.append(row)
         print("%-52s " % os.path.basename(path) + "  ".join(
             "%s %+.4f (%.4f)" % (k, v["mean"], v["sd"]) for k, v in row.items() if k != "checkpoint"), flush=True)
+    # every checkpoint saw the same worlds, controls and noise, so differences from the first are paired
+    print("paired difference from %s (mean, standard error over %d evaluations):" % (os.path.basename(paths[0]), evals))
+    for row in rows[1:]:
+        cells = []
+        for k, v in row.items():
+            if k == "checkpoint":
+                continue
+            d = torch.tensor(v["vals"]) - torch.tensor(rows[0][k]["vals"])
+            v["paired"] = dict(mean=float(d.mean()), se=float(d.std() / max(1, len(d)) ** 0.5))
+            cells.append("%s %+.4f (%.4f)" % (k, v["paired"]["mean"], v["paired"]["se"]))
+        print("%-52s " % os.path.basename(row["checkpoint"]) + "  ".join(cells), flush=True)
     if out:
-        Path(out).write_text(json.dumps(dict(evals=evals, rows=rows), indent=1), encoding="utf-8")
+        Path(out).write_text(json.dumps(dict(evals=evals, seed0=seed0, rows=rows), indent=1), encoding="utf-8")
 
 
 if __name__ == "__main__":
@@ -122,8 +133,10 @@ if __name__ == "__main__":
     s.add_argument("paths", nargs="+")
     s.add_argument("--out", default="")
     s.add_argument("--evals", type=int, default=8)
+    s.add_argument("--seed0", type=int, default=1000, help="the first evaluation seed: change it for a fresh set")
+    s.add_argument("--no-eyes", action="store_true", help="skip the columns with the world's eyes on")
     a = ap.parse_args()
     if a.cmd == "evolve":
         evolve(a.seeds, a.out, a.seed, a.epochs, a.eyes)
     else:
-        score([p for x in a.paths for p in (sorted(glob.glob(x)) or [x])], a.out, a.evals)
+        score([p for x in a.paths for p in (sorted(glob.glob(x)) or [x])], a.out, a.evals, a.no_eyes, a.seed0)

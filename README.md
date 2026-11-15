@@ -133,7 +133,7 @@ Focused warm-start fine-tune from current champion:
 ~/.local/bin/uv run add-train --profile pi5 --epochs 36 --batch-size 24 --unroll-steps 18 --device cuda --gating-mode symplectic --topk-gating 4 --enable-dmd-gating --enable-phase-gating --enable-curriculum --enable-genetic-memory --embodiments "hexapod,car,drone,polymorph120" --enable-embodiment-transfer-loss --transfer-loss-weight 0.45 --transfer-fitness-weight 0.12 --transfer-samples-per-step 3 --init-weights artifacts/focused-variant03-long.pt --save-path artifacts/focused-variant03-long-poly-ft.pt
 ```
 
-Latest champion checkpoint: `artifacts/model-core-champion-v09.pt` (from `artifacts/parallel-extreme-v02/variant-02.pt`).
+Latest champion checkpoint: `artifacts/model-core-champion-v10.pt` (release v0.6.0; evolved from v09 in `new_env_v1`, chosen on the cellular world and on the tendon humanoid, and carrying that body's roots: `docs/rl-standin.md`). Before it: `artifacts/model-core-champion-v09.pt` (from `artifacts/parallel-extreme-v02/variant-02.pt`).
 Latest extreme validation highlight: ranking score `0.811105` on `artifacts/extreme-v02-cap-validation.json` with adaptive loss enabled through 1200 generations.
 Latest compare GIF: `artifacts/v09-vs-v08-car-storm.gif`.
 Latest noisy-curriculum sweep results:

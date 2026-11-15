@@ -31,8 +31,9 @@ def load_teacher(path: str, half: np.ndarray) -> dict:
 
 
 def clone(actor: CoreActor, obs_norm: RunningNorm, data: dict, device, epochs: int = 30, window: int = 64,
-          batch: int = 64, lr: float = 1e-3, seed: int = 0) -> list[dict]:
-    """Fit the actor's mean to the teacher's actions; returns one record per epoch."""
+          batch: int = 64, lr: float = 1e-3, seed: int = 0, extra_loss=None) -> list[dict]:
+    """Fit the actor's mean to the teacher's actions; returns one record per epoch. `extra_loss`: a function
+    returning a penalty added to every step's loss (rl/ppo.py's anchor to a champion's weights)."""
     rng = np.random.default_rng(seed)
     obs = torch.as_tensor(data["obs"], device=device)
     act = torch.as_tensor(data["act"], device=device)
@@ -46,7 +47,7 @@ def clone(actor: CoreActor, obs_norm: RunningNorm, data: dict, device, epochs: i
         for s in range(idx[0], idx[-1] - window + 2, window // 2):
             starts.append(s)
     starts = np.array(starts)
-    opt = torch.optim.Adam(actor.core.parameters(), lr=lr)
+    opt = torch.optim.Adam([p for p in actor.core.parameters() if p.requires_grad], lr=lr)
     log = []
     for epoch in range(epochs):
         rng.shuffle(starts)
@@ -62,11 +63,14 @@ def clone(actor: CoreActor, obs_norm: RunningNorm, data: dict, device, epochs: i
                 preds.append(m)
             pred = torch.stack(preds, dim=1)
             loss = (pred - a).pow(2).mean()
+            mse = loss.item()
+            if extra_loss is not None:
+                loss = loss + extra_loss()
             opt.zero_grad()
             loss.backward()
             torch.nn.utils.clip_grad_norm_(actor.core.parameters(), 1.0)
             opt.step()
-            losses.append(loss.item())
+            losses.append(mse)
         rec = dict(epoch=epoch, mse=float(np.mean(losses)), windows=len(starts))
         log.append(rec)
         if epoch % 5 == 0 or epoch == epochs - 1:
