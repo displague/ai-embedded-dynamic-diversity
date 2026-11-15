@@ -192,7 +192,9 @@ python scripts/cross_train.py score artifacts/model-core-champion-v09.pt "artifa
 
 Improvement threshold: new champion must exceed prior best on `new_env_v1` fitness OR improve GDI while maintaining transfer.
 One evaluation of that fitness spreads by about 0.006, so "exceeds" means the mean over 16 evaluation seeds, on
-every one of three evolutions, by more than the spread between them (v0.5.x: nine evolutions, none did).
+every one of three evolutions, by more than the spread between them. Better: the paired difference from the
+champion that `cross_train.py score` prints (every checkpoint sees the same worlds and noise), confirmed on a fresh
+`--seed0`. v10 was promoted on that, plus the tendon gate with roots on its frozen trunk (`skills/grounded-rl` 15, 16).
 
 ### RELEASE
 **Entry:** Training complete, improvement confirmed.

@@ -367,3 +367,77 @@ No arm beats the champion beyond the spread between seeds. The champion is uncha
 
 Not yet: `--anchor` is not measured; `--body rpo23` as the learner with the trainer and the hands only
 smoke-tested; no second open robot; the tendon gate has no eyes or ears (#70).
+
+## Champion v10: a core that keeps its world and comes with a body (issue #79, displague/robot docs/51)
+
+`model-core-champion-v10` is the first champion chosen on both sides: the cellular world it evolved in, and the
+tendon humanoid in MuJoCo. It ships with the humanoid's roots, so it stands on the stand-in and on the full tendon
+model without further training.
+
+### Roots
+
+Until now a champion was grown onto a body by widening its first layer and its router, and the body's joints fed
+the same input columns the cellular world used. Learning the body overwrote the world.
+
+`rl/actor.RootedCore` (`--roots`) gives the body input columns and router rows of its own, beside the champion's.
+The champion's own columns see zero and its own rows are not read, so only the trunk between them is shared.
+`rl/cut_back.py` cuts the roots off and keeps them in the core file (`bodies`); `embody` puts them back, on that core
+or another; `pack` writes a champion file with a body.
+
+How much of the trunk may move while the body is learned (seed 0; cloning the hand-written controller, then 150 PPO
+iterations with pushes and wind; the world as the paired fitness difference from v09 over 32 evaluations, standard
+error about 0.002):
+
+| Trunk | Weight change | World: legacy / `new_env_v1` | Tendon gate: named scenes of 6, random pushes of 20 |
+| --- | --- | --- | --- |
+| Free (`--anchor 0`) | 7.2 % | -0.091 / -0.045 | 3, 15 |
+| `--anchor 30` | 3.2 % | -0.039 / -0.027 | 0, 10 |
+| `--anchor 1000` | 0.3 % | -0.013 / -0.012 | 3, 16 |
+| Frozen (`--freeze-trunk`) | none | 0 / 0 | 2, 18 |
+
+The world is lost faster than the body is gained: a trunk that moved 0.3 % already scores 0.012 lower, seven
+standard errors, and stands no better than a frozen one. So the trunk is frozen while a body is learned, and the
+body's part in the evolution is selection: which evolved trunk carries the body best.
+
+### Selection
+
+1. **World.** Nine cores evolved from v09 in PR #74 (40 generations of 6) were re-scored with the paired measure
+   (`scripts/cross_train.py score`: every checkpoint on the same worlds, controls and noise). Three beat v09. A
+   second generation evolved from those three gave one more (`g2-s11`, not yet tried on the body).
+2. **Body.** Each of the three had roots trained on its frozen trunk, two seeds, and was run through the tendon
+   gate (`rl.tendon_eval`: the full tendon model, six named scenes and 20 random pushes).
+3. **Confirmation.** The leader and v09 got three more seeds each, and the world score a fresh set of 48
+   evaluation seeds.
+
+| Core | World, fresh seeds: legacy / `new_env_v1` (standard error) | Gate, named scenes by seed | Random pushes by seed |
+| --- | --- | --- | --- |
+| v09 | 0 / 0 | 2, 2, 1, 1, 2: **8 of 30** | 18, 18, 5, 17, 16: **74 of 100** |
+| `evo-a-s1`, now **v10** | +0.018 (0.001) / +0.0068 (0.0011) | 3, 2, 2, 3, 2: **12 of 30** | 20, 18, 18, 19, 18: **93 of 100** |
+| `evo-a-s2` | +0.034 / +0.001 | 2, 2 | 19, 18 |
+| `evo-c-s1` (seeded with MuJoCo-trained cores) | +0.032 / +0.003 | 2, 2 | 18, 1 |
+
+- v10 is at least as good as v09 on every seed, and on the three seeds run after it was picked it passes 7 named
+  scenes against 4 and 55 pushes against 38.
+- Cross-eval (4 embodiments, 3 scenarios, 6 runs each): v10 0.574, v09 0.567.
+- The promotion rule was written in #79 before these numbers: the world not lower, the gate higher. Both hold.
+
+| Champion v10 standing on the tendon humanoid's stand-in, pushed (its own roots, no further training) |
+| --- |
+| ![v10](assets/rl-tendon32-stand-v10.gif) |
+
+### What v10 is, and is not
+
+- **Its trunk is evolution's.** It came from coevolution in `new_env_v1` from v09 (seed 1). Cloning and PPO trained
+  only its roots, and chose it among its siblings. No gradient from the body reached the trunk.
+- **Its body** (`bodies["tendon32"]`): the roots of seed 0. On the tendon gate: stands 10 s, holds 10 N and 20 N
+  pushes, fails 30 N and both winds, 20 of 20 random pushes, 60 W standing still.
+- **It is not the best controller for this robot.** A plain network with the same cloning passes 22 of 30 named
+  scenes and 98 of 100 pushes, and the hand-written controller all of them. v10 is the best *champion* on the body.
+- **Not ready for every test.** The gate's 30 N push and the winds fail on every seed. The get-up was not tried
+  with the core. The open RPO robot's roots were started and not finished.
+
+```bash
+python -m ai_embedded_dynamic_diversity.rl.cut_back embody artifacts/model-core-champion-v10.pt tendon32 v10-tendon32.pt
+python -m ai_embedded_dynamic_diversity.rl.tendon_eval v10-tendon32.pt          # the gate, on the full tendon model
+python -m ai_embedded_dynamic_diversity.rl.render v10-tendon32.pt --task stand  # a clip on the stand-in
+```

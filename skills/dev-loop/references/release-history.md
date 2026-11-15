@@ -1,5 +1,27 @@
 # Release History
 
+## v0.6.0 (2026-11-14) — Champion v10: keeps its world and comes with a body
+
+**Key changes:**
+- `model-core-champion-v10` (#79): evolved from v09 in `new_env_v1`, chosen on the cellular world and on the tendon
+  humanoid in MuJoCo, and carrying that body's roots (`bodies["tendon32"]`).
+- `rl/actor.RootedCore` (`--roots`, `--freeze-trunk`, `--roots-from`), `rl/cut_back.py` `cut` / `embody` / `pack`,
+  `--anchor` in the cloning stage, paired scoring in `scripts/cross_train.py`.
+- From #74: eyes (`rl/vision.py`), a trainer to watch (`rl/coach.Figure`), the mirror task, eyes in the cellular
+  world, the coach's wait reworked.
+
+**Findings:** moving the trunk at all costs the world (0.3 % of weight change: -0.012 fitness) and does not help
+the body, so the trunk is frozen and the body selects among evolved trunks. Five seeds: v10 passes 12 of 30 named
+gate scenes and 93 of 100 random pushes, v09 8 and 74. Fresh evaluation seeds: +0.018 legacy, +0.0068 `new_env_v1`.
+Cross-eval 0.574 against 0.567. From #74: a commanded get-up and following a trainer by sight were not learned.
+
+**Champion:** v10. It is the best champion on the body, not the best controller for it (a plain network passes 22
+of 30); the gate's 30 N push and winds fail.
+
+**Issues opened:** #75 to #78 (from #74), and those listed in the release notes for v10's open ends.
+
+**PRs:** #74, and the v10 PR.
+
 ## v0.5.0 (2026-11-13) — A coach for the get-up: a voice through two ears, and a helper's hands that fade
 
 **Key changes:**

@@ -38,6 +38,8 @@ def load_checkpoint(path: str) -> tuple[dict, dict]:
         raise ValueError("%s is a plain-network policy; it cannot start a core's training" % path)
     if "core" in ck and "grow" in ck:                      # an rl/ppo.py policy
         g = ck["grow"]
+        if g.get("roots"):
+            raise ValueError("%s is a rooted policy: cut its roots off first (rl/cut_back.py)" % path)
         cfg = dict(load_checkpoint(g["checkpoint"])[0]) if g.get("checkpoint") else dict(DEFAULT_CORE)
         cfg.update(signal_dim=g["signal_dim"], io_channels=g["io_channels"])
         return cfg, ck["core"]
@@ -45,10 +47,58 @@ def load_checkpoint(path: str) -> tuple[dict, dict]:
     return cfg, ck["model"]
 
 
-def grow_core(signal_dim: int, io_channels: int, checkpoint: str | None = None, seed: int = 0) -> tuple[ModelCore, dict]:
+class RootedCore(nn.Module):
+    """A champion's core with a body's own roots: the body's observation enters through input columns of its own
+    (after the champion's), and its action leaves through router rows of its own (after the champion's). The
+    champion's own input columns see zero and its own output rows are not read, so learning the body sends no
+    gradient to either: only the trunk between them is shared with the champion's world, and cutting the roots
+    off (rl/cut_back.py) gives back a core of the champion's size whose first layer and router are untouched.
+    The interface is the plain networks': `signal_dim` and `io_channels` are the body's."""
+
+    arch = "core"
+
+    def __init__(self, inner: ModelCore, sig_off: int, io_off: int):
+        super().__init__()
+        self.inner, self.sig_off, self.io_off = inner, sig_off, io_off
+        self.signal_dim, self.io_channels = inner.signal_dim - sig_off, inner.io_channels - io_off
+        for k in ("edge_nodes", "hidden_dim", "memory_slots", "memory_dim", "max_remap_groups"):
+            setattr(self, k, getattr(inner, k))
+
+    def init_memory(self, batch_size: int, memory_slots: int, memory_dim: int, device) -> torch.Tensor:
+        return self.inner.init_memory(batch_size, memory_slots, memory_dim, device)
+
+    def forward(self, signal: torch.Tensor, memory: torch.Tensor) -> dict[str, torch.Tensor]:
+        pad = signal.new_zeros(signal.shape[:-1] + (self.sig_off,))
+        out = self.inner(torch.cat([pad, signal], dim=-1), memory)
+        return dict(io=out["io"][..., self.io_off:], memory=out["memory"])
+
+
+def grow_core(signal_dim: int, io_channels: int, checkpoint: str | None = None, seed: int = 0,
+              roots: bool = False, roots_from: str | None = None) -> tuple[ModelCore, dict]:
     """A ModelCore for `signal_dim` inputs and `io_channels` outputs: grown from `checkpoint`, or freshly
-    initialised with the same architecture (the comparison baseline) when `checkpoint` is None."""
+    initialised with the same architecture (the comparison baseline) when `checkpoint` is None.
+    `roots`: a RootedCore instead (the body's inputs and outputs beside the champion's, not over them);
+    `roots_from`: a rooted policy saved by rl/ppo.py whose roots (input columns, router rows) are copied in, so
+    a new trunk starts with the body an earlier one learned."""
     torch.manual_seed(seed)
+    if roots:
+        if not checkpoint:
+            raise ValueError("roots need a checkpoint to root")
+        old_cfg, _ = load_checkpoint(checkpoint)
+        inner, report = grow_core(old_cfg["signal_dim"] + signal_dim, old_cfg["io_channels"] + io_channels,
+                                  checkpoint, seed)
+        report.update(roots=True, roots_from=roots_from, body_signal_dim=signal_dim, body_io_channels=io_channels,
+                      copied=["inner." + k for k in report["copied"]], grown=["inner." + k for k in report["grown"]],
+                      fresh=["inner." + k for k in report["fresh"]])
+        if roots_from:
+            src = torch.load(roots_from, map_location="cpu", weights_only=False)
+            if not src.get("grow", {}).get("roots"):
+                raise ValueError("%s has no roots to copy" % roots_from)
+            sd, s, o = inner.state_dict(), old_cfg["signal_dim"], old_cfg["io_channels"]
+            sd["passive.encoder.0.weight"][:, s:] = src["core"]["inner.passive.encoder.0.weight"][:, s:]
+            sd["router.base_map"][o:] = src["core"]["inner.router.base_map"][o:]
+            inner.load_state_dict(sd)
+        return RootedCore(inner, old_cfg["signal_dim"], old_cfg["io_channels"]), report
     if checkpoint:
         old_cfg, old_sd = load_checkpoint(checkpoint)
     else:
@@ -152,9 +202,12 @@ def build_policy_net(saved: dict) -> nn.Module:
         return net
     from ai_embedded_dynamic_diversity.models.core import ModelCore
     g = saved["grow"]
-    cfg = dict(load_checkpoint(g["checkpoint"])[0]) if g.get("checkpoint") else dict(DEFAULT_CORE)
+    cfg = dict(saved["trunk_config"]) if saved.get("trunk_config") else (
+        dict(load_checkpoint(g["checkpoint"])[0]) if g.get("checkpoint") else dict(DEFAULT_CORE))
     cfg.update(signal_dim=g["signal_dim"], io_channels=g["io_channels"])
     core = ModelCore(**cfg)
+    if g.get("roots"):
+        core = RootedCore(core, g["old_signal_dim"], g["old_io_channels"])
     core.load_state_dict(saved["core"])
     return core
 

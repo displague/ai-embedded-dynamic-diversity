@@ -46,7 +46,10 @@ pytest tests/test_rl_*.py                                                       
 | `--trainer demo|tendon32|rpo23|squat --trainer-arc 15` | A trainer's body the eyes see, within that many degrees of straight ahead; it follows the coach's script with or without the voice |
 | `--task mirror --trainer squat` | Start standing and follow the trainer's squat; judge with `rl.mirror_eval [--hide] [--shut]` |
 | `--finetune <policy> --critic-warmup 20` | Continue a policy as a second stage with other settings |
-| `--anchor 10` | With `--arch core --init <champion>`: hold the champion's weights near their values (not measured yet) |
+| `--anchor 10` | With `--arch core --init <champion>`: hold the champion's weights near their values. Measured: any drift costs the world, so prefer `--freeze-trunk` |
+| `--roots` | With `--arch core --init <champion>`: the body's inputs and outputs beside the champion's (`RootedCore`); only the trunk is shared |
+| `--freeze-trunk` | With `--roots`: only the roots learn; the champion's world is untouched, bit for bit |
+| `--roots-from <policy>` | Start a new trunk with the roots an earlier one learned |
 
 `getup_eval` never uses the hands. `--guide 0` leaves the command only, `--wait 0.5,12` adds the wait, `--mute`
 keeps the coach's script but silences it (the control for "does the policy listen?").
@@ -88,6 +91,13 @@ keeps the coach's script but silences it (the control for "does the policy liste
     the GPU, 7 ms. MuJoCo's renderer costs about a hundred control ticks a frame.
 14. **The cellular world's fitness is noisy.** One evaluation's spread is about 0.006 against differences of 0.003:
     score with `scripts/cross_train.py score --evals 16` and compare arms over three evolutions, not one.
+15. **A champion learns a body through roots, with its trunk frozen.** Any movement of the trunk costs the
+    cellular world (0.3 % of weight change: -0.012 fitness, seven standard errors) and buys nothing on the gate.
+    `--roots --freeze-trunk`, then `cut_back` (the roots stay in the core file) and `pack`.
+16. **Judge a champion on both sides, and write the rule first.** World: `scripts/cross_train.py score` paired
+    against the champion, then again with a fresh `--seed0`. Body: roots on the frozen trunk, five seeds, the tendon
+    gate. v10's rule is in #79; it was picked on two seeds and confirmed on three more.
+17. **A stand run holds about 10 GB.** Two at once is the limit on this machine; a third was stopped for memory.
 
 ## Reference Loading (On Demand)
 

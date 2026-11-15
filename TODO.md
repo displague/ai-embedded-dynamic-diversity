@@ -29,6 +29,9 @@
 
 - [x] Add a grounded embodiment with contact physics and a drive train that can be overloaded (`humanoid_tendon32`, the displague/robot tendon humanoid) (Closes #34).
 - [x] Train the model core by reward on grounded bodies: PPO on the tendon humanoid's fast stand-in, behaviour cloning from its hand-written controller, transfer between bodies (Closes #35).
+- [ ] Champion v10 (#79): promoted, with tendon32 roots. Open: the gate's 30 N push and winds; a longer body training
+  for the shipped roots (run, not gated); RPO roots on v10 and v09 (not finished); the second-generation core
+  `g2-s11` on the body; the get-up with a rooted core; more than five seeds.
 - [ ] Eyes and a trainer (#73): built `rl/vision.py`, `rl/coach.Figure`, the mirror task, eyes in the cellular world,
   `scripts/cross_train.py`, `--anchor`. Open: make a squat readable (a finer fovea or a closer trainer; gate on the
   linear probe) and repeat the mirror task; a commanded skill on something safe to fail (stand and squat); measure
