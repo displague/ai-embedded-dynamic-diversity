@@ -1,5 +1,13 @@
 # Release History
 
+## v0.6.1 (2026-11-19) — Champion v10 with longer-trained roots
+
+**Key changes:**
+- `model-core-champion-v10.pt` repacked with seed 1's roots after 300 more PPO iterations on the frozen trunk (#82):
+  4 of 6 named gate scenes (the 30 N push now holds), 20 of 20 pushes, 44 W. Trunk unchanged.
+- Five seeds a side with the longer training: v10 19 of 30 and 99 of 100, v09 15 of 30 and 98 of 100.
+- RPO roots: neither core stands. `g2-s11`: worse on the body, not promoted.
+
 ## v0.6.0 (2026-11-14) — Champion v10: keeps its world and comes with a body
 
 **Key changes:**

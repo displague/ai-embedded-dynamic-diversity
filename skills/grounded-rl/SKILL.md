@@ -97,6 +97,9 @@ keeps the coach's script but silences it (the control for "does the policy liste
 16. **Judge a champion on both sides, and write the rule first.** World: `scripts/cross_train.py score` paired
     against the champion, then again with a fresh `--seed0`. Body: roots on the frozen trunk, five seeds, the tendon
     gate. v10's rule is in #79; it was picked on two seeds and confirmed on three more.
+    Longer roots training (300 more iterations, `--finetune`) lifted both cores by seven scenes and kept v10's
+    lead (19 against 15 of 30, #82). A core that is better in the world is not thereby better on the body
+    (`g2-s11`: 2 of 6).
 17. **A stand run holds about 10 GB.** Two at once is the limit on this machine; a third was stopped for memory.
 
 ## Reference Loading (On Demand)
