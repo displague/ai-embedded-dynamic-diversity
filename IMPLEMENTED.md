@@ -2,6 +2,11 @@
 
 ## Completed
 
+- Champion v10, longer roots training (#82; displague/robot docs/52): 300 more PPO iterations on the frozen trunk,
+  five seeds a side: v10 19 of 30 named gate scenes and 99 of 100 pushes, v09 15 and 98; v10 holds the 30 N push on
+  four seeds, v09 on none; both winds fail everywhere. The champion file now carries seed 1's longer-trained roots
+  (4 of 6, 20 of 20, 44 W; release v0.6.1; trunk unchanged). RPO roots on the frozen trunks: neither core stands,
+  no difference. `g2-s11` on the body: 2 of 6, not promoted.
 - Champion v10 (#79; displague/robot docs/51): `model-core-champion-v10`, chosen on its cellular world and on the
   tendon humanoid. `rl/actor.RootedCore` (`--roots`): a body's observation and action get input columns and router
   rows of their own, so only the trunk is shared; `--freeze-trunk` trains the roots alone; `--anchor` now covers the

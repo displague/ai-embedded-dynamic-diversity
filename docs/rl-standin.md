@@ -403,7 +403,7 @@ body's part in the evolution is selection: which evolved trunk carries the body 
 
 1. **World.** Nine cores evolved from v09 in PR #74 (40 generations of 6) were re-scored with the paired measure
    (`scripts/cross_train.py score`: every checkpoint on the same worlds, controls and noise). Three beat v09. A
-   second generation evolved from those three gave one more (`g2-s11`, not yet tried on the body).
+   second generation evolved from those three gave one more (`g2-s11`; on the body it is worse, below).
 2. **Body.** Each of the three had roots trained on its frozen trunk, two seeds, and was run through the tendon
    gate (`rl.tendon_eval`: the full tendon model, six named scenes and 20 random pushes).
 3. **Confirmation.** The leader and v09 got three more seeds each, and the world score a fresh set of 48
@@ -425,16 +425,50 @@ body's part in the evolution is selection: which evolved trunk carries the body 
 | --- |
 | ![v10](assets/rl-tendon32-stand-v10.gif) |
 
+### Longer roots training, the open robot, and the second generation (issue #82)
+
+The runs that #81 left open, one at a time.
+
+**1. 300 more PPO iterations on the frozen trunk** (`--finetune` from each seed's roots, `--critic-warmup 20`, the
+same pushes and wind), five seeds a side:
+
+| Core | Named scenes by seed | Random pushes by seed | Holds the 30 N push | Power standing still, by seed |
+| --- | --- | --- | --- | --- |
+| v09 | 3, 3, 3, 3, 3: **15 of 30** | 20, 20, 19, 19, 20: **98 of 100** | 0 seeds of 5 | 17, 15, 47, 105, 55 W |
+| **v10** | 4, 4, 4, 3, 4: **19 of 30** | 20, 20, 19, 20, 20: **99 of 100** | 4 seeds of 5 | 73, 44, 23, 164, 39 W |
+
+- Longer training helps both cores (v10 from 12 to 19, v09 from 8 to 15), and v10 keeps its lead of four scenes.
+- The difference is one scene: the 30 N push. Both winds fail on every seed of both cores.
+- The random pushes no longer separate them.
+
+**2. The champion's body is now seed 1's longer-trained roots** (release v0.6.1): 4 of 6 named scenes, 20 of 20
+pushes, 44 W. The trunk is the same, bit for bit (`pack` refuses any other).
+
+**3. The open RPO robot** (`--body rpo23 --roots --freeze-trunk`, 150 iterations, no demonstrations, two seeds):
+
+| Core | Standing fraction at the end, by seed | Whole episodes stood |
+| --- | --- | --- |
+| v09 | 0.72, 0.69 | none |
+| v10 | 0.73, 0.71 | none |
+
+No difference to speak of, and neither stands: roots alone on a frozen trunk, without a teacher, do not learn RPO
+in 150 iterations. Whether the better trunk for the tendon humanoid is better for another robot is not answered.
+
+**4. The second-generation core `g2-s11`** (better than v10 in the legacy world): 2 of 6 named scenes on both seeds
+(it loses the 20 N push), 19 and 18 pushes. Worse than v10 on the body, so it is not promoted. Being better in the
+world does not make a trunk better for the body.
+
 ### What v10 is, and is not
 
 - **Its trunk is evolution's.** It came from coevolution in `new_env_v1` from v09 (seed 1). Cloning and PPO trained
   only its roots, and chose it among its siblings. No gradient from the body reached the trunk.
-- **Its body** (`bodies["tendon32"]`): the roots of seed 0. On the tendon gate: stands 10 s, holds 10 N and 20 N
-  pushes, fails 30 N and both winds, 20 of 20 random pushes, 60 W standing still.
+- **Its body** (`bodies["tendon32"]`): the roots of seed 1, trained 150 and then 300 more iterations (v0.6.1; v0.6.0
+  shipped seed 0's 150-iteration roots: 3 of 6, 60 W). On the tendon gate: stands 10 s, holds 10 N, 20 N and 30 N
+  pushes, fails both winds, 20 of 20 random pushes, 44 W standing still.
 - **It is not the best controller for this robot.** A plain network with the same cloning passes 22 of 30 named
   scenes and 98 of 100 pushes, and the hand-written controller all of them. v10 is the best *champion* on the body.
-- **Not ready for every test.** The gate's 30 N push and the winds fail on every seed. The get-up was not tried
-  with the core. The open RPO robot's roots were started and not finished.
+- **Not ready for every test.** Both winds fail on every seed. The get-up was not tried with the core. On the open
+  RPO robot its roots did not learn to stand (above).
 
 ```bash
 python -m ai_embedded_dynamic_diversity.rl.cut_back embody artifacts/model-core-champion-v10.pt tendon32 v10-tendon32.pt
